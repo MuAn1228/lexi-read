@@ -1,0 +1,14 @@
+# Local runtime and secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+backend/data/
+node_modules/
+frontend/dist/
+*.log
+.DS_Store
