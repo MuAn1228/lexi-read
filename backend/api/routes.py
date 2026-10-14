@@ -6,11 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.database import get_session
-from backend.models import Document
+from backend.models import Document, WordOccurrence
+from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import DocumentOut, DocumentSummary, EventOut, MarkRequest, VocabularyOut
+from backend.schemas import AnalysisOut, DocumentOut, DocumentSummary, EventOut, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut
 from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
 from backend.services.vocabulary import VocabularyService
+from backend.services.llm import LLMService
 
 router = APIRouter(prefix="/api")
 
@@ -22,6 +24,7 @@ def documents(session: Session = Depends(get_session)):
 
 
 @router.post("/documents/upload", response_model=DocumentOut, status_code=201)
+@router.post("/documents", response_model=DocumentOut, status_code=201)
 def upload_document(file: UploadFile, session: Session = Depends(get_session)):
     try:
         return document_out(import_image(session, file), session)
@@ -65,3 +68,24 @@ def mark_word(word: str, payload: MarkRequest, session: Session = Depends(get_se
 @router.get("/events", response_model=list[EventOut])
 def events(limit: int = Query(100, ge=1, le=1000), session: Session = Depends(get_session)):
     return VocabularyRepository(session).history(limit)
+
+
+def require_occurrence(session: Session, occurrence_id: int):
+    occurrence = session.get(WordOccurrence, occurrence_id)
+    if occurrence is None:
+        raise HTTPException(404, "未找到该单词在文中的位置。")
+    return occurrence, require_document(session, occurrence.document_id)
+
+
+@router.post("/words/analyze", response_model=AnalysisOut)
+def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_session)):
+    occurrence, doc = require_occurrence(session, payload.occurrence_id)
+    analysis = LLMService().analyze_word(occurrence.word, occurrence.lemma, occurrence.sentence, doc.ocr_text)
+    VocabularyService(VocabularyRepository(session)).lookup(occurrence.lemma, doc.id, analysis.source)
+    return analysis
+
+
+@router.post("/words/recommend", response_model=RecommendationsOut)
+def recommend_words(payload: OccurrenceRequest, session: Session = Depends(get_session)):
+    occurrence, doc = require_occurrence(session, payload.occurrence_id)
+    return VocabularyAgent(VocabularyRepository(session)).recommend(occurrence, doc)

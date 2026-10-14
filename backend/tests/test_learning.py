@@ -1,0 +1,247 @@
+from collections import Counter
+from io import BytesIO
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from backend.agents.vocabulary import VocabularyAgent
+from backend.config import Settings
+from backend.database import get_session
+from backend.main import app
+from backend.models import Base, User
+from backend.ocr.service import OCRResult, OCRUnavailable, OCRWord
+from backend.services import documents
+from backend.services.llm import Candidate, LLMService
+from backend.services.vocabulary import normalize_word
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        session.add(User(id=1))
+        session.commit()
+
+    def session_override():
+        with factory() as session:
+            yield session
+
+    monkeypatch.setattr("backend.main.initialize_database", lambda: None)
+    settings = Settings(data_dir=tmp_path, llm_provider="offline", _env_file=None)
+    monkeypatch.setattr(documents, "get_settings", lambda: settings)
+    monkeypatch.setattr("backend.services.llm.get_settings", lambda: settings)
+    app.dependency_overrides[get_session] = session_override
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+    engine.dispose()
+
+
+def demo(client):
+    result = client.post("/api/documents/demo")
+    assert result.status_code == 200, result.text
+    return result.json()
+
+
+def occurrence(doc, word="Generalization"):
+    return next(word_info for word_info in doc["words"] if word_info["word"] == word)
+
+
+def test_import_counts_occurrences_once_and_unassessed_is_not_uncertain(client):
+    doc = demo(client)
+    expected = Counter(word["lemma"] for word in doc["words"])
+    vocab = client.get("/api/vocabulary").json()
+    assert {word["lemma"]: word["seen_count"] for word in vocab} == expected
+    assert all(word["status"] is None and word["mastery_score"] is None for word in vocab)
+    assert expected["generalization"] >= 2
+    assert client.get(doc["image_url"]).headers["content-type"] == "image/png"
+    assert client.get("/api/documents").json()[0]["word_count"] == sum(expected.values())
+    assert demo(client)["id"] == doc["id"]
+    client.get(f"/api/documents/{doc['id']}")
+    assert {word["lemma"]: word["seen_count"] for word in client.get("/api/vocabulary").json()} == expected
+    assert "+00:00" in vocab[0]["created_at"]
+
+
+def test_marking_updates_all_occurrences_and_history_without_adding_exposure(client):
+    doc = demo(client)
+    for status in ("UNKNOWN", "KNOWN", "UNCERTAIN"):
+        result = client.put("/api/vocabulary/Generalization", json={"status": status, "document_id": doc["id"]})
+        assert result.status_code == 200
+        assert result.json()["status"] == status
+    loaded = client.get(f"/api/documents/{doc['id']}").json()
+    assert all(w["status"] == "UNCERTAIN" for w in loaded["words"] if w["lemma"] == "generalization")
+    events = client.get("/api/events").json()
+    assert [event["event_type"] for event in events] == ["MARK_UNCERTAIN", "MARK_KNOWN", "MARK_UNKNOWN"]
+    assert events[0]["details"]["previous_status"] == "KNOWN"
+    entry = client.put("/api/vocabulary/unseen%20data", json={"status": "UNKNOWN"}).json()
+    assert entry["seen_count"] == 0 and entry["last_seen_at"] is None
+
+
+def test_lookups_and_recommendations_are_personalized_and_recorded(client):
+    doc = demo(client)
+    selected = occurrence(doc)
+    analysis = client.post("/api/words/analyze", json={"occurrence_id": selected["id"]}).json()
+    assert analysis["source"] == "offline"
+    assert analysis["meaning_in_context"] == "泛化能力"
+    assert analysis["warning"]
+    client.put("/api/vocabulary/overfitting", json={"status": "KNOWN"})
+    recommendations = client.post("/api/words/recommend", json={"occurrence_id": selected["id"]}).json()
+    assert 0 < len(recommendations["items"]) <= 3
+    assert all(item["word"] not in {"generalization", "overfitting"} for item in recommendations["items"])
+    events = client.get("/api/events").json()
+    assert events[0]["event_type"] == "VIEW_RELATED"
+    assert len(events[0]["details"]["recommended_words"]) <= 3
+    vocab = client.get("/api/vocabulary").json()
+    word = next(item for item in vocab if item["lemma"] == "generalization")
+    assert word["lookup_count"] == 1
+    assert word["status"] is None
+
+
+def test_sentence_context_crosses_ocr_lines(client):
+    doc = demo(client)
+    sentence = occurrence(doc, "empirical")["sentence"]
+    assert "new samples from the same distribution." in sentence
+    assert "Overfitting" not in sentence
+
+
+@pytest.mark.parametrize("path,payload,code", [
+    ("/api/words/analyze", {"occurrence_id": 99999}, 404),
+    ("/api/words/recommend", {"occurrence_id": 0}, 422),
+    ("/api/words/recommend", {}, 422),
+])
+def test_bad_occurrences(client, path, payload, code):
+    assert client.post(path, json=payload).status_code == code
+
+
+def test_invalid_marks_and_missing_document(client):
+    assert client.put("/api/vocabulary/model", json={"status": "MAYBE"}).status_code == 422
+    assert client.put("/api/vocabulary/model", json={"status": "KNOWN", "document_id": 44}).status_code == 404
+    assert client.put("/api/vocabulary/123", json={"status": "KNOWN"}).status_code == 422
+    assert client.get("/api/documents/999").status_code == 404
+    assert client.get("/api/events?limit=0").status_code == 422
+
+
+def image_bytes(size=(100, 80), image_format="PNG"):
+    result = BytesIO()
+    Image.new("RGB", size, "white").save(result, format=image_format)
+    return result.getvalue()
+
+
+def test_upload_validation_rejects_bad_extension_content_and_pixel_budget(client, monkeypatch, tmp_path):
+    assert client.post("/api/documents", files={"file": ("a.pdf", b"abc")}).status_code == 415
+    assert client.post("/api/documents", files={"file": ("a.png", b"abc")}).status_code == 422
+    assert client.post("/api/documents", files={"file": ("a.png", image_bytes(image_format="GIF"))}).status_code == 415
+    settings = Settings(data_dir=tmp_path, max_image_pixels=10, _env_file=None)
+    monkeypatch.setattr(documents, "get_settings", lambda: settings)
+    assert client.post("/api/documents", files={"file": ("a.png", image_bytes())}).status_code == 413
+    settings.max_upload_bytes = 20
+    assert client.post("/api/documents", files={"file": ("a.png", b"x" * 21)}).status_code == 413
+
+
+def test_ocr_failure_cleans_up_upload_without_persisting(client, monkeypatch):
+    class FailingOCR:
+        def recognize(self, path):
+            raise OCRUnavailable("Install OCR models")
+    monkeypatch.setattr(documents, "get_ocr_service", lambda: FailingOCR())
+    response = client.post("/api/documents", files={"file": ("a.png", image_bytes())})
+    assert response.status_code == 503
+    assert client.get("/api/documents").json() == []
+    assert client.get("/api/vocabulary").json() == []
+    assert not list(documents.get_settings().storage_dir.rglob("*.png"))
+
+
+def test_real_upload_route_with_ocr_contract_and_repeat_import(client, monkeypatch):
+    class TestOCR:
+        def recognize(self, path):
+            with Image.open(path) as image:
+                width, height = image.size
+            return OCRResult("Model model.", width, height, [
+                OCRWord("Model", [1, 2, 40, 15], 0, .96),
+                OCRWord("model", [42, 2, 80, 15], 0, .95)])
+    monkeypatch.setattr(documents, "get_ocr_service", lambda: TestOCR())
+    for route in ("/api/documents", "/api/documents/upload"):
+        response = client.post(route, files={"file": ("page.png", image_bytes())})
+        assert response.status_code == 201, response.text
+        assert response.json()["words"][0]["bbox"] == [1, 2, 40, 15]
+    assert client.get("/api/vocabulary").json()[0]["seen_count"] == 4
+
+
+def candidate(word, semantic=.9, context=.9):
+    return Candidate(word=word, meaning="meaning", reason="reason", semantic_relevance=semantic,
+                     context_relevance=context, learning_value=.9)
+
+
+def test_agent_budget_known_duplicate_current_family_and_relevance_filters():
+    agent = VocabularyAgent(None, LLMService(Settings(llm_provider="offline", _env_file=None)))
+    result = agent.rank([candidate(word) for word in ["Generalization", "generalize", "overfitting", "models",
+                         "model", "bias", "variance", "feature", "dataset"]] + [candidate("unrelated", context=.1)],
+                        "generalization", "A machine learning model", [
+                            {"lemma": "overfitting", "status": "KNOWN"},
+                            {"lemma": "bias", "mastery_score": .9}], [])
+    words = [item.word for item in result]
+    assert len(words) == 3
+    assert len(words) == len(set(words))
+    assert not set(words) & {"generalization", "generalize", "overfitting", "models", "bias", "unrelated"}
+
+
+def test_agent_history_and_unknown_feedback_change_ranking():
+    agent = VocabularyAgent(None)
+    candidates = [candidate("regularization"), candidate("overfitting")]
+    initial = agent.rank(candidates, "generalization", "", [], [])
+    assert initial[0].word == "overfitting"
+    personalized = agent.rank(candidates, "generalization", "", [{"lemma": "regularization", "status": "UNKNOWN"}], [
+        {"word": "generalization", "event_type": "VIEW_RELATED", "details": {"recommended_words": ["overfitting"]}}])
+    assert personalized[0].word == "regularization"
+    assert "不认识" in personalized[0].reason
+
+
+def test_offline_does_not_invent_non_ml_meaning_or_recommendations():
+    service = LLMService(Settings(llm_provider="offline", _env_file=None))
+    analysis = service.analyze_word("distribution", "distribution", "The distribution of food begins today.", "")
+    assert analysis.meaning_in_context == "暂无可靠的上下文释义"
+    assert service.recommend_related_words("distribution", "Food distribution", "", [], []).candidates == []
+    assert normalize_word("generalization") == "generalization"
+    assert normalize_word("Models") == "model"
+
+
+def test_remote_llm_structured_response_and_failure_fallback(monkeypatch):
+    settings = Settings(llm_provider="openai_compatible", llm_model="test", llm_api_key="secret-value", _env_file=None)
+    service = LLMService(settings)
+    real_client = httpx.Client
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"word":"generalization", "lemma":"generalization", "meaning_in_context":"泛化", "simple_explanation":"对新数据的表现", "part_of_speech":"noun"}'}}]})
+
+    monkeypatch.setattr("backend.services.llm.httpx.Client", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = service.analyze_word("generalization", "generalization", "A machine learning model", "")
+    assert result.source == "llm" and result.warning is None
+    assert requests[0].headers["authorization"] == "Bearer secret-value"
+    assert b"article" in requests[0].content and b"sentence" in requests[0].content
+
+    def invalid_handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "not JSON"}}]})
+
+    monkeypatch.setattr("backend.services.llm.httpx.Client", lambda **kwargs: real_client(transport=httpx.MockTransport(invalid_handler), **kwargs))
+    fallback = service.analyze_word("generalization", "generalization", "machine learning", "")
+    assert fallback.source == "offline" and fallback.warning
+    related = service.recommend_related_words("generalization", "machine learning", "", [], [])
+    assert related.source == "offline" and related.warning
+    assert "secret-value" not in fallback.model_dump_json()
+
+
+def test_remote_llm_timeout_falls_back(monkeypatch):
+    service = LLMService(Settings(llm_provider="openai_compatible", llm_model="test", llm_api_key="key", _env_file=None))
+    def timeout(*args):
+        raise httpx.ReadTimeout("Timed out")
+    monkeypatch.setattr(service, "_complete", timeout)
+    result = service.analyze_word("generalization", "generalization", "machine learning", "")
+    assert result.source == "offline" and result.warning
