@@ -1,5 +1,6 @@
 from collections import Counter
 from io import BytesIO
+import json
 
 import httpx
 import pytest
@@ -157,6 +158,50 @@ def test_ocr_failure_cleans_up_upload_without_persisting(client, monkeypatch):
     assert not list(documents.get_settings().storage_dir.rglob("*.png"))
 
 
+@pytest.mark.parametrize("words", [[], [OCRWord("123", [1, 2, 40, 15], 0, .96)]])
+def test_empty_or_unusable_ocr_cleans_up_file_and_database(client, monkeypatch, words):
+    class EmptyOCR:
+        def recognize(self, path):
+            return OCRResult("123" if words else "", 100, 80, words)
+
+    monkeypatch.setattr(documents, "get_ocr_service", lambda: EmptyOCR())
+    response = client.post("/api/documents", files={"file": ("empty.png", image_bytes())})
+    assert response.status_code == 422
+    assert client.get("/api/documents").json() == []
+    assert client.get("/api/vocabulary").json() == []
+    assert client.get("/api/events").json() == []
+    assert not list(documents.get_settings().storage_dir.rglob("*.png"))
+
+
+def test_exif_rotated_jpeg_is_normalized_before_ocr_and_serving(client, monkeypatch):
+    uploaded = BytesIO()
+    original = Image.new("RGB", (100, 80), "white")
+    exif = Image.Exif()
+    exif[274] = 6  # A viewer must rotate this image 90 degrees clockwise.
+    original.save(uploaded, format="JPEG", exif=exif)
+    inspected = []
+
+    class InspectingOCR:
+        def recognize(self, path):
+            with Image.open(path) as normalized:
+                inspected.append((normalized.format, normalized.size, normalized.getexif().get(274)))
+                width, height = normalized.size
+            return OCRResult("Model", width, height, [OCRWord("Model", [1, 2, 40, 15], 0, .96)])
+
+    monkeypatch.setattr(documents, "get_ocr_service", lambda: InspectingOCR())
+    response = client.post("/api/documents", files={"file": ("rotated.jpg", uploaded.getvalue())})
+    assert response.status_code == 201, response.text
+    assert inspected == [("PNG", (80, 100), None)]
+    doc = response.json()
+    assert (doc["width"], doc["height"]) == (80, 100)
+    assert doc["words"][0]["bbox"] == [1, 2, 40, 15]
+    served = client.get(doc["image_url"])
+    assert served.headers["content-type"] == "image/png"
+    with Image.open(BytesIO(served.content)) as image:
+        assert image.size == (80, 100)
+        assert image.getexif().get(274) is None
+
+
 def test_real_upload_route_with_ocr_contract_and_repeat_import(client, monkeypatch):
     class TestOCR:
         def recognize(self, path):
@@ -245,3 +290,70 @@ def test_remote_llm_timeout_falls_back(monkeypatch):
     monkeypatch.setattr(service, "_complete", timeout)
     result = service.analyze_word("generalization", "generalization", "machine learning", "")
     assert result.source == "offline" and result.warning
+
+
+def test_remote_recommendation_sends_context_and_personal_history(monkeypatch):
+    service = LLMService(Settings(llm_provider="openai_compatible", llm_model="test-model",
+                                 llm_base_url="https://provider.example/v1/",
+                                 llm_api_key="secret-value", _env_file=None))
+    real_client = httpx.Client
+    requests = []
+    returned = candidate("regularization").model_dump()
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": json.dumps({"candidates": [returned]})}}]})
+
+    monkeypatch.setattr("backend.services.llm.httpx.Client",
+                        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    vocabulary = [{"lemma": "overfitting", "status": "KNOWN", "mastery_score": None},
+                  {"lemma": "regularization", "status": "UNKNOWN", "mastery_score": None},
+                  {"lemma": "model", "status": None, "mastery_score": None}]
+    history = [{"word": "overfitting", "event_type": "MARK_KNOWN", "details": {}},
+               {"word": "generalization", "event_type": "VIEW_RELATED",
+                "details": {"recommended_words": ["overfitting"]}}]
+    sentence = "Generalization matters for a machine learning model."
+    article = sentence + " Regularization may improve performance."
+    result = service.recommend_related_words("generalization", sentence, article, vocabulary, history)
+
+    assert result.source == "llm" and result.warning is None
+    assert [item.model_dump() for item in result.candidates] == [returned]
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(request.url) == "https://provider.example/v1/chat/completions"
+    assert request.headers["authorization"] == "Bearer secret-value"
+    payload = json.loads(request.content)
+    assert payload["model"] == "test-model"
+    assert payload["response_format"] == {"type": "json_object"}
+    assert [message["role"] for message in payload["messages"]] == ["system", "user"]
+    assert json.loads(payload["messages"][1]["content"]) == {
+        "word": "generalization", "sentence": sentence, "article": article,
+        "vocabulary": vocabulary, "learning_history": history}
+    assert "secret-value" not in request.content.decode()
+
+
+@pytest.mark.parametrize("changes,count", [
+    ({"semantic_relevance": 1.01}, 1),
+    ({"context_relevance": -.01}, 1),
+    ({"learning_value": "not-a-score"}, 1),
+    ({"learning_value": float("inf")}, 1),
+    ({}, 13),
+])
+def test_remote_recommendation_rejects_invalid_scores_and_oversized_batches(monkeypatch, changes, count):
+    service = LLMService(Settings(llm_provider="openai_compatible", llm_model="test",
+                                 llm_api_key="secret-value", _env_file=None))
+    real_client = httpx.Client
+    invalid = candidate("invalid-candidate").model_dump() | changes
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": json.dumps({"candidates": [invalid] * count})}}]})
+
+    monkeypatch.setattr("backend.services.llm.httpx.Client",
+                        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = service.recommend_related_words("generalization", "machine learning", "", [], [])
+    assert result.source == "offline" and result.warning
+    assert result.candidates
+    assert all(item.word != "invalid-candidate" for item in result.candidates)
+    assert "secret-value" not in result.warning
