@@ -1,0 +1,6 @@
+# Local CPU OCR; no GPU, paid API, or external OCR executable required.
+# Python 3.12 recommended. Install after requirements.txt.
+paddleocr==3.3.3
+paddlepaddle==3.2.2
+# Pin the tested adapter/output schema used by PaddleOCR's pipeline.
+paddlex[ocr-core]==3.3.13
