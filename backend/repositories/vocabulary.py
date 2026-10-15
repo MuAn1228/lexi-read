@@ -37,3 +37,15 @@ class VocabularyRepository:
         return list(self.session.scalars(select(LearningEvent).where(
             LearningEvent.user_id == self.user_id).order_by(
                 LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(limit)))
+
+    def word_history(self, lemma: str, limit: int = 20) -> list[LearningEvent]:
+        return list(self.session.scalars(select(LearningEvent).where(
+            LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma).order_by(
+                LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(limit)))
+
+    def last_mark(self, lemma: str) -> LearningEvent | None:
+        # Query independently: many queries/recommendations may follow a mark.
+        return self.session.scalar(select(LearningEvent).where(
+            LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma,
+            LearningEvent.event_type.in_(("MARK_KNOWN", "MARK_UNKNOWN", "MARK_UNCERTAIN")),
+        ).order_by(LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(1))

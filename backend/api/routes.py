@@ -9,10 +9,11 @@ from backend.database import get_session
 from backend.models import Document, WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DocumentOut, DocumentSummary, EventOut, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut
+from backend.schemas import AnalysisOut, DocumentOut, DocumentSummary, EventOut, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut, WordHistoryOut
 from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
+from backend.services.lemmatization import normalize_word
 
 router = APIRouter(prefix="/api")
 
@@ -53,6 +54,20 @@ def document_image(document_id: int, session: Session = Depends(get_session)):
 @router.get("/vocabulary", response_model=list[VocabularyOut])
 def vocabulary(session: Session = Depends(get_session)):
     return VocabularyRepository(session).all()
+
+
+@router.get("/vocabulary/{word}/history", response_model=WordHistoryOut)
+def word_history(word: str, session: Session = Depends(get_session)):
+    try:
+        lemma = normalize_word(word)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    repository = VocabularyRepository(session)
+    entry = repository.get(lemma)
+    if entry is None:
+        raise HTTPException(404, "该单词尚无词库记录。")
+    return WordHistoryOut(vocabulary=entry, last_mark=repository.last_mark(lemma),
+                          events=repository.word_history(lemma))
 
 
 @router.put("/vocabulary/{word}", response_model=VocabularyOut)

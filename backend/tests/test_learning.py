@@ -306,6 +306,52 @@ def test_first_observation_sets_timestamp_once_and_query_keeps_surface(client, m
     assert event["word"] == "Generalized"
 
 
+def test_word_history_normalizes_forms_and_does_not_mutate_learning_data(client):
+    client.put("/api/vocabulary/Generalized", json={"status": "UNKNOWN"})
+    client.put("/api/vocabulary/generalizing", json={"status": "KNOWN"})
+    vocabulary_before = client.get("/api/vocabulary").json()
+    events_before = client.get("/api/events").json()
+    expected = None
+    for word in ("generalize", "Generalized", "generalizing", "generalizes"):
+        response = client.get(f"/api/vocabulary/{word}/history")
+        assert response.status_code == 200, response.text
+        history = response.json()
+        assert history == (expected or history)
+        expected = history
+        assert history["vocabulary"] == vocabulary_before[0]
+        assert history["last_mark"]["event_type"] == "MARK_KNOWN"
+        assert [event["word"] for event in history["events"]] == ["generalizing", "Generalized"]
+        assert history["vocabulary"]["first_seen_at"] is None
+        assert history["vocabulary"]["seen_count"] == 0
+    assert client.get("/api/vocabulary").json() == vocabulary_before
+    assert client.get("/api/events").json() == events_before
+    assert client.get("/api/vocabulary/absent/history").status_code == 404
+    assert client.get("/api/vocabulary/123/history").status_code == 422
+    assert client.get("/api/vocabulary").json() == vocabulary_before
+
+
+def test_word_history_unassessed_and_last_mark_beyond_event_limit(client):
+    doc = demo(client)
+    selected = occurrence(doc)
+    history = client.get("/api/vocabulary/generalization/history").json()
+    assert history["last_mark"] is None and history["events"] == []
+    assert history["vocabulary"]["status"] is None
+    assert history["vocabulary"]["first_seen_at"] is not None
+    client.put("/api/vocabulary/Generalization", json={"status": "UNCERTAIN", "document_id": doc["id"]})
+    for _ in range(21):
+        assert client.post("/api/words/analyze", json={"occurrence_id": selected["id"]}).status_code == 200
+    history = client.get("/api/vocabulary/generalization/history").json()
+    assert len(history["events"]) == 20
+    assert all(event["event_type"] == "LOOKUP" for event in history["events"])
+    assert history["last_mark"]["event_type"] == "MARK_UNCERTAIN"
+    assert history["last_mark"]["word"] == "Generalization"
+    assert history["vocabulary"]["lookup_count"] == 21
+    assert history["vocabulary"]["status"] == "UNCERTAIN"
+    assert history["vocabulary"]["mastery_score"] == 0
+    assert [event["id"] for event in history["events"]] == sorted(
+        [event["id"] for event in history["events"]], reverse=True)
+
+
 def test_remote_llm_structured_response_and_failure_fallback(monkeypatch):
     settings = Settings(llm_provider="openai_compatible", llm_model="test", llm_api_key="secret-value", _env_file=None)
     service = LLMService(settings)

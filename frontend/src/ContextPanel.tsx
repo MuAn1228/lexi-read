@@ -3,10 +3,12 @@ import { ArrowDownRight, ArrowRight, BookOpen, Check, LoaderCircle, Plus, Refres
 import { errorMessage, request } from './api';
 import type { Explanation, Occurrence, Recommendation, Vocabulary, WordStatus } from './types';
 import { StatusBadge, WordControls } from './WordControls';
+import WordHistoryPanel from './WordHistoryPanel';
 
-export default function ContextPanel({ word, onMark, saving, onNext, onAdd, vocabulary }: {
+export default function ContextPanel({ word, onMark, saving, onNext, onAdd, vocabulary, onLearningChanged }: {
   word: Occurrence | null; onMark: (status: WordStatus) => void; saving: boolean;
   onNext: () => void; onAdd: (word: string) => Promise<void>; vocabulary: Vocabulary[];
+  onLearningChanged: () => Promise<void>;
 }) {
   const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
@@ -16,6 +18,8 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
   const [recommendError, setRecommendError] = useState('');
   const [retry, setRetry] = useState(0);
   const [relatedRequest, setRelatedRequest] = useState(0);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [syncError, setSyncError] = useState('');
   const occurrenceId = word?.id;
 
   useEffect(() => {
@@ -28,12 +32,16 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
     // Debouncing skips API calls while the user quickly scans and marks words.
     const timer = setTimeout(() => {
       request<Explanation>('/words/analyze', { method: 'POST', body: JSON.stringify({ occurrence_id: occurrenceId }), signal: controller.signal })
-        .then(value => { if (!ignore) setExplanation(value); })
+        .then(value => {
+          if (ignore) return;
+          setExplanation(value); setHistoryRevision(revision => revision + 1); setSyncError('');
+          void onLearningChanged().catch(e => { if (!ignore) setSyncError(errorMessage(e)); });
+        })
         .catch(e => { if (!ignore) setError(errorMessage(e)); })
         .finally(() => { if (!ignore) setLoading(false); });
     }, 300);
     return () => { ignore = true; clearTimeout(timer); controller.abort(); };
-  }, [occurrenceId, retry]);
+  }, [occurrenceId, retry, onLearningChanged]);
 
   useEffect(() => {
     if (!occurrenceId || relatedRequest === 0) return;
@@ -41,11 +49,15 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
     let ignore = false;
     setRecommending(true); setRecommendError('');
     request<Recommendation>('/words/recommend', { method: 'POST', body: JSON.stringify({ occurrence_id: occurrenceId }), signal: controller.signal })
-      .then(value => { if (!ignore) setRecommendation(value); })
+      .then(value => {
+        if (ignore) return;
+        setRecommendation(value); setHistoryRevision(revision => revision + 1); setSyncError('');
+        void onLearningChanged().catch(e => { if (!ignore) setSyncError(errorMessage(e)); });
+      })
       .catch(e => { if (!ignore) setRecommendError(errorMessage(e)); })
       .finally(() => { if (!ignore) setRecommending(false); });
     return () => { ignore = true; controller.abort(); };
-  }, [occurrenceId, relatedRequest]);
+  }, [occurrenceId, relatedRequest, onLearningChanged]);
 
   if (!word) return <aside className="context-panel panel context-placeholder"><div className="round-icon"><BookOpen size={26} /></div><h2>每个词，都有它的语境。</h2><p>在原文或单词列表中选择一个词，<br />从当前句子理解它。</p></aside>;
 
@@ -62,6 +74,8 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
         {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(v => v + 1)}><RefreshCw size={13} />重新获取</button></div>}
         {explanation && <><h3>{explanation.meaning_in_context}</h3><p>{explanation.simple_explanation}</p>{explanation.warning && <p className="service-note">{explanation.warning}</p>}</>}
       </section>
+      <WordHistoryPanel lemma={word.lemma} updatedAt={vocabulary.find(entry => entry.lemma === word.lemma)?.updated_at} revision={historyRevision} />
+      {syncError && <div className="learning-sync-error inline-error" role="alert"><p>词库统计刷新失败：{syncError}</p><button className="text-button" onClick={() => void onLearningChanged().then(() => { setSyncError(''); setHistoryRevision(revision => revision + 1); }).catch(e => setSyncError(errorMessage(e)))}><RefreshCw size={13} />刷新词库统计</button></div>}
       <section className="related-section"><div className="section-label"><span><Sparkles size={14} />顺着语境，再走一步</span><span className="tiny-badge">≤ 3 个词</span></div>
         <p className="related-intro">结合这篇文章和你的掌握情况，只挑值得一起学的词。</p>
         {!recommendation && !recommending && <button className="button related-button" onClick={() => setRelatedRequest(v => v + 1)}><ArrowDownRight size={16} />发现关联词</button>}

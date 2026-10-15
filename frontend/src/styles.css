@@ -207,4 +207,20 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 .word-controls.compact .mark-button { width: 26px; height: 28px; }
 .page-heading h1:focus { outline: none; }
 .upload-modal:focus-visible { outline: 3px solid #70aa96; outline-offset: 3px; }
+.word-history { margin-top: 24px; padding-top: 21px; border-top: 1px solid var(--line); min-width: 0; }
+.word-history .section-label h3 { display: flex; align-items: center; gap: 5px; font: inherit; }
+.prior-feedback { padding: 12px; margin-top: 13px; background: #edf3e7; border-radius: 6px; color: #456844; font-size: 12px; line-height: 1.9; }
+.prior-feedback time { display: block; color: #68796f; font-size: 11px; }
+.word-history-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin: 16px 0 0; }
+.word-history-facts dt { color: #68796f; font-size: 11px; margin-bottom: 4px; }
+.word-history-facts dd { margin: 0; color: #385849; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.mastery-note { color: #68796f; font-size: 11px; line-height: 1.8; margin-top: 12px; }
+.word-event-list { list-style: none; padding: 0; margin: 14px 0 0; max-height: 280px; overflow: auto; }
+.word-event-list li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.6; }
+.word-event-list time { color: #68796f; white-space: nowrap; }
+.history-toggle { margin-top: 5px; }
+.vocabulary-panel table { min-width: 940px; }
+.vocabulary-panel th, .vocabulary-panel td { padding-left: 18px; padding-right: 18px; }
+.vocabulary-dates span { display: block; white-space: nowrap; line-height: 1.8; font-size: 11px; }
+@media (min-width: 621px) and (max-width: 1170px) { .word-history, .learning-sync-error { grid-column: 1; }.related-section { grid-row: 1 / span 8; } }
 @media (max-width: 620px) { .legend { flex-wrap: wrap; gap: 7px 10px; } .word-controls.compact .mark-button { width: 31px; height: 29px; } }

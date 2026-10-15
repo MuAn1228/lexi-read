@@ -16,10 +16,14 @@ export interface DocumentSummary {
 export interface Vocabulary {
   id: number; user_id: number; word: string; lemma: string; status: WordStatus | null;
   mastery_score: number | null; seen_count: number; lookup_count: number;
-  created_at: string; updated_at: string; last_seen_at: string | null;
+  created_at: string; updated_at: string; first_seen_at: string | null; last_seen_at: string | null;
 }
 export interface LearningEvent {
-  id: number; user_id: number; word: string; event_type: string; created_at: string;
+  id: number; user_id: number; word: string; lemma: string; document_id: number | null;
+  event_type: string; details: Record<string, unknown>; created_at: string;
+}
+export interface WordHistory {
+  vocabulary: Vocabulary; last_mark: LearningEvent | null; events: LearningEvent[];
 }
 export interface Explanation {
   word: string; lemma: string; meaning_in_context: string; simple_explanation: string;

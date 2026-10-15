@@ -80,6 +80,12 @@ class EventOut(Schema):
     created_at: datetime
 
 
+class WordHistoryOut(Schema):
+    vocabulary: VocabularyOut
+    last_mark: EventOut | None
+    events: list[EventOut]
+
+
 class OccurrenceRequest(Schema):
     occurrence_id: int = Field(gt=0)
 
