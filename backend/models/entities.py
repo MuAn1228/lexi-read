@@ -36,6 +36,7 @@ class Vocabulary(Base):
     lookup_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -72,6 +73,7 @@ class LearningEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), default=1, index=True)
     word: Mapped[str] = mapped_column(String(200))
+    lemma: Mapped[str] = mapped_column(String(200), index=True)
     event_type: Mapped[str] = mapped_column(String(30))
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)

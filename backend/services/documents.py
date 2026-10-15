@@ -64,6 +64,7 @@ def save_document(session: Session, path: Path, title: str, result: OCRResult, s
                    ocr_text=result.text, source=source)
     session.add(doc)
     counts: Counter[str] = Counter()
+    surface_words: dict[str, str] = {}
     for word, sentence in zip(result.words, sentence_contexts(result)):
         try:
             lemma = normalize_word(word.word)
@@ -73,11 +74,12 @@ def save_document(session: Session, path: Path, title: str, result: OCRResult, s
                                         bbox=word.bbox, line=word.line, confidence=word.confidence,
                                         bbox_source=word.bbox_source))
         counts[lemma] += 1
+        surface_words.setdefault(lemma, word.word)
     if not counts:
         raise HTTPException(422, "未识别到可用的英文单词。")
     service = VocabularyService(VocabularyRepository(session))
     for lemma, count in counts.items():
-        service.observe(lemma, lemma, count)
+        service.observe(surface_words[lemma], lemma, count)
     session.commit()
     session.refresh(doc)
     return doc

@@ -256,6 +256,56 @@ def test_offline_does_not_invent_non_ml_meaning_or_recommendations():
     assert normalize_word("Models") == "model"
 
 
+@pytest.mark.parametrize("word,expected", [
+    ("generalize", "generalize"), ("Generalized", "generalize"),
+    ("generalizing", "generalize"), ("generalizes", "generalize"),
+    ("generalization", "generalization"), ("overfitting", "overfitting"),
+    ("training", "training"), ("learning", "learning"), ("regularization", "regularization"),
+    ("distribution", "distribution"), ("Unseen   Data", "unseen data"),
+    ("distribution shift", "distribution shift"), ("models", "model"),
+    ("hypotheses", "hypothesis"), ("studies", "study"), ("running", "run"),
+])
+def test_dictionary_normalization_preserves_concepts_and_phrases(word, expected):
+    assert normalize_word(word) == expected
+
+
+def test_inflection_marks_share_one_vocabulary_and_preserve_event_surfaces(client):
+    forms = ("Generalized", "generalizing", "generalizes", "generalize")
+    identifiers = set()
+    for word in forms:
+        result = client.put(f"/api/vocabulary/{word}", json={"status": "UNKNOWN"})
+        assert result.status_code == 200
+        identifiers.add(result.json()["id"])
+        assert result.json()["lemma"] == "generalize"
+    assert len(identifiers) == 1
+    entry = client.get("/api/vocabulary").json()[0]
+    assert entry["first_seen_at"] is None and entry["seen_count"] == 0
+    events = client.get("/api/events").json()
+    assert [event["word"] for event in events] == list(reversed(forms))
+    assert {event["lemma"] for event in events} == {"generalize"}
+    assert events[0]["details"]["previous_status"] == "UNKNOWN"
+
+
+def test_first_observation_sets_timestamp_once_and_query_keeps_surface(client, monkeypatch):
+    class InflectionOCR:
+        def recognize(self, path):
+            return OCRResult("Generalized models.", 100, 80, [
+                OCRWord("Generalized", [1, 2, 80, 15], 0, .96)])
+
+    monkeypatch.setattr(documents, "get_ocr_service", lambda: InflectionOCR())
+    client.put("/api/vocabulary/generalizing", json={"status": "UNKNOWN"})
+    first = client.post("/api/documents", files={"file": ("first.png", image_bytes())}).json()
+    entry = next(row for row in client.get("/api/vocabulary").json() if row["lemma"] == "generalize")
+    assert entry["first_seen_at"] == entry["last_seen_at"] and entry["seen_count"] == 1
+    client.post("/api/documents", files={"file": ("second.png", image_bytes())})
+    later = next(row for row in client.get("/api/vocabulary").json() if row["lemma"] == "generalize")
+    assert later["first_seen_at"] == entry["first_seen_at"] and later["seen_count"] == 2
+    client.post("/api/words/analyze", json={"occurrence_id": first["words"][0]["id"]})
+    event = client.get("/api/events").json()[0]
+    assert event["event_type"] == "LOOKUP" and event["lemma"] == "generalize"
+    assert event["word"] == "Generalized"
+
+
 def test_remote_llm_structured_response_and_failure_fallback(monkeypatch):
     settings = Settings(llm_provider="openai_compatible", llm_model="test", llm_api_key="secret-value", _env_file=None)
     service = LLMService(settings)

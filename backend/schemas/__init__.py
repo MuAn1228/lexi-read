@@ -32,6 +32,7 @@ class VocabularyOut(Schema):
     lookup_count: int
     created_at: datetime
     updated_at: datetime
+    first_seen_at: datetime | None
     last_seen_at: datetime | None
 
 
@@ -72,6 +73,7 @@ class EventOut(Schema):
     id: int
     user_id: int
     word: str
+    lemma: str
     event_type: str
     document_id: int | None
     details: dict

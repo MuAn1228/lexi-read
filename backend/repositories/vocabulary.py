@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.models import LearningEvent, Vocabulary
+from backend.services.lemmatization import normalize_word
 
 
 class VocabularyRepository:
@@ -27,7 +28,7 @@ class VocabularyRepository:
 
     def event(self, word: str, event_type: str, document_id: int | None = None,
               details: dict | None = None) -> LearningEvent:
-        record = LearningEvent(user_id=self.user_id, word=word, event_type=event_type,
+        record = LearningEvent(user_id=self.user_id, word=word, lemma=normalize_word(word), event_type=event_type,
                                document_id=document_id, details=details or {})
         self.session.add(record)
         return record

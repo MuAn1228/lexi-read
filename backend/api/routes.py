@@ -81,7 +81,7 @@ def require_occurrence(session: Session, occurrence_id: int):
 def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_session)):
     occurrence, doc = require_occurrence(session, payload.occurrence_id)
     analysis = LLMService().analyze_word(occurrence.word, occurrence.lemma, occurrence.sentence, doc.ocr_text)
-    VocabularyService(VocabularyRepository(session)).lookup(occurrence.lemma, doc.id, analysis.source)
+    VocabularyService(VocabularyRepository(session)).lookup(occurrence.word, doc.id, analysis.source)
     return analysis
 
 

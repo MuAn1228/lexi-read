@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import get_settings
 from backend.models import Base, User
+from backend.migrations import migrate_database
 
 settings = get_settings()
 engine = create_engine(settings.db_url, connect_args={"check_same_thread": False, "timeout": 30})
@@ -19,6 +20,7 @@ def sqlite_configuration(dbapi_connection, _):
 
 def initialize_database() -> None:
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
+    migrate_database(engine)
     Base.metadata.create_all(engine)
     with SessionLocal() as session:
         if not session.get(User, 1):
