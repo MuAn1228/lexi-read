@@ -97,7 +97,7 @@ def test_lookups_and_recommendations_are_personalized_and_recorded(client):
     assert 0 < len(recommendations["items"]) <= 3
     assert all(item["word"] not in {"generalization", "overfitting"} for item in recommendations["items"])
     events = client.get("/api/events").json()
-    assert events[0]["event_type"] == "VIEW_RELATED"
+    assert events[0]["event_type"] == "RECOMMENDATION_GENERATED"
     assert len(events[0]["details"]["recommended_words"]) <= 3
     vocab = client.get("/api/vocabulary").json()
     word = next(item for item in vocab if item["lemma"] == "generalization")

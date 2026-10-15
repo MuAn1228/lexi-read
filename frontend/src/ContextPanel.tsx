@@ -20,8 +20,9 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
 
   useEffect(() => {
     setExplanation(null); setRecommendation(null); setError(''); setRecommendError('');
-    setLoading(Boolean(occurrenceId)); setRecommending(false); setRelatedRequest(0);
-    if (!occurrenceId) return;
+    setLoading(Boolean(occurrenceId && retry)); setRecommending(false); setRelatedRequest(0);
+    // Passive navigation must not become a lookup or lower future mastery scores.
+    if (!occurrenceId || retry === 0) return;
     const controller = new AbortController();
     let ignore = false;
     // Debouncing skips API calls while the user quickly scans and marks words.
@@ -56,6 +57,7 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
       <WordControls word={word.word} status={word.status} disabled={saving} onMark={onMark} />
       <div className="context-sentence"><span className="quote-mark">“</span><p>{word.sentence}</p></div>
       <section className="meaning-section"><div className="section-label"><span>在这里，它的意思是</span>{explanation && <span className={`source-badge ${explanation.source}`}>{explanation.source === 'llm' ? 'AI 语境释义' : '离线基础释义'}</span>}</div>
+        {!explanation && !loading && !error && <button className="button related-button" onClick={() => setRetry(v => v + 1)}><BookOpen size={16} />查看语境释义</button>}
         {loading && <div className="loading-copy" role="status"><LoaderCircle size={16} className="spin" />正在结合原文理解这个词…</div>}
         {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(v => v + 1)}><RefreshCw size={13} />重新获取</button></div>}
         {explanation && <><h3>{explanation.meaning_in_context}</h3><p>{explanation.simple_explanation}</p>{explanation.warning && <p className="service-note">{explanation.warning}</p>}</>}

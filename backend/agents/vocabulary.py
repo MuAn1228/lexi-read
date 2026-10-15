@@ -19,7 +19,7 @@ class VocabularyAgent:
         viewed = set()
         looked_up = set()
         for event in history:
-            if event["event_type"] == "VIEW_RELATED":
+            if event["event_type"] in {"VIEW_RELATED", "RECOMMENDATION_GENERATED"}:
                 viewed.update(event.get("details", {}).get("recommended_words", []))
             if event["event_type"] == "LOOKUP":
                 looked_up.add(event["word"])
@@ -69,7 +69,7 @@ class VocabularyAgent:
         generated = self.llm.recommend_related_words(occurrence.lemma, occurrence.sentence,
                                                      document.ocr_text, vocabulary, history)
         selected = self.rank(generated.candidates, occurrence.lemma, document.ocr_text, vocabulary, history)
-        self.repo.event(occurrence.lemma, "VIEW_RELATED", document.id,
+        self.repo.event(occurrence.lemma, "RECOMMENDATION_GENERATED", document.id,
                         {"recommended_words": [item.word for item in selected], "source": generated.source})
         self.repo.session.commit()
         return RecommendationsOut(items=selected, source=generated.source, warning=generated.warning)
