@@ -119,8 +119,46 @@ def _upgrade_vocabulary_identity(connection: sqlite3.Connection, tables: set[str
         connection.execute("CREATE INDEX IF NOT EXISTS ix_learning_events_lemma ON learning_events (lemma)")
 
 
+def _backfill_mastery(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Replay explicit assessments only, preserving already stored scores.
+
+    Some old LOOKUP events came from passive page views. Without an explicit
+    intentional flag those events cannot safely be treated as learning signals.
+    No events are created, and an entry without eligible events remains unscored.
+    """
+    if not {"vocabulary", "learning_events"} <= tables:
+        return
+    # Freeze migration rules here: later service rule changes must not rewrite
+    # the meaning of an upgrade that was already shipped.
+    deltas = {"MARK_KNOWN": .15, "MARK_UNKNOWN": -.20, "MARK_UNCERTAIN": -.08, "LOOKUP": -.03}
+    entries = connection.execute("SELECT id, user_id, lemma FROM vocabulary WHERE mastery_score IS NULL").fetchall()
+    for entry in entries:
+        score = None
+        events = connection.execute(
+            "SELECT id, event_type, details, created_at FROM learning_events WHERE user_id = ? AND lemma = ?",
+            (entry["user_id"], entry["lemma"]),
+        ).fetchall()
+        for event in sorted(events, key=lambda row: (_time(row["created_at"]), row["id"])):
+            event_type = event["event_type"]
+            if event_type not in deltas:
+                continue
+            details = json.loads(event["details"]) if event["details"] else {}
+            if not isinstance(details, dict):
+                continue
+            if event_type == "LOOKUP" and details.get("intentional") is not True:
+                continue
+            before = score
+            score = round(min(1.0, max(0.0, (.5 if score is None else score) + deltas[event_type])), 6)
+            details.update({"mastery_before": before, "mastery_after": score,
+                            "rule_version": "heuristic_v1", "mastery_backfilled": True})
+            connection.execute("UPDATE learning_events SET details = ? WHERE id = ?",
+                               (json.dumps(details, ensure_ascii=False), event["id"]))
+        if score is not None:
+            connection.execute("UPDATE vocabulary SET mastery_score = ? WHERE id = ?", (score, entry["id"]))
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
-MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity)]
+MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

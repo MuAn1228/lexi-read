@@ -2,6 +2,7 @@ from backend.models.entities import utcnow
 from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import Status
 from backend.services.lemmatization import normalize_word
+from backend.services.mastery import MasteryService
 
 
 class VocabularyService:
@@ -22,15 +23,20 @@ class VocabularyService:
         entry = self.repo.ensure(word.strip(), lemma)
         previous = entry.status
         entry.status = status.value
-        # Reserved for a future calibrated model. A label is not a probability.
-        entry.mastery_score = None
+        event_type = f"MARK_{status.value}"
+        details = MasteryService.event_details(entry.mastery_score, event_type)
+        entry.mastery_score = details["mastery_after"]
         entry.updated_at = utcnow()
-        self.repo.event(word.strip(), f"MARK_{status.value}", document_id, {"previous_status": previous})
+        self.repo.event(word.strip(), event_type, document_id, {"previous_status": previous, **details})
         self.repo.session.commit()
         return entry
 
     def lookup(self, word: str, document_id: int, source: str):
         entry = self.repo.ensure(word, normalize_word(word))
         entry.lookup_count += 1
-        self.repo.event(word.strip(), "LOOKUP", document_id, {"source": source})
+        details = MasteryService.event_details(entry.mastery_score, "LOOKUP")
+        entry.mastery_score = details["mastery_after"]
+        entry.updated_at = utcnow()
+        self.repo.event(word.strip(), "LOOKUP", document_id,
+                        {"source": source, "intentional": True, **details})
         self.repo.session.commit()

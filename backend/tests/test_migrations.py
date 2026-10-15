@@ -109,7 +109,7 @@ def test_upgrade_is_idempotent_and_does_not_make_redundant_backups(legacy):
     assert migrations.migrate_database(engine) is None
     assert rows(path, "SELECT * FROM vocabulary") == before
     assert len(list((path.parent / "backups").glob("*.sqlite3"))) == 1
-    assert len(rows(path, "SELECT * FROM schema_migrations")) == 1
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 2
 
 
 def test_upgrade_failure_rolls_back_schema_and_data_without_losing_backup(legacy, monkeypatch):
@@ -152,3 +152,45 @@ def test_fresh_database_initializes_latest_schema(tmp_path):
         assert "first_seen_at" in {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(vocabulary)")}
         assert "lemma" in {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(learning_events)")}
     engine.dispose()
+
+
+def test_mastery_backfill_replays_marks_and_only_intentional_queries(legacy):
+    path, engine, connection = legacy
+    connection.execute("UPDATE vocabulary SET mastery_score = NULL WHERE user_id = 1 AND id IN (1, 2)")
+    connection.execute("INSERT INTO learning_events VALUES (5, 1, 'generalizes', 'LOOKUP', 1, ?, ?)",
+                       ('{"source":"offline","intentional":true}', date(6)))
+    connection.execute("INSERT INTO learning_events VALUES (6, 1, 'unknown', 'LOOKUP', 1, '{}', ?)", (date(6),))
+    connection.commit()
+    migrations.migrate_database(engine)
+    vocab = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+    assert vocab[0]["mastery_score"] == .42  # .5 + .15 - .20 - .03; old passive LOOKUP ignored.
+    assert vocab[0]["status"] == "UNKNOWN" and vocab[0]["lookup_count"] == 3
+    assert vocab[1]["mastery_score"] == .9  # Existing scores preserved.
+    assert vocab[2]["mastery_score"] == .9  # Other user's state preserved.
+    assert vocab[3]["mastery_score"] is None  # No explicit assessment evidence.
+    events = rows(path, "SELECT * FROM learning_events ORDER BY id")
+    assert len(events) == 6
+    first = json.loads(events[0]["details"])
+    assert first == {"previous_status": None, "mastery_before": None, "mastery_after": .65,
+                     "rule_version": "heuristic_v1", "mastery_backfilled": True}
+    assert json.loads(events[2]["details"]) == {"source": "offline"}
+    last = json.loads(events[4]["details"])
+    assert last["mastery_before"] == .45 and last["mastery_after"] == .42
+    assert last["source"] == "offline" and last["intentional"] is True
+    assert migrations.migrate_database(engine) is None
+    assert rows(path, "SELECT * FROM learning_events ORDER BY id") == events
+
+
+def test_mastery_can_upgrade_previously_migrated_database(legacy, monkeypatch):
+    path, engine, connection = legacy
+    connection.execute("UPDATE vocabulary SET mastery_score = NULL WHERE id IN (1, 2)")
+    connection.commit()
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:1])
+    migrations.migrate_database(engine)
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    backup = migrations.migrate_database(engine)
+    assert "before-002_mastery_heuristic" in backup.name
+    assert rows(backup, "SELECT mastery_score FROM vocabulary WHERE id = 1")[0]["mastery_score"] is None
+    assert rows(path, "SELECT mastery_score FROM vocabulary WHERE id = 1")[0]["mastery_score"] == .45
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 2
