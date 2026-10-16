@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -156,6 +158,23 @@ class Recommendation(Schema):
 
 
 class RecommendationsOut(Schema):
+    batch_id: int
     items: tuple[Recommendation, ...] = Field(max_length=3)
     source: str
     warning: str | None = None
+
+
+class FeedbackRequest(Schema):
+    word: str = Field(min_length=1, max_length=200)
+    action: Literal["SHOWN", "VIEWED", "KNOWN", "UNKNOWN", "USEFUL", "NOT_USEFUL"]
+    request_id: UUID
+
+
+class FeedbackOut(Schema):
+    batch_id: int
+    word: str
+    shown: bool
+    viewed: bool
+    status: Literal["KNOWN", "UNKNOWN"] | None
+    useful: bool | None
+    vocabulary: VocabularyOut | None

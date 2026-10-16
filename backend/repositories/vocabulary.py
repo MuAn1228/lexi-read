@@ -43,6 +43,15 @@ class VocabularyRepository:
             LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma).order_by(
                 LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(limit)))
 
+    def utility_history(self, source_lemma: str) -> list[LearningEvent]:
+        # Keep pair-specific feedback even after unrelated events push it out
+        # of the model's recent-history window. Rank uses only each latest pair.
+        return list(self.session.scalars(select(LearningEvent).where(
+            LearningEvent.user_id == self.user_id,
+            LearningEvent.event_type.in_(("RECOMMENDATION_USEFUL", "RECOMMENDATION_NOT_USEFUL")),
+            LearningEvent.details["source_lemma"].as_string() == source_lemma,
+        ).order_by(LearningEvent.created_at.desc(), LearningEvent.id.desc())))
+
     def last_mark(self, lemma: str) -> LearningEvent | None:
         # Query independently: many queries/recommendations may follow a mark.
         return self.session.scalar(select(LearningEvent).where(

@@ -18,7 +18,8 @@ class VocabularyService:
             entry.last_seen_at = now
         return entry
 
-    def mark(self, word: str, status: Status, document_id: int | None = None):
+    def mark(self, word: str, status: Status, document_id: int | None = None, *,
+             commit: bool = True, metadata: dict | None = None):
         lemma = normalize_word(word)
         entry = self.repo.ensure(word.strip(), lemma)
         previous = entry.status
@@ -27,8 +28,10 @@ class VocabularyService:
         details = MasteryService.event_details(entry.mastery_score, event_type)
         entry.mastery_score = details["mastery_after"]
         entry.updated_at = utcnow()
-        self.repo.event(word.strip(), event_type, document_id, {"previous_status": previous, **details})
-        self.repo.session.commit()
+        self.repo.event(word.strip(), event_type, document_id,
+                        {**(metadata or {}), "previous_status": previous, **details})
+        if commit:
+            self.repo.session.commit()
         return entry
 
     def lookup(self, word: str, document_id: int, source: str):

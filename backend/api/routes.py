@@ -9,7 +9,8 @@ from backend.database import get_session
 from backend.models import Document, WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut, WordHistoryOut
+from backend.services.feedback import FeedbackService
 from backend.services.dashboard import DashboardService
 from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
 from backend.services.vocabulary import VocabularyService
@@ -113,3 +114,8 @@ def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_sess
 def recommend_words(payload: OccurrenceRequest, session: Session = Depends(get_session)):
     occurrence, doc = require_occurrence(session, payload.occurrence_id)
     return VocabularyAgent(VocabularyRepository(session)).recommend(occurrence, doc)
+
+
+@router.post("/recommendations/{batch_id}/feedback", response_model=FeedbackOut)
+def recommendation_feedback(batch_id: int, payload: FeedbackRequest, session: Session = Depends(get_session)):
+    return FeedbackService(VocabularyRepository(session)).apply(batch_id, payload)

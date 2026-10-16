@@ -3,11 +3,7 @@ import { Clock3, LoaderCircle, RefreshCw } from 'lucide-react';
 import { errorMessage, formatDate, request } from './api';
 import type { WordHistory } from './types';
 import { StatusBadge } from './WordControls';
-
-const eventLabels: Record<string, string> = {
-  MARK_KNOWN: '标记为已掌握', MARK_UNKNOWN: '标记为不认识', MARK_UNCERTAIN: '标记为不确定',
-  LOOKUP: '查看了语境释义', VIEW_RELATED: '查看了关联词', RECOMMENDATION_GENERATED: '生成了关联推荐',
-};
+import { eventLabels } from './eventLabels';
 
 export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
   lemma: string; updatedAt?: string; revision: number;

@@ -99,7 +99,7 @@ def test_fresh_legacy_chain_and_cycle_keys_do_not_collide(legacy):
 
 def test_upgrade_existing_split_keys_preserves_learning_evidence(legacy, monkeypatch):
     path, engine, connection = legacy
-    all_migrations = migrations.MIGRATIONS
+    all_migrations = migrations.MIGRATIONS[:4]
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:3])
     migrations.migrate_database(engine)
     # Simulate the old app's once-normalized mark row and twice-normalized

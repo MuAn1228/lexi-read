@@ -196,10 +196,49 @@ def _stabilize_vocabulary_identity(connection: sqlite3.Connection, tables: set[s
     _restore_latest_assessment(connection, tables)
 
 
+def _create_feedback_tracking(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Add durable recommendation state and request receipts in this transaction.
+
+    An empty installation gets these tables from Base.metadata.create_all after
+    migrations. Existing installations must add them before ORM reads begin.
+    Keep individual execute calls: executescript would commit the enclosing
+    migration transaction before running its DDL.
+    """
+    if "users" not in tables:
+        return
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS recommendation_feedback ("
+        "id INTEGER NOT NULL PRIMARY KEY, "
+        "user_id INTEGER NOT NULL REFERENCES users(id), "
+        "batch_id INTEGER NOT NULL REFERENCES learning_events(id), "
+        "word VARCHAR(200) NOT NULL, shown BOOLEAN NOT NULL, viewed BOOLEAN NOT NULL, "
+        "status VARCHAR(20), useful BOOLEAN, added_unknown BOOLEAN NOT NULL, "
+        "created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
+        "UNIQUE (user_id, batch_id, word), "
+        "CHECK (status IS NULL OR status IN ('KNOWN','UNKNOWN')))"
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS ix_recommendation_feedback_user_id "
+                       "ON recommendation_feedback (user_id)")
+    connection.execute("CREATE INDEX IF NOT EXISTS ix_recommendation_feedback_batch_id "
+                       "ON recommendation_feedback (batch_id)")
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS feedback_receipts ("
+        "id INTEGER NOT NULL PRIMARY KEY, "
+        "user_id INTEGER NOT NULL REFERENCES users(id), "
+        "request_id VARCHAR(36) NOT NULL, "
+        "batch_id INTEGER NOT NULL REFERENCES learning_events(id), "
+        "word VARCHAR(200) NOT NULL, action VARCHAR(20) NOT NULL, "
+        "created_at DATETIME NOT NULL, UNIQUE (user_id, request_id))"
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS ix_feedback_receipts_user_id "
+                       "ON feedback_receipts (user_id)")
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
-              ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity)]
+              ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
+              ("005_recommendation_feedback", _create_feedback_tracking)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

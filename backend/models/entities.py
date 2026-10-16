@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -77,4 +77,33 @@ class LearningEvent(Base):
     event_type: Mapped[str] = mapped_column(String(30))
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RecommendationFeedback(Base):
+    __tablename__ = "recommendation_feedback"
+    __table_args__ = (UniqueConstraint("user_id", "batch_id", "word"),
+                     CheckConstraint("status IS NULL OR status IN ('KNOWN','UNKNOWN')"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("learning_events.id"), index=True)
+    word: Mapped[str] = mapped_column(String(200))
+    shown: Mapped[bool] = mapped_column(Boolean, default=False)
+    viewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    useful: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    added_unknown: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class FeedbackReceipt(Base):
+    __tablename__ = "feedback_receipts"
+    __table_args__ = (UniqueConstraint("user_id", "request_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    batch_id: Mapped[int] = mapped_column(ForeignKey("learning_events.id"))
+    word: Mapped[str] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -5,6 +5,7 @@ import type { LearningEvent, Vocabulary, WordStatus } from './types';
 import { filters } from './WordList';
 import type { StatusFilter } from './WordList';
 import { StatusBadge, WordControls } from './WordControls';
+import { eventLabels } from './eventLabels';
 
 export function VocabularyView({ vocabulary, onMark, saving }: {
   vocabulary: Vocabulary[]; onMark: (word: string, status: WordStatus) => void; saving: boolean;
@@ -23,7 +24,6 @@ export function VocabularyView({ vocabulary, onMark, saving }: {
     </section></div>;
 }
 
-const eventLabels: Record<string, string> = { MARK_KNOWN: '标记为已掌握', MARK_UNKNOWN: '标记为不认识', MARK_UNCERTAIN: '标记为不确定', LOOKUP: '查看了语境释义', VIEW_RELATED: '查看了关联词', RECOMMENDATION_GENERATED: '生成了关联推荐' };
 export function HistoryView({ events }: { events: LearningEvent[] }) {
   return <section className="panel history-panel"><div className="library-heading"><div><h2>每一次反馈，都让学习更懂你。</h2><p>最近的学习记录，来自你的实际阅读与标记。</p></div><span className="count-badge">{events.length} 条</span></div>
     {events.length ? <div className="timeline">{events.map(event => { const Icon = event.event_type === 'LOOKUP' ? Eye : event.event_type === 'VIEW_RELATED' ? Sparkles : event.event_type === 'MARK_KNOWN' ? Check : event.event_type === 'MARK_UNKNOWN' ? X : CircleHelp; return <article className="history-event" key={event.id}><span className={`event-icon ${event.event_type.toLowerCase()}`}><Icon size={17} /></span><div><strong>{event.word}</strong><span>{eventLabels[event.event_type] || event.event_type}</span></div><time dateTime={event.created_at}>{formatDate(event.created_at)}</time></article>; })}</div> : <div className="empty-library"><Clock3 size={32} /><h3>还没有学习记录</h3><p>查词、标记和探索关联词后，可以在这里回顾。</p></div>}

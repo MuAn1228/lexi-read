@@ -109,7 +109,7 @@ def test_upgrade_is_idempotent_and_does_not_make_redundant_backups(legacy):
     assert migrations.migrate_database(engine) is None
     assert rows(path, "SELECT * FROM vocabulary") == before
     assert len(list((path.parent / "backups").glob("*.sqlite3"))) == 1
-    assert len(rows(path, "SELECT * FROM schema_migrations")) == 4
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == len(migrations.MIGRATIONS)
 
 
 def test_upgrade_failure_rolls_back_schema_and_data_without_losing_backup(legacy, monkeypatch):
@@ -146,11 +146,18 @@ def test_fresh_database_initializes_latest_schema(tmp_path):
     from backend.models import Base
     engine = create_engine(f"sqlite:///{tmp_path / 'fresh.sqlite3'}")
     assert migrations.migrate_database(engine) is None
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE name IN ('recommendation_feedback', 'feedback_receipts')"
+        ).all() == []
     Base.metadata.create_all(engine)
     assert migrations.migrate_database(engine) is None
     with engine.connect() as connection:
         assert "first_seen_at" in {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(vocabulary)")}
         assert "lemma" in {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(learning_events)")}
+        assert {row[0] for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE name IN ('recommendation_feedback', 'feedback_receipts')"
+        )} == {"recommendation_feedback", "feedback_receipts"}
     engine.dispose()
 
 
@@ -242,3 +249,93 @@ def test_latest_assessment_orders_actual_instants_then_event_ids(legacy):
     migrations.migrate_database(engine)
     assert rows(path, "SELECT status FROM vocabulary WHERE user_id = 1 AND lemma = 'generalize'")[0]["status"] == "UNCERTAIN"
     assert rows(path, "SELECT status FROM vocabulary WHERE user_id = 2 AND lemma = 'generalize'")[0]["status"] == "UNKNOWN"
+
+
+def test_feedback_upgrade_from_004_preserves_data_and_has_matching_orm_schema(legacy, monkeypatch, tmp_path):
+    from backend.models import Base
+
+    path, engine, connection = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:4])
+    migrations.migrate_database(engine)
+    before_vocabulary = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+    before_events = rows(path, "SELECT * FROM learning_events ORDER BY id")
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    backup = migrations.migrate_database(engine)
+    assert backup and "before-005_recommendation_feedback" in backup.name
+    assert rows(backup, "SELECT name FROM sqlite_master WHERE name = 'recommendation_feedback'") == []
+    assert rows(backup, "SELECT * FROM learning_events ORDER BY id") == before_events
+    assert rows(path, "SELECT * FROM vocabulary ORDER BY id") == before_vocabulary
+    assert rows(path, "SELECT * FROM learning_events ORDER BY id") == before_events
+
+    # SQL migration and fresh ORM setup must agree on columns, FK targets and
+    # indexes; otherwise an installed database can behave differently to tests.
+    fresh = tmp_path / "orm.sqlite3"
+    fresh_engine = create_engine(f"sqlite:///{fresh}")
+    Base.metadata.create_all(fresh_engine)
+    fresh_engine.dispose()
+    for table in ("recommendation_feedback", "feedback_receipts"):
+        assert rows(path, f"PRAGMA table_info({table})") == rows(fresh, f"PRAGMA table_info({table})")
+        def foreign_keys(database):
+            return sorted((row["table"], row["from"], row["to"]) for row in rows(database, f"PRAGMA foreign_key_list({table})"))
+        assert foreign_keys(path) == foreign_keys(fresh)
+        def indexes(database):
+            return sorted((row["name"], row["unique"], row["origin"], row["partial"])
+                          for row in rows(database, f"PRAGMA index_list({table})"))
+        assert indexes(path) == indexes(fresh)
+
+    connection.execute(
+        "INSERT INTO recommendation_feedback VALUES (1,1,4,'overfitting',1,1,'UNKNOWN',0,1,?,?)",
+        (date(7), date(8)),
+    )
+    connection.execute("INSERT INTO feedback_receipts VALUES (1,1,'request-id',4,'overfitting','UNKNOWN',?)", (date(8),))
+    connection.commit()
+    feedback = rows(path, "SELECT * FROM recommendation_feedback")
+    receipts = rows(path, "SELECT * FROM feedback_receipts")
+    assert migrations.migrate_database(engine) is None
+    assert rows(path, "SELECT * FROM recommendation_feedback") == feedback
+    assert rows(path, "SELECT * FROM feedback_receipts") == receipts
+    assert len(list((path.parent / "backups").glob("*.sqlite3"))) == 2
+    assert rows(path, "PRAGMA foreign_key_check") == []
+    assert rows(path, "PRAGMA integrity_check")[0]["integrity_check"] == "ok"
+
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+        connection.execute("INSERT INTO recommendation_feedback VALUES (2,1,4,'overfitting',0,0,NULL,NULL,0,?,?)", (date(8), date(8)))
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+        connection.execute("INSERT INTO feedback_receipts VALUES (2,1,'request-id',4,'overfitting','KNOWN',?)", (date(8),))
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+        connection.execute("INSERT INTO recommendation_feedback VALUES (2,1,4,'variance',0,0,'UNCERTAIN',NULL,0,?,?)", (date(8), date(8)))
+    for user_id, batch_id in ((99, 4), (1, 999)):
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+            connection.execute("INSERT INTO recommendation_feedback VALUES (2,?,?,'variance',0,0,NULL,NULL,0,?,?)", (user_id, batch_id, date(8), date(8)))
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+            connection.execute("INSERT INTO feedback_receipts VALUES (2,?,'other-request',?,'variance','VIEW',?)", (user_id, batch_id, date(8)))
+    connection.rollback()
+
+
+def test_feedback_upgrade_failure_rolls_back_both_tables_and_keeps_backup(legacy, monkeypatch):
+    path, engine, _ = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:4])
+    migrations.migrate_database(engine)
+    before_vocabulary = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+    before_events = rows(path, "SELECT * FROM learning_events ORDER BY id")
+
+    def fail_after_creation(connection, tables):
+        migrations._create_feedback_tracking(connection, tables)
+        connection.execute("DELETE FROM vocabulary WHERE id = 1")
+        raise RuntimeError("feedback migration failed")
+
+    monkeypatch.setattr(migrations, "MIGRATIONS", [*all_migrations[:4], (all_migrations[4][0], fail_after_creation)])
+    with pytest.raises(RuntimeError, match="feedback migration failed"):
+        migrations.migrate_database(engine)
+    assert rows(path, "SELECT * FROM vocabulary ORDER BY id") == before_vocabulary
+    assert rows(path, "SELECT * FROM learning_events ORDER BY id") == before_events
+    assert rows(path, "SELECT name FROM sqlite_master WHERE name IN ('feedback_receipts','recommendation_feedback')") == []
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 4
+    backups = list((path.parent / "backups").glob("*before-005_recommendation_feedback*.sqlite3"))
+    assert len(backups) == 1
+    assert rows(backups[0], "SELECT * FROM vocabulary ORDER BY id") == before_vocabulary
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    assert migrations.migrate_database(engine) is not None
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 5

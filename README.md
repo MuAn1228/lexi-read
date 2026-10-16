@@ -35,8 +35,8 @@ Linux/macOS 对应环境路径是 `.venv/bin/python`，运行同一条 uvicorn �
 1. 上传 JPG/PNG 英文图片，或选择内置机器学习阅读示例。
 2. 点击图片上的词框，或用单词列表快速筛选。
 3. 标记“已掌握 / 不认识 / 不确定”。未标记是独立状态，不代表不确定。
-4. 查看当前句子的语境解释，再主动请求最多 3 个关联词。
-5. 在个人词库、学习记录中查看积累；刷新页面后数据仍保留。
+4. 主动查看语境解释，再请求最多 3 个关联词。展开关联后可反馈认识、不认识、有用或没用。
+5. 在个人词库、学习概览与学习足迹中查看积累；刷新页面后数据仍保留。
 
 键盘 `1 / 2 / 3` 可快速标记选中的词，随后移到下一个词。坐标以原图像素保存，前端按显示尺寸缩放。图片支持缩放与原文切换。
 
@@ -75,9 +75,11 @@ backend/
 图片 → 校验与方向归一化 → OCR 文本 / 行 / 词框 / 置信度
     → Document + WordOccurrence → Vocabulary 观察计数
 用户标记 → Vocabulary 状态 + LearningEvent
-选词 → 句子 + 文章 + 用户模型 → LLMService
+主动查询 → 原词/lemma + 句子/文章 + 三类词表 + 当前词历史/最近行为 → LLMService
     → 候选生成 → 过滤已掌握/当前词/重复词 → 排序 → 最多 3 个词
 ```
+
+Agent 将语义相关、语境相关、陌生程度和学习价值合并排序。当前掌握度越低，陌生度权重越高；KNOWN 或分数至少 0.85 的候选被过滤。输出含六类关系及 0–1 优先级。语境重要度与掌握度是不同字段；离线覆盖词的 0.8 是固定参考值，未覆盖的词为空。LLM JSON 的长度、枚举、有限数值和范围均校验，异常时降级。
 
 `Vocabulary` 按用户和 lemma 去重。使用 simplemma 和保守保护词表，将 generalized / generalizing / generalizes 归并到 generalize；派生名词 generalization 保留自身。无词性上下文的还原仍可能有歧义。事件保留用户看到的原词及 lemma。
 
@@ -128,9 +130,12 @@ npm run build
 | `PUT /api/vocabulary/{word}` | `{"status":"UNKNOWN","document_id":1}`；文档 ID 可省略 |
 | `POST /api/words/analyze` | `{"occurrence_id":1}`：语境释义并记录查询 |
 | `POST /api/words/recommend` | `{"occurrence_id":1}`：个性化关联推荐并记录事件 |
+| `POST /api/recommendations/{batch_id}/feedback` | `word`、`action`、UUID `request_id`；反馈绑定已生成的词项快照 |
 | `GET /api/events?limit=100` | 最近学习事件，最多 1000 条 |
 
 `health` 表示服务和配置可用；OCR 采用延迟加载，因此此接口不代表模型已经下载。LLM 是否成功由每次结果的 `source` / `warning` 表明。
+
+推荐生成、展示和查看分别记录。卡片至少四分之一进入可见区域时记为展示，主动展开才记为查看。每次反馈绑定推荐批次；UUID 回执保证响应丢失后的重试不重复记账，也不会覆盖后续选择。反馈、词库状态、掌握度及事件同事务保存。有用/没用针对当前词与目标词这组关联调整排序，超过最近 100 条事件的反馈仍参与排序。
 
 ## MVP 边界
 

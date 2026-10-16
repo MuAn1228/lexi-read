@@ -43,8 +43,16 @@ export interface Explanation {
   part_of_speech: string; importance: number | null; source: 'llm' | 'offline'; warning?: string;
 }
 export type RelationType = 'word_family' | 'synonym' | 'antonym' | 'concept' | 'collocation' | 'domain_related';
+export interface RelatedWord {
+  word: string; meaning: string; reason: string; score: number; relation: RelationType; priority: number;
+}
 export interface Recommendation {
-  items: { word: string; meaning: string; reason: string; score: number; relation: RelationType; priority: number }[];
+  batch_id: number; items: RelatedWord[];
   source: 'llm' | 'offline'; warning?: string;
+}
+export type RecommendationAction = 'SHOWN' | 'VIEWED' | 'KNOWN' | 'UNKNOWN' | 'USEFUL' | 'NOT_USEFUL';
+export interface RecommendationFeedback {
+  batch_id: number; word: string; shown: boolean; viewed: boolean;
+  status: 'KNOWN' | 'UNKNOWN' | null; useful: boolean | null; vocabulary: Vocabulary | null;
 }
 export interface Health { status: string; ocr_provider: string; llm_provider: string }
