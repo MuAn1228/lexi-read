@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ArrowDownRight, ArrowRight, BookOpen, Check, LoaderCircle, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { errorMessage, request } from './api';
-import type { Explanation, Occurrence, Recommendation, Vocabulary, WordStatus } from './types';
+import type { Explanation, Occurrence, Recommendation, RelationType, Vocabulary, WordStatus } from './types';
 import { StatusBadge, WordControls } from './WordControls';
 import WordHistoryPanel from './WordHistoryPanel';
+
+const relationLabels: Record<RelationType, string> = { word_family: '同词族', synonym: '近义词', antonym: '反义词', concept: '概念关联', collocation: '常见搭配', domain_related: '同领域' };
 
 export default function ContextPanel({ word, onMark, saving, onNext, onAdd, vocabulary, onLearningChanged }: {
   word: Occurrence | null; onMark: (status: WordStatus) => void; saving: boolean;
@@ -72,7 +74,7 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
         {!explanation && !loading && !error && <button className="button related-button" onClick={() => setRetry(v => v + 1)}><BookOpen size={16} />查看语境释义</button>}
         {loading && <div className="loading-copy" role="status"><LoaderCircle size={16} className="spin" />正在结合原文理解这个词…</div>}
         {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(v => v + 1)}><RefreshCw size={13} />重新获取</button></div>}
-        {explanation && <><h3>{explanation.meaning_in_context}</h3><p>{explanation.simple_explanation}</p>{explanation.warning && <p className="service-note">{explanation.warning}</p>}</>}
+        {explanation && <><h3>{explanation.meaning_in_context}</h3><p>{explanation.simple_explanation}</p>{typeof explanation.importance === 'number' && Number.isFinite(explanation.importance) && <p className="context-importance">文中重要程度 · <strong>{Math.round(explanation.importance * 100)} / 100</strong><span>帮助安排阅读顺序，仅供参考。</span></p>}{explanation.warning && <p className="service-note">{explanation.warning}</p>}</>}
       </section>
       <WordHistoryPanel lemma={word.lemma} updatedAt={vocabulary.find(entry => entry.lemma === word.lemma)?.updated_at} revision={historyRevision} />
       {syncError && <div className="learning-sync-error inline-error" role="alert"><p>词库统计刷新失败：{syncError}</p><button className="text-button" onClick={() => void onLearningChanged().then(() => { setSyncError(''); setHistoryRevision(revision => revision + 1); }).catch(e => setSyncError(errorMessage(e)))}><RefreshCw size={13} />刷新词库统计</button></div>}
@@ -84,9 +86,10 @@ export default function ContextPanel({ word, onMark, saving, onNext, onAdd, voca
         {recommendation && <><div className="recommendation-meta"><span className={`source-badge ${recommendation.source}`}>{recommendation.source === 'llm' ? 'AI 个性化推荐' : '离线规则推荐'}</span><button className="text-button" disabled={recommending} onClick={() => setRelatedRequest(v => v + 1)} aria-label="刷新关联推荐"><RefreshCw size={12} /></button></div>
           {recommendation.items.slice(0, 3).map(item => {
             const saved = vocabulary.some(entry => (entry.word.toLowerCase() === item.word.toLowerCase() || entry.lemma === item.word.toLowerCase()) && entry.status !== null);
-            return <article className="related-card" key={item.word}><div><h4>{item.word}</h4><button className={`icon-button add-word ${saved ? 'saved' : ''}`} aria-label={saved ? `${item.word} 已加入词库` : `将 ${item.word} 加入待学习`} title={saved ? '已在词库中' : '以「不确定」状态加入词库'} disabled={saving || saved} onClick={() => void onAdd(item.word)}>{saved ? <Check size={15} /> : <Plus size={15} />}</button></div><p className="related-meaning">{item.meaning}</p><p className="related-reason">{item.reason}</p></article>;
+            return <article className="related-card" key={item.word}><div><h4>{item.word}</h4><button className={`icon-button add-word ${saved ? 'saved' : ''}`} aria-label={saved ? `${item.word} 已加入词库` : `将 ${item.word} 加入待学习`} title={saved ? '已在词库中' : '以「不确定」状态加入词库'} disabled={saving || saved} onClick={() => void onAdd(item.word)}>{saved ? <Check size={15} /> : <Plus size={15} />}</button></div><p className="related-meaning">{item.meaning}</p><div className="related-priority"><span className="tiny-badge">{relationLabels[item.relation] ?? '概念关联'}</span>{typeof item.priority === 'number' && Number.isFinite(item.priority) && <span>学习优先级 {Math.round(item.priority * 100)} / 100</span>}</div><p className="related-reason">{item.reason}</p></article>;
           })}
           {!recommendation.items.length && <p className="service-note">暂时没有合适的关联词。继续阅读，积累更多语境。</p>}
+          {recommendation.items.length > 0 && <p className="service-note">学习优先级按语境和学习记录的规则评分，用于安排学习顺序。</p>}
           {recommendation.warning && <p className="service-note">{recommendation.warning}</p>}
         </>}
       </section>

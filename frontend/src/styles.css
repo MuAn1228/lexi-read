@@ -141,6 +141,10 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 .related-button:hover { background: #e9f1e0; }
 .recommendation-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .related-card { border: 1px solid #e9ecdf; background: #fafbf5; border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
+.related-priority { font-size: 11px; color: #68796f; margin-bottom: 9px; flex-wrap: wrap; }
+.meaning-section > p.context-importance { margin-top: 13px; padding: 9px 11px; background: #f1f5eb; border-radius: 5px; font-size: 11px; }
+.context-importance strong { font-weight: 500; color: #426a50; }
+.context-importance > span { display: block; }
 .related-card > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .related-card h4 { font-family: Georgia, serif; font-size: 16px; font-weight: normal; color: #5d795d; overflow-wrap: anywhere; }
 .related-meaning { font-size: 12px; margin: 3px 0 8px; color: #68796f; }

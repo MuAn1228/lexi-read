@@ -19,8 +19,8 @@
 
 ## P2：个性化 Agent 与反馈
 
-- [ ] 明确传入词/lemma/句子/文章、known/unknown/uncertain、当前词历史、最近事件。
-- [ ] 解释 importance、推荐 relation/priority；保持结构验证与 fallback。
+- [x] 明确传入词/lemma/句子/文章、known/unknown/uncertain、当前词历史、最近事件。
+- [x] 解释 importance、推荐 relation/priority；保持结构验证与 fallback。
 - [ ] 推荐曝光、逐项查看、认识/不认识、有用/没用反馈；可追溯到推荐项。
 - [ ] 掌握度与反馈参与排序；保留 Top-K<=3 和已掌握过滤。
 

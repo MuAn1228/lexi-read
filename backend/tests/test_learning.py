@@ -91,11 +91,14 @@ def test_lookups_and_recommendations_are_personalized_and_recorded(client):
     analysis = client.post("/api/words/analyze", json={"occurrence_id": selected["id"]}).json()
     assert analysis["source"] == "offline"
     assert analysis["meaning_in_context"] == "泛化能力"
+    assert analysis["importance"] == .8
     assert analysis["warning"]
     client.put("/api/vocabulary/overfitting", json={"status": "KNOWN"})
     recommendations = client.post("/api/words/recommend", json={"occurrence_id": selected["id"]}).json()
     assert 0 < len(recommendations["items"]) <= 3
     assert all(item["word"] not in {"generalization", "overfitting"} for item in recommendations["items"])
+    assert all(item["relation"] == "concept" and 0 <= item["priority"] == item["score"] <= 1
+               for item in recommendations["items"])
     events = client.get("/api/events").json()
     assert events[0]["event_type"] == "RECOMMENDATION_GENERATED"
     assert len(events[0]["details"]["recommended_words"]) <= 3
@@ -251,6 +254,7 @@ def test_offline_does_not_invent_non_ml_meaning_or_recommendations():
     service = LLMService(Settings(llm_provider="offline", _env_file=None))
     analysis = service.analyze_word("distribution", "distribution", "The distribution of food begins today.", "")
     assert analysis.meaning_in_context == "暂无可靠的上下文释义"
+    assert analysis.importance is None
     assert service.recommend_related_words("distribution", "Food distribution", "", [], []).candidates == []
     assert normalize_word("generalization") == "generalization"
     assert normalize_word("Models") == "model"
@@ -360,13 +364,17 @@ def test_remote_llm_structured_response_and_failure_fallback(monkeypatch):
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"word":"generalization", "lemma":"generalization", "meaning_in_context":"泛化", "simple_explanation":"对新数据的表现", "part_of_speech":"noun"}'}}]})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"word":"generalization", "lemma":"generalization", "meaning_in_context":"泛化", "simple_explanation":"对新数据的表现", "part_of_speech":"noun", "importance":0.9}'}}]})
 
     monkeypatch.setattr("backend.services.llm.httpx.Client", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
     result = service.analyze_word("generalization", "generalization", "A machine learning model", "")
     assert result.source == "llm" and result.warning is None
     assert requests[0].headers["authorization"] == "Bearer secret-value"
-    assert b"article" in requests[0].content and b"sentence" in requests[0].content
+    assert result.importance == .9
+    prompt = json.loads(json.loads(requests[0].content)["messages"][1]["content"])
+    assert prompt["current_word"] == "generalization"
+    assert prompt["current_sentence"] == "A machine learning model"
+    assert prompt["document_context"] == ""
 
     def invalid_handler(request):
         return httpx.Response(200, json={"choices": [{"message": {"content": "not JSON"}}]})
@@ -405,6 +413,7 @@ def test_remote_recommendation_sends_context_and_personal_history(monkeypatch):
                         lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
     vocabulary = [{"lemma": "overfitting", "status": "KNOWN", "mastery_score": None},
                   {"lemma": "regularization", "status": "UNKNOWN", "mastery_score": None},
+                  {"lemma": "bias", "status": "UNCERTAIN", "mastery_score": .4},
                   {"lemma": "model", "status": None, "mastery_score": None}]
     history = [{"word": "overfitting", "event_type": "MARK_KNOWN", "details": {}},
                {"word": "generalization", "event_type": "VIEW_RELATED",
@@ -424,8 +433,12 @@ def test_remote_recommendation_sends_context_and_personal_history(monkeypatch):
     assert payload["response_format"] == {"type": "json_object"}
     assert [message["role"] for message in payload["messages"]] == ["system", "user"]
     assert json.loads(payload["messages"][1]["content"]) == {
-        "word": "generalization", "sentence": sentence, "article": article,
-        "vocabulary": vocabulary, "learning_history": history}
+        "current_word": "generalization", "lemma": "generalization",
+        "current_sentence": sentence, "document_context": article,
+        "known_words": ["overfitting"], "unknown_words": ["regularization"],
+        "uncertain_words": ["bias"],
+        "current_word_history": {"vocabulary": None, "last_mark": None, "events": [history[1]]},
+        "recent_learning_events": history}
     assert "secret-value" not in request.content.decode()
 
 
@@ -434,6 +447,7 @@ def test_remote_recommendation_sends_context_and_personal_history(monkeypatch):
     ({"context_relevance": -.01}, 1),
     ({"learning_value": "not-a-score"}, 1),
     ({"learning_value": float("inf")}, 1),
+    ({"relation": "invented_relation"}, 1),
     ({}, 13),
 ])
 def test_remote_recommendation_rejects_invalid_scores_and_oversized_batches(monkeypatch, changes, count):
@@ -453,3 +467,87 @@ def test_remote_recommendation_rejects_invalid_scores_and_oversized_batches(monk
     assert result.candidates
     assert all(item.word != "invalid-candidate" for item in result.candidates)
     assert "secret-value" not in result.warning
+
+
+def test_both_agent_calls_receive_current_word_history_outside_recent_global_window(client, monkeypatch):
+    doc = demo(client)
+    selected = occurrence(doc)
+    client.put("/api/vocabulary/Generalization", json={"status": "UNCERTAIN"})
+    for _ in range(21):
+        client.post("/api/words/analyze", json={"occurrence_id": selected["id"]})
+    for _ in range(101):
+        client.put("/api/vocabulary/overfitting", json={"status": "KNOWN"})
+    client.put("/api/vocabulary/regularization", json={"status": "UNKNOWN"})
+    recent = client.get("/api/events?limit=100").json()
+    assert not any(event["lemma"] == selected["lemma"] for event in recent)
+    inputs = []
+
+    def complete(self, instruction, data, schema):
+        inputs.append(data)
+        if "meaning_in_context" in schema.model_fields:
+            return schema.model_validate({"word": data["current_word"], "lemma": data["lemma"],
+                "meaning_in_context": "泛化能力", "simple_explanation": "在新数据上的表现", 
+                "part_of_speech": "noun", "importance": .9})
+        return schema.model_validate({"candidates": [candidate("regularization").model_dump()]})
+
+    monkeypatch.setattr("backend.services.llm.get_settings", lambda: Settings(
+        llm_provider="openai_compatible", llm_model="test", llm_api_key="test", _env_file=None))
+    monkeypatch.setattr(LLMService, "_complete", complete)
+    for endpoint in ("analyze", "recommend"):
+        response = client.post(f"/api/words/{endpoint}", json={"occurrence_id": selected["id"]})
+        assert response.status_code == 200, response.text
+        assert response.json()["source"] == "llm"
+    assert len(inputs) == 2
+    for data in inputs:
+        assert data["current_word"] == "Generalization"
+        assert data["lemma"] == "generalization"
+        assert data["current_sentence"] == selected["sentence"]
+        assert data["document_context"] == doc["ocr_text"]
+        assert data["known_words"] == ["overfitting"]
+        assert data["unknown_words"] == ["regularization"]
+        assert data["uncertain_words"] == ["generalization"]
+        assert len(data["recent_learning_events"]) == 100
+        history = data["current_word_history"]
+        assert history["last_mark"]["event_type"] == "MARK_UNCERTAIN"
+        assert history["last_mark"]["word"] == "Generalization"
+        assert history["vocabulary"]["status"] == "UNCERTAIN"
+        assert history["vocabulary"]["mastery_score"] == 0
+        assert len(history["events"]) == 20
+        assert all(event["event_type"] == "LOOKUP" for event in history["events"])
+
+
+@pytest.mark.parametrize("importance", [-.01, 1.01, float("inf"), float("nan"), "very important"])
+def test_remote_explanation_rejects_invalid_importance_and_falls_back(monkeypatch, importance):
+    service = LLMService(Settings(llm_provider="openai_compatible", llm_model="test",
+                                 llm_api_key="secret-value", _env_file=None))
+    real_client = httpx.Client
+    invalid = {"word": "generalization", "lemma": "generalization", "meaning_in_context": "模型结果",
+               "simple_explanation": "model output", "part_of_speech": "noun", "importance": importance}
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(invalid)}}]})
+
+    monkeypatch.setattr("backend.services.llm.httpx.Client",
+                        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = service.analyze_word("generalization", "generalization", "machine learning", "")
+    assert result.source == "offline" and result.warning
+    assert result.importance == .8
+    assert result.meaning_in_context == "泛化能力"
+
+
+def test_mastery_changes_priority_and_lookup_uses_normalized_lemma():
+    agent = VocabularyAgent(None)
+    candidates = [candidate("overfitting"), candidate("regularization")]
+    initial = agent.rank(candidates, "generalization", "", [], [])
+    assert initial[0].word == "overfitting"
+    ranked = agent.rank(candidates, "generalization", "", [
+        {"lemma": "overfitting", "status": "UNKNOWN", "mastery_score": .8},
+        {"lemma": "regularization", "status": "UNKNOWN", "mastery_score": .2}], [])
+    assert ranked[0].word == "regularization"
+    assert ranked[0].priority > ranked[1].priority
+    assert all(item.priority == item.score and item.relation == "concept" for item in ranked)
+    models = [candidate("model")]
+    plain = agent.rank(models, "generalization", "", [], [])[0]
+    queried = agent.rank(models, "generalization", "", [], [
+        {"word": "Models", "lemma": "model", "event_type": "LOOKUP"}])[0]
+    assert queried.priority == pytest.approx(plain.priority + .025)

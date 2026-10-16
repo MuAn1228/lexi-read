@@ -101,8 +101,11 @@ def require_occurrence(session: Session, occurrence_id: int):
 @router.post("/words/analyze", response_model=AnalysisOut)
 def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_session)):
     occurrence, doc = require_occurrence(session, payload.occurrence_id)
-    analysis = LLMService().analyze_word(occurrence.word, occurrence.lemma, occurrence.sentence, doc.ocr_text)
-    VocabularyService(VocabularyRepository(session)).lookup(occurrence.word, doc.id, analysis.source)
+    repository = VocabularyRepository(session)
+    context = VocabularyAgent(repository).build_context(occurrence, doc)
+    analysis = LLMService().analyze_word(occurrence.word, occurrence.lemma, occurrence.sentence, doc.ocr_text,
+                                       learner_context=context)
+    VocabularyService(repository).lookup(occurrence.word, doc.id, analysis.source)
     return analysis
 
 

@@ -3,8 +3,8 @@ import re
 
 from backend.models import Document, WordOccurrence
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import Recommendation, RecommendationsOut
-from backend.services.llm import Candidate, LLMService
+from backend.schemas import EventOut, Recommendation, RecommendationsOut, VocabularyOut
+from backend.services.llm import Candidate, LLMService, learner_data
 from backend.services.vocabulary import normalize_word
 
 
@@ -22,7 +22,10 @@ class VocabularyAgent:
             if event["event_type"] in {"VIEW_RELATED", "RECOMMENDATION_GENERATED"}:
                 viewed.update(event.get("details", {}).get("recommended_words", []))
             if event["event_type"] == "LOOKUP":
-                looked_up.add(event["word"])
+                try:
+                    looked_up.add(normalize_word(event.get("lemma") or event["word"]))
+                except ValueError:
+                    continue
         seen, ranked = {current}, []
         families = ({"general", "generally", "generalize", "generalization"},)
         for candidate in candidates:
@@ -55,21 +58,38 @@ class VocabularyAgent:
                                "UNCERTAIN": "你对这个词还不确定，可以结合本文巩固。"}.get(row.get("status"), "")
             if lemma in viewed:
                 personal_reason += "此前推荐过，本次结合阅读再次回顾。"
+            priority = round(max(0, min(1, score)), 4)
             ranked.append(Recommendation(word=lemma, meaning=candidate.meaning,
                                          reason=candidate.reason + personal_reason,
-                                         score=round(max(0, min(1, score)), 4)))
+                                         relation=candidate.relation, priority=priority, score=priority))
         return tuple(sorted(ranked, key=lambda item: (-item.score, item.word))[:3])
 
+    def build_context(self, occurrence: WordOccurrence, document: Document,
+                      vocabulary: list[dict] | None = None, history: list[dict] | None = None) -> dict:
+        if vocabulary is None:
+            vocabulary = [VocabularyOut.model_validate(row).model_dump(mode="json") for row in self.repo.all()]
+        if history is None:
+            history = [EventOut.model_validate(row).model_dump(mode="json") for row in self.repo.history(100)]
+        context = learner_data(occurrence.word, occurrence.lemma, occurrence.sentence, document.ocr_text,
+                               vocabulary, history)
+        last_mark = self.repo.last_mark(occurrence.lemma)
+        context["current_word_history"] = {
+            "vocabulary": next((row for row in vocabulary if row["lemma"] == occurrence.lemma), None),
+            "last_mark": EventOut.model_validate(last_mark).model_dump(mode="json") if last_mark else None,
+            "events": [EventOut.model_validate(row).model_dump(mode="json")
+                       for row in self.repo.word_history(occurrence.lemma)],
+        }
+        return context
+
     def recommend(self, occurrence: WordOccurrence, document: Document) -> RecommendationsOut:
-        vocabulary = [{"lemma": row.lemma, "status": row.status, "mastery_score": row.mastery_score,
-                       "seen_count": row.seen_count, "lookup_count": row.lookup_count}
-                      for row in self.repo.all()]
-        history = [{"word": row.word, "event_type": row.event_type, "details": row.details,
-                    "created_at": row.created_at.isoformat()} for row in self.repo.history(100)]
-        generated = self.llm.recommend_related_words(occurrence.lemma, occurrence.sentence,
-                                                     document.ocr_text, vocabulary, history)
+        vocabulary = [VocabularyOut.model_validate(row).model_dump(mode="json") for row in self.repo.all()]
+        history = [EventOut.model_validate(row).model_dump(mode="json") for row in self.repo.history(100)]
+        context = self.build_context(occurrence, document, vocabulary, history)
+        generated = self.llm.recommend_related_words(occurrence.word, occurrence.sentence,
+                                                     document.ocr_text, vocabulary, history,
+                                                     learner_context=context)
         selected = self.rank(generated.candidates, occurrence.lemma, document.ocr_text, vocabulary, history)
-        self.repo.event(occurrence.lemma, "RECOMMENDATION_GENERATED", document.id,
+        self.repo.event(occurrence.word, "RECOMMENDATION_GENERATED", document.id,
                         {"recommended_words": [item.word for item in selected], "source": generated.source})
         self.repo.session.commit()
         return RecommendationsOut(items=selected, source=generated.source, warning=generated.warning)

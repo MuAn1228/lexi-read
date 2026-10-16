@@ -132,15 +132,27 @@ class AnalysisOut(Schema):
     meaning_in_context: str
     simple_explanation: str
     part_of_speech: str
+    importance: float | None = Field(ge=0, le=1, allow_inf_nan=False)
     source: str
     warning: str | None = None
+
+
+class Relation(str, Enum):
+    WORD_FAMILY = "word_family"
+    SYNONYM = "synonym"
+    ANTONYM = "antonym"
+    CONCEPT = "concept"
+    COLLOCATION = "collocation"
+    DOMAIN_RELATED = "domain_related"
 
 
 class Recommendation(Schema):
     word: str
     meaning: str
     reason: str
-    score: float
+    relation: Relation
+    priority: float = Field(ge=0, le=1, allow_inf_nan=False)
+    score: float = Field(ge=0, le=1, allow_inf_nan=False)
 
 
 class RecommendationsOut(Schema):

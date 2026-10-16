@@ -40,10 +40,11 @@ export interface Dashboard {
 }
 export interface Explanation {
   word: string; lemma: string; meaning_in_context: string; simple_explanation: string;
-  part_of_speech: string; source: 'llm' | 'offline'; warning?: string;
+  part_of_speech: string; importance: number | null; source: 'llm' | 'offline'; warning?: string;
 }
+export type RelationType = 'word_family' | 'synonym' | 'antonym' | 'concept' | 'collocation' | 'domain_related';
 export interface Recommendation {
-  items: { word: string; meaning: string; reason: string; score: number }[];
+  items: { word: string; meaning: string; reason: string; score: number; relation: RelationType; priority: number }[];
   source: 'llm' | 'offline'; warning?: string;
 }
 export interface Health { status: string; ocr_provider: string; llm_provider: string }

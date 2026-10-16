@@ -12,7 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.config import Settings, get_settings
-from backend.schemas import AnalysisOut
+from backend.schemas import AnalysisOut, Relation
 from backend.services.vocabulary import normalize_word
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class ExplanationData(BaseModel):
     meaning_in_context: str = Field(min_length=1, max_length=500)
     simple_explanation: str = Field(min_length=1, max_length=1500)
     part_of_speech: str = Field(min_length=1, max_length=60)
+    importance: float | None = Field(ge=0, le=1, allow_inf_nan=False)
 
 
 class Candidate(BaseModel):
@@ -32,6 +33,7 @@ class Candidate(BaseModel):
     word: str = Field(min_length=1, max_length=150)
     meaning: str = Field(min_length=1, max_length=300)
     reason: str = Field(min_length=1, max_length=600)
+    relation: Relation = Relation.CONCEPT
     semantic_relevance: float = Field(ge=0, le=1, allow_inf_nan=False)
     context_relevance: float = Field(ge=0, le=1, allow_inf_nan=False)
     learning_value: float = Field(ge=0, le=1, allow_inf_nan=False)
@@ -95,6 +97,36 @@ def is_ml_context(context: str) -> bool:
     return len(terms & set(re.findall(r"[a-z]+(?:-[a-z]+)*", text))) >= 2
 
 
+def learner_data(word: str, lemma: str, sentence: str, article: str,
+                 vocabulary: list[dict] | None = None, history: list[dict] | None = None,
+                 learner_context: dict | None = None) -> dict:
+    """Keep direct adapter callers compatible while making profile fields explicit.
+
+    API calls supply separately queried current-word history, so an old mark is
+    not lost merely because another word generated more than 100 newer events.
+    """
+    vocabulary, history = vocabulary or [], history or []
+    word_events = [event for event in history if event.get("lemma", event.get("word")) == lemma]
+    marks = [event for event in word_events if event.get("event_type", "").startswith("MARK_")]
+    data = {
+        "known_words": [row["lemma"] for row in vocabulary if row.get("status") == "KNOWN"][:2000],
+        "unknown_words": [row["lemma"] for row in vocabulary if row.get("status") == "UNKNOWN"][:2000],
+        "uncertain_words": [row["lemma"] for row in vocabulary if row.get("status") == "UNCERTAIN"][:2000],
+        "current_word_history": {
+            "vocabulary": next((row for row in vocabulary if row["lemma"] == lemma), None),
+            "last_mark": marks[0] if marks else None,
+            "events": word_events[:20],
+        },
+        "recent_learning_events": history[:100],
+    }
+    if learner_context is not None:
+        data.update(learner_context)
+    # Reading identity/context always come from the selected occurrence.
+    data.update(current_word=word, lemma=lemma, current_sentence=sentence,
+                document_context=article[:24_000])
+    return data
+
+
 class LLMService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -122,16 +154,20 @@ class LLMService:
             raise ValueError("Invalid model response")
         return schema.model_validate_json(content)
 
-    def analyze_word(self, word: str, lemma: str, sentence: str, article: str) -> AnalysisOut:
+    def analyze_word(self, word: str, lemma: str, sentence: str, article: str,
+                     learner_context: dict | None = None) -> AnalysisOut:
         warning = "当前为离线模式，仅提供有限的机器学习语境释义。"
         if self.settings.llm_provider != "offline":
             try:
                 result = self._complete(
                     "Explain the selected English word in its current sentence and article. "
                     "Give concise Chinese meaning_in_context and simple_explanation, and English part_of_speech. "
-                    "Keep word and lemma exactly as supplied; explain the contextual sense, not a dictionary list.",
-                    {"word": word, "lemma": lemma, "sentence": sentence, "article": article[:24_000]}, ExplanationData)
-                if normalize_word(result.word) != lemma or normalize_word(result.lemma) != lemma:
+                    "Return importance as the word's importance to understanding this article, 0 to 1, "
+                    "or null when evidence is insufficient. Use learning history to adapt the explanation, "
+                    "without equating mastery with contextual importance. "
+                    "Keep word equal to current_word and lemma exactly as supplied; explain the contextual sense, not a dictionary list.",
+                    learner_data(word, lemma, sentence, article, learner_context=learner_context), ExplanationData)
+                if result.word != word or result.lemma != lemma:
                     raise ValueError("Model explained a different word")
                 return AnalysisOut(**result.model_dump(), source="llm")
             except (httpx.HTTPError, ValidationError, ValueError, KeyError, IndexError, TypeError):
@@ -143,10 +179,14 @@ class LLMService:
         else:
             meaning, explanation, pos = ("暂无可靠的上下文释义", "离线词表未覆盖该词或当前语境。配置 AI 服务后可获取上下文解释。", "unknown")
         return AnalysisOut(word=word, lemma=lemma, meaning_in_context=meaning,
-                           simple_explanation=explanation, part_of_speech=pos, source="offline", warning=warning)
+                           simple_explanation=explanation, part_of_speech=pos,
+                           # Curated covered ML terms receive a fixed relevance hint,
+                           # not an inferred scientific importance estimate.
+                           importance=.8 if entry else None, source="offline", warning=warning)
 
     def recommend_related_words(self, word: str, sentence: str, article: str,
-                                vocabulary: list[dict], history: list[dict]) -> GeneratedCandidates:
+                                vocabulary: list[dict], history: list[dict],
+                                learner_context: dict | None = None) -> GeneratedCandidates:
         warning = "离线推荐：基于有限的机器学习词汇关系，并结合你的标记与历史排序。"
         if self.settings.llm_provider != "offline":
             try:
@@ -156,9 +196,10 @@ class LLMService:
                     "Prefer conceptual connections over synonyms or morphological word families. "
                     "Exclude the selected word, already-known words and duplicates. "
                     "Use concise Chinese meanings and reasons. Scores are numbers between 0 and 1. "
+                    "Give a precise relation: word_family, synonym, antonym, concept, collocation or domain_related. "
                     "Do not claim that an unassessed word is known. Return an empty list when nothing is useful.",
-                    {"word": word, "sentence": sentence, "article": article[:24_000],
-                     "vocabulary": vocabulary[:2000], "learning_history": history[:100]}, CandidateBatch)
+                    learner_data(word, normalize_word(word), sentence, article, vocabulary, history,
+                                 learner_context), CandidateBatch)
                 return GeneratedCandidates(result.candidates, "llm")
             except (httpx.HTTPError, ValidationError, ValueError, KeyError, IndexError, TypeError):
                 logger.warning("LLM recommendations unavailable or invalid; using offline fallback")
