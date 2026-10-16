@@ -109,7 +109,7 @@ def test_upgrade_is_idempotent_and_does_not_make_redundant_backups(legacy):
     assert migrations.migrate_database(engine) is None
     assert rows(path, "SELECT * FROM vocabulary") == before
     assert len(list((path.parent / "backups").glob("*.sqlite3"))) == 1
-    assert len(rows(path, "SELECT * FROM schema_migrations")) == 2
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 3
 
 
 def test_upgrade_failure_rolls_back_schema_and_data_without_losing_backup(legacy, monkeypatch):
@@ -188,9 +188,56 @@ def test_mastery_can_upgrade_previously_migrated_database(legacy, monkeypatch):
     all_migrations = migrations.MIGRATIONS
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:1])
     migrations.migrate_database(engine)
-    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:2])
     backup = migrations.migrate_database(engine)
     assert "before-002_mastery_heuristic" in backup.name
     assert rows(backup, "SELECT mastery_score FROM vocabulary WHERE id = 1")[0]["mastery_score"] is None
     assert rows(path, "SELECT mastery_score FROM vocabulary WHERE id = 1")[0]["mastery_score"] == .45
     assert len(rows(path, "SELECT * FROM schema_migrations")) == 2
+
+
+@pytest.mark.parametrize("already_upgraded", [False, True])
+def test_latest_assessment_survives_newer_lookup_of_an_older_known_form(legacy, monkeypatch, already_upgraded):
+    path, engine, connection = legacy
+    # generalized was marked KNOWN on day 2; generalizing UNKNOWN on day 3.
+    # Looking up the older KNOWN form on day 6 changes its row's updated_at.
+    connection.execute("UPDATE vocabulary SET updated_at = ? WHERE id = 1", (date(6),))
+    connection.execute("INSERT INTO learning_events VALUES (5, 1, 'generalized', 'LOOKUP', 1, '{}', ?)",
+                       (date(6),))
+    connection.commit()
+    all_migrations = migrations.MIGRATIONS
+    if already_upgraded:
+        monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:2])
+        migrations.migrate_database(engine)
+        before = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+        assert before[0]["status"] == "KNOWN"  # The previously shipped bug.
+        events_before = rows(path, "SELECT * FROM learning_events ORDER BY id")
+        monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    backup = migrations.migrate_database(engine)
+    assert "before-003_latest_explicit_assessment" in backup.name
+    after = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+    assert after[0]["lemma"] == "generalize" and after[0]["status"] == "UNKNOWN"
+    assert (after[0]["seen_count"], after[0]["lookup_count"], after[0]["mastery_score"]) == (6, 3, .8)
+    assert after[2]["user_id"] == 2 and after[2]["status"] == "KNOWN"
+    assert after[3]["lemma"] == "unknown" and after[3]["status"] == "UNKNOWN"  # No mark evidence.
+    if already_upgraded:
+        before[0]["status"] = "UNKNOWN"
+        assert after == before  # This repair changes no other columns.
+        assert rows(path, "SELECT * FROM learning_events ORDER BY id") == events_before
+        assert rows(backup, "SELECT status FROM vocabulary WHERE id = 1")[0]["status"] == "KNOWN"
+    assert migrations.migrate_database(engine) is None
+    assert rows(path, "SELECT * FROM vocabulary ORDER BY id") == after
+
+
+def test_latest_assessment_orders_actual_instants_then_event_ids(legacy):
+    path, engine, connection = legacy
+    connection.executemany("INSERT INTO learning_events VALUES (?, ?, ?, ?, ?, ?, ?)", [
+        (5, 1, "generalizes", "MARK_KNOWN", 1, '{}', "2024-01-07T10:00:00+08:00"),
+        (6, 1, "generalizing", "MARK_UNKNOWN", 1, '{}', "2024-01-07T03:00:00Z"),
+        (7, 1, "generalized", "MARK_UNCERTAIN", 1, '{}', "2024-01-07T03:00:00+00:00"),
+        (8, 2, "generalizes", "MARK_UNKNOWN", None, '{}', "2024-01-08T00:00:00Z"),
+    ])
+    connection.commit()
+    migrations.migrate_database(engine)
+    assert rows(path, "SELECT status FROM vocabulary WHERE user_id = 1 AND lemma = 'generalize'")[0]["status"] == "UNCERTAIN"
+    assert rows(path, "SELECT status FROM vocabulary WHERE user_id = 2 AND lemma = 'generalize'")[0]["status"] == "UNKNOWN"

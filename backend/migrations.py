@@ -157,8 +157,35 @@ def _backfill_mastery(connection: sqlite3.Connection, tables: set[str]) -> None:
             connection.execute("UPDATE vocabulary SET mastery_score = ? WHERE id = ?", (score, entry["id"]))
 
 
+def _restore_latest_assessment(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Restore merged state from assessments, never from a later passive update.
+
+    The first migration chose between legacy rows by updated_at. That field also
+    changes when a word is observed or queried, so it cannot date an assessment.
+    Leave entries without explicit mark evidence, counters, scores and events as
+    they are; a score describes accumulated signals rather than the latest mark.
+    """
+    if not {"vocabulary", "learning_events"} <= tables:
+        return
+    latest = {}
+    for event in connection.execute(
+        "SELECT id, user_id, word, lemma, event_type, created_at FROM learning_events "
+        "WHERE event_type IN ('MARK_KNOWN', 'MARK_UNKNOWN', 'MARK_UNCERTAIN')"
+    ):
+        key = (event["user_id"], _canonical(event["lemma"] or event["word"]))
+        order = (_time(event["created_at"]), event["id"])
+        if key not in latest or order > latest[key][0]:
+            latest[key] = (order, event["event_type"].removeprefix("MARK_"))
+    for (user_id, lemma), (_, status) in latest.items():
+        connection.execute(
+            "UPDATE vocabulary SET status = ? WHERE user_id = ? AND lemma = ?",
+            (status, user_id, lemma),
+        )
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
-MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery)]
+MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
+              ("003_latest_explicit_assessment", _restore_latest_assessment)]
 
 
 def migrate_database(engine: Engine) -> Path | None:
