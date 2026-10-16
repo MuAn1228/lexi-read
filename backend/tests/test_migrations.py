@@ -109,7 +109,7 @@ def test_upgrade_is_idempotent_and_does_not_make_redundant_backups(legacy):
     assert migrations.migrate_database(engine) is None
     assert rows(path, "SELECT * FROM vocabulary") == before
     assert len(list((path.parent / "backups").glob("*.sqlite3"))) == 1
-    assert len(rows(path, "SELECT * FROM schema_migrations")) == 3
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 4
 
 
 def test_upgrade_failure_rolls_back_schema_and_data_without_losing_backup(legacy, monkeypatch):
@@ -205,7 +205,8 @@ def test_latest_assessment_survives_newer_lookup_of_an_older_known_form(legacy, 
     connection.execute("INSERT INTO learning_events VALUES (5, 1, 'generalized', 'LOOKUP', 1, '{}', ?)",
                        (date(6),))
     connection.commit()
-    all_migrations = migrations.MIGRATIONS
+    all_migrations = migrations.MIGRATIONS[:3]
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
     if already_upgraded:
         monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:2])
         migrations.migrate_database(engine)

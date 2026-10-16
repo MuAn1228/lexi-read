@@ -28,10 +28,29 @@ def normalize_word(word: str) -> str:
     normalized = re.sub(r"\s+", " ", word.strip().lower().replace("’", "'").replace("–", "-"))
     if not re.fullmatch(r"[a-z]+(?:[' -][a-z]+)*", normalized) or len(normalized) > 150:
         raise ValueError("请输入有效英文单词或短语（最多 150 个字符）。")
-    if normalized in INFLECTIONS:
-        return INFLECTIONS[normalized]
     # Phrases have their own meaning; never stem their component words.
-    if " " in normalized or normalized in PROTECTED_TERMS:
+    if " " in normalized:
         return normalized
-    lemma = lemmatize(normalized, lang="en", greedy=False)
-    return lemma if re.fullmatch(r"[a-z]+(?:['-][a-z]+)*", lemma) else normalized
+    # Dictionary outputs are not necessarily final lemmas: meetings -> meeting
+    # -> meet, and bacteria <-> bacterium. Every caller (OCR, marking, history)
+    # must arrive at the same key even when given an already normalized lemma.
+    path: list[str] = []
+    positions: dict[str, int] = {}
+    current = normalized
+    for _ in range(128):
+        if current in positions:
+            # Use the same representative no matter where a cycle was entered.
+            return min(path[positions[current]:])
+        positions[current] = len(path)
+        path.append(current)
+        if current in PROTECTED_TERMS:
+            return current
+        lemma = INFLECTIONS.get(current)
+        if lemma is None:
+            lemma = lemmatize(current, lang="en", greedy=False)
+        if lemma == current or not re.fullmatch(r"[a-z]+(?:['-][a-z]+)*", lemma):
+            return current
+        current = lemma
+    # A truncated chain is not a stable identity. Reject it instead of storing a
+    # key that changes on the next request; ordinary dictionary chains are short.
+    raise ValueError("该单词无法稳定归一化，请使用其他词形。")

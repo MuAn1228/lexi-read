@@ -183,9 +183,23 @@ def _restore_latest_assessment(connection: sqlite3.Connection, tables: set[str])
         )
 
 
+def _stabilize_vocabulary_identity(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Reconcile keys split by the old single-pass dictionary normalization.
+
+    Canonical keys now are fixed points or deterministic cycle representatives.
+    A row already occupying a target key therefore belongs to the same merge
+    group, so the existing delete-before-rename merge cannot swap unique keys.
+    Reuse the count/date preservation and then restore explicit assessment order.
+    No mastery replay or synthetic learning events are needed for an identity fix.
+    """
+    _upgrade_vocabulary_identity(connection, tables)
+    _restore_latest_assessment(connection, tables)
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
-              ("003_latest_explicit_assessment", _restore_latest_assessment)]
+              ("003_latest_explicit_assessment", _restore_latest_assessment),
+              ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity)]
 
 
 def migrate_database(engine: Engine) -> Path | None:
