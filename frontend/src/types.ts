@@ -1,5 +1,5 @@
 export type WordStatus = 'KNOWN' | 'UNKNOWN' | 'UNCERTAIN';
-export type View = 'reader' | 'vocabulary' | 'history';
+export type View = 'reader' | 'vocabulary' | 'history' | 'dashboard';
 export interface Occurrence {
   id: number; word: string; lemma: string; sentence: string;
   bbox: [number, number, number, number]; line: string | number;
@@ -24,6 +24,19 @@ export interface LearningEvent {
 }
 export interface WordHistory {
   vocabulary: Vocabulary; last_mark: LearningEvent | null; events: LearningEvent[];
+}
+export interface DashboardItem {
+  vocabulary: Vocabulary; recent_seen_count: number; first_unfamiliar_at: string | null;
+}
+export interface Dashboard {
+  summary: {
+    total: number; known: number; unknown: number; uncertain: number; unassessed: number;
+    new_unknown_7d: number; lookups_7d: number; document_count: number; scored_count: number;
+  };
+  recent_frequent_unknown: DashboardItem[]; repeated_lookups: DashboardItem[];
+  recent_unknown: DashboardItem[]; longstanding_unknown: DashboardItem[];
+  lowest_mastery: DashboardItem[]; most_seen_unknown: DashboardItem[]; most_queried: DashboardItem[];
+  profile: { assessed_count: number; assessment_coverage: number; unscored_count: number };
 }
 export interface Explanation {
   word: string; lemma: string; meaning_in_context: string; simple_explanation: string;

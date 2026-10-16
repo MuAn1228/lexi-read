@@ -224,3 +224,41 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 .vocabulary-dates span { display: block; white-space: nowrap; line-height: 1.8; font-size: 11px; }
 @media (min-width: 621px) and (max-width: 1170px) { .word-history, .learning-sync-error { grid-column: 1; }.related-section { grid-row: 1 / span 8; } }
 @media (max-width: 620px) { .legend { flex-wrap: wrap; gap: 7px 10px; } .word-controls.compact .mark-button { width: 31px; height: 29px; } }
+
+.dashboard-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.dashboard-toolbar > p, .dashboard-note { font-size: 12px; color: #68796f; line-height: 1.9; }
+.dashboard-toolbar .text-button { flex-shrink: 0; }
+.dashboard-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 18px; }
+.dashboard-stats .stat-card > div { margin-bottom: 15px; }
+.dashboard-profile { padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 35px; align-items: center; }
+.dashboard-profile h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 500; }
+.dashboard-profile p { font-size: 12px; line-height: 1.9; color: #68796f; margin-top: 12px; }
+.dashboard-profile .progress-track { margin-top: 12px; }
+.dashboard-activity { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.dashboard-activity dt { color: #68796f; font-size: 12px; margin-bottom: 12px; }
+.dashboard-activity dd { margin: 0; font: 29px Georgia, serif; }
+.dashboard-activity dd span { font: 12px 'Microsoft YaHei', sans-serif; color: #68796f; }
+.dashboard-note { margin: 17px 0; }
+.dashboard-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.dashboard-group-heading { padding: 21px 22px 16px; border-bottom: 1px solid var(--line); }
+.dashboard-group h2 { font-size: 16px; font-weight: 500; margin-bottom: 8px; }
+.dashboard-group-heading p { color: #68796f; font-size: 12px; line-height: 1.9; }
+.dashboard-word-list { margin: 0; padding: 0 12px; list-style: none; }
+.dashboard-word-list li + li { border-top: 1px solid var(--line); }
+.dashboard-word-list button { border: 0; background: transparent; padding: 12px 10px; width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-radius: 5px; }
+.dashboard-word-list button:hover, .dashboard-word-list button.selected { background: #edf3e7; }
+.dashboard-word { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dashboard-word strong { font: 16px Georgia, serif; overflow-wrap: anywhere; }
+.dashboard-word-metric { display: flex; gap: 8px; align-items: center; text-align: right; color: #68796f; font-size: 11px; line-height: 1.8; }
+.dashboard-word-metric svg { flex-shrink: 0; }
+.dashboard-group-empty { font-size: 12px; color: #68796f; padding: 27px 22px; }
+.dashboard-word-detail { padding: 22px; margin-bottom: 18px; }
+.dashboard-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.dashboard-detail-heading h2 { font: 26px Georgia, serif; margin-top: 8px; overflow-wrap: anywhere; }
+.dashboard-detail-heading h2 span { font-size: 16px; color: #68796f; }
+.dashboard-word-detail .word-history { margin-top: 16px; padding-top: 16px; }
+.dashboard-word-detail .word-history-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dashboard-word-detail .word-event-list { max-height: 220px; }
+@media (min-width: 801px) and (max-width: 1050px) { .topbar nav { gap: 10px; }.profile { font-size: 0; }.profile .avatar { font-size: 13px; margin-left: 0; } }
+@media (max-width: 800px) { .dashboard-profile { grid-template-columns: 1fr; gap: 24px; }.dashboard-stats { gap: 10px; }.dashboard-stats .stat-card { padding: 15px; } }
+@media (max-width: 620px) { .topbar nav { gap: 2px; }.topbar nav button { padding: 0 4px; gap: 4px; white-space: nowrap; }.topbar nav .nav-count { display: none; }.dashboard-toolbar { align-items: flex-start; }.dashboard-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.dashboard-stats .stat-card:first-child { grid-column: 1 / -1; }.dashboard-stats .stat-card:first-child > div { display: inline-flex; margin: 0 18px 0 0; }.dashboard-stats .stat-card:first-child strong { font-size: 26px; }.dashboard-groups { grid-template-columns: 1fr; }.dashboard-profile, .dashboard-word-detail { padding: 18px; }.dashboard-word-detail .word-history-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }.dashboard-activity { gap: 12px; }.dashboard-activity dt { font-size: 11px; }.dashboard-group-heading { padding: 20px 18px 15px; } }

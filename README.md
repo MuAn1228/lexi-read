@@ -79,9 +79,13 @@ backend/
     → 候选生成 → 过滤已掌握/当前词/重复词 → 排序 → 最多 3 个词
 ```
 
-`Vocabulary` 按默认用户和保守归一化的 lemma 去重。第一版不做复杂词形还原，避免把不同词性或词义强行合并；例如 `generalization` 的 lemma 保留名词本身，不错误变成 `generalize`。`mastery_score` 预留为可空的 0–1 值，不把三态反馈伪装成学习概率。
+`Vocabulary` 按用户和 lemma 去重。使用 simplemma 和保守保护词表，将 generalized / generalizing / generalizes 归并到 generalize；派生名词 generalization 保留自身。无词性上下文的还原仍可能有歧义。事件保留用户看到的原词及 lemma。
 
-`seen_count` 按每次成功导入的文章中实际出现次数累计，刷新/打开同一文档不增加；重新上传会视为新的阅读材料。`lookup_count` 在语境查询成功返回时累计。推荐新增词尚未出现在阅读图片中时，`seen_count=0`、`last_seen_at=null`。学习事件记录标记前状态，以及推荐词和结果来源；历史页面默认显示最近 100 条。
+`MasteryService` 使用可替换的简单规则：首次行为从 0.5 起算，标记已掌握 +0.15、不认识 −0.20、不确定 −0.08，主动查词 −0.03，限制在 0–1。没有学习行为的词保持空值。分数与事件同事务保存，事件包含调整前后值及规则版本；这不是科学记忆模型或掌握概率。
+
+启动时自动执行编号数据库迁移，修改前用 SQLite 在线备份到 `backend/data/backups/`（包括 WAL 数据）。旧词形合并保留计数、历史及最近明确标记；旧的自动查询事件保留，但不用于降低掌握度。若迁移失败，事务回滚并保留备份。
+
+`seen_count` 按每次成功导入的文章中实际出现次数累计，刷新/打开同一文档不增加；重新上传会视为新的阅读材料。只有主动点击“查看语境释义”且查询成功才增加 `lookup_count`。推荐新增词尚未出现在阅读图片中时，`seen_count=0`，首次与最近出现时间为空。单词侧栏显示上次标记和最近 20 条事件，全局足迹默认显示最近 100 条。被动读取这些记录不产生学习行为。
 
 OCR 优先使用原生 word boxes；缺失时才按字符比例估算词框，并通过 `bbox_source=estimated` 标明。置信度来自 OCR 行识别结果，不是用户掌握概率。倾斜、多栏、模糊图片仍可能识别有误。
 
@@ -119,6 +123,8 @@ npm run build
 | `GET /api/documents/{id}` | 原文、词框和最新词汇状态 |
 | `GET /api/documents/{id}/image` | 方向归一化后的 PNG 原图 |
 | `GET /api/vocabulary` | 当前用户的全部观察/标记词汇 |
+| `GET /api/vocabulary/{word}/history` | 归一化词形后的记录、上次标记和最近 20 条事件；只读 |
+| `GET /api/dashboard` | SQL 统计、学习画像与 7 组词汇排行；只读 |
 | `PUT /api/vocabulary/{word}` | `{"status":"UNKNOWN","document_id":1}`；文档 ID 可省略 |
 | `POST /api/words/analyze` | `{"occurrence_id":1}`：语境释义并记录查询 |
 | `POST /api/words/recommend` | `{"occurrence_id":1}`：个性化关联推荐并记录事件 |
@@ -127,6 +133,8 @@ npm run build
 `health` 表示服务和配置可用；OCR 采用延迟加载，因此此接口不代表模型已经下载。LLM 是否成功由每次结果的 `source` / `warning` 表明。
 
 ## MVP 边界
+
+学习概览中的“生词”包含当前不认识与不确定的词。近 7 天新增生词按首次明确标记陌生的时间统计，近 7 天查询仅统计明确主动查询；近 30 天高频词按该时间段导入文章的实际词位置计数。长期未掌握表示首次陌生标记已满 30 天且当前仍陌生，不推断期间一直未掌握。累计查询保留旧版本记录。各排行最多 10 项，低掌握度排行排除尚未评估的空值。
 
 - 默认单用户、本机使用；没有登录、支付或后台，不应直接暴露到公网。
 - 支持 JPG/PNG，单张最多 10 MB、2500 万像素；暂不支持 PDF。

@@ -14,8 +14,8 @@
 - [x] first_seen_at，LearningEvent 原词/lemma/details；补齐旧记录。
 - [x] 单词历史 API 与阅读侧栏：首次/最近、计数、上次标记、事件。
 - [x] MasteryService：事件驱动规则、边界截断、记录前后值，不称为科学记忆模型。
-- [ ] SQL 学习统计：高频生词、重复查询、新增生词、长期未掌握、7 天数据、最低掌握度。
-- [ ] Dashboard 与 Personal Vocabulary Profile。
+- [x] SQL 学习统计：高频生词、重复查询、新增生词、长期未掌握、7 天数据、最低掌握度。
+- [x] Dashboard 与 Personal Vocabulary Profile。
 
 ## P2：个性化 Agent 与反馈
 

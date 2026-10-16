@@ -86,6 +86,42 @@ class WordHistoryOut(Schema):
     events: list[EventOut]
 
 
+class DashboardSummary(Schema):
+    total: int = Field(ge=0)
+    known: int = Field(ge=0)
+    unknown: int = Field(ge=0)
+    uncertain: int = Field(ge=0)
+    unassessed: int = Field(ge=0)
+    new_unknown_7d: int = Field(ge=0)
+    lookups_7d: int = Field(ge=0)
+    document_count: int = Field(ge=0)
+    scored_count: int = Field(ge=0)
+
+
+class DashboardWord(Schema):
+    vocabulary: VocabularyOut
+    recent_seen_count: int = Field(ge=0)
+    first_unfamiliar_at: datetime | None
+
+
+class LearningProfile(Schema):
+    assessed_count: int = Field(ge=0)
+    assessment_coverage: float = Field(ge=0, le=1)
+    unscored_count: int = Field(ge=0)
+
+
+class DashboardOut(Schema):
+    summary: DashboardSummary
+    recent_frequent_unknown: list[DashboardWord]
+    repeated_lookups: list[DashboardWord]
+    recent_unknown: list[DashboardWord]
+    longstanding_unknown: list[DashboardWord]
+    lowest_mastery: list[DashboardWord]
+    most_seen_unknown: list[DashboardWord]
+    most_queried: list[DashboardWord]
+    profile: LearningProfile
+
+
 class OccurrenceRequest(Schema):
     occurrence_id: int = Field(gt=0)
 

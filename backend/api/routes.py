@@ -9,13 +9,19 @@ from backend.database import get_session
 from backend.models import Document, WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DocumentOut, DocumentSummary, EventOut, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, MarkRequest, OccurrenceRequest, RecommendationsOut, VocabularyOut, WordHistoryOut
+from backend.services.dashboard import DashboardService
 from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
 
 router = APIRouter(prefix="/api")
+
+
+@router.get("/dashboard", response_model=DashboardOut)
+def dashboard(session: Session = Depends(get_session)):
+    return DashboardService(session).read()
 
 
 @router.get("/documents", response_model=list[DocumentSummary])
