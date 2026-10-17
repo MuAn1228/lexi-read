@@ -1,5 +1,15 @@
 # MVP 验收记录
 
+## 公网部署准备验收（2026-10-17）
+
+- 后端完整回归 **213 passed**，包括双访客与旧本机用户隔离、原图认证、所有权、反馈隔离、限额并发原子性、重启保留与 UTC 日期切换。
+- 前端 API 测试 **8 passed**；TypeScript 和生产构建通过。
+- 在独立数据库和两组浏览器上下文中，以 `/lexi-read/` 子路径加载静态网页并连接独立后端：独立空间/示例、认证 Blob 原图、标记隔离、刷新保留身份、手机无溢出全部通过。未调用真实 AI。验收时唯一控制台 404 为缺失 favicon，随后已在 HTML 内补入图标。
+- Render 配置通过官方 JSON Schema；隔离的公开启动脚本验证了配置拒绝、CORS、401 和重启持久化。模板为 1 CPU / 2 GB、5 GB 持久盘、单实例单 worker。
+- 本机 Docker 引擎未启动，未宣称完成 Linux 镜像或云端 OCR 验收；已添加 GitHub Actions 容器构建与真实 OCR 检查。
+- 发布前检查了可发布文件和提交历史未含本机 Agnes 密钥，`.env` 与个人数据库仍被忽略。
+- 实际 Render 服务创建、Agnes/云端 OCR、Pages 公网端到端验证仍需实际托管环境；操作见 [部署说明](docs/DEPLOYMENT.md)。
+
 ## Agnes 3.0 Flash 接入验收（2026-10-17）
 
 - 依据 [Agnes 3.0 Flash 官方文档](https://www.agnes-ai.com/zh-Hans/docs/agnes-30-flash)配置 `agnes-3.0-flash` 与 `https://apihub.agnes-ai.com/v1`，使用 Bearer 鉴权和 Chat Completions。

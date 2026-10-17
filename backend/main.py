@@ -25,13 +25,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_methods=["GET", "POST", "PUT"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
+    expose_headers=["Retry-After"],
 )
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "ocr_provider": settings.ocr_provider, "llm_provider": settings.llm_provider}
+    return {"status": "ok", "ocr_provider": settings.ocr_provider, "llm_provider": settings.llm_provider,
+            "auth_mode": "guest" if settings.app_mode == "public" else "local"}
 
 
 @app.exception_handler(OCRUnavailable)

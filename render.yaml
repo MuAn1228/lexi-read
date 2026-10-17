@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# Preparation only: importing this Blueprint into Render creates paid resources.
+# Verify the current instance and disk prices in Render before creating it.
+services:
+  - type: web
+    name: lexi-read-api
+    runtime: docker
+    region: singapore
+    plan: 1c-2g
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: 'off'
+    healthCheckPath: /api/health
+    disk:
+      name: lexi-data
+      mountPath: /var/data/lexi
+      sizeGB: 5
+    envVars:
+      - key: APP_MODE
+        value: public
+      - key: DATA_DIR
+        value: /var/data/lexi
+      - key: CORS_ORIGINS
+        value: https://muan1228.github.io
+      - key: OCR_PROVIDER
+        value: paddle
+      - key: LLM_PROVIDER
+        value: openai_compatible
+      - key: LLM_BASE_URL
+        value: https://apihub.agnes-ai.com/v1
+      - key: LLM_MODEL
+        value: agnes-3.0-flash
+      - key: LLM_JSON_MODE
+        value: 'false'
+      - key: LLM_MAX_TOKENS
+        value: '4096'
+      - key: LLM_TIMEOUT_SECONDS
+        value: '60'
+      - key: LLM_API_KEY
+        sync: false
+      - key: PUBLIC_LLM_DAILY_LIMIT
+        value: '200'
+      - key: PUBLIC_LLM_USER_DAILY_LIMIT
+        value: '20'
+      - key: PUBLIC_OCR_DAILY_LIMIT
+        value: '50'
+      - key: PUBLIC_OCR_USER_DAILY_LIMIT
+        value: '5'
+      - key: PUBLIC_SIGNUP_DAILY_LIMIT
+        value: '200'
+      - key: PUBLIC_SIGNUP_HOURLY_LIMIT
+        value: '10'
+      - key: PUBLIC_MAX_DOCUMENTS_PER_USER
+        value: '30'

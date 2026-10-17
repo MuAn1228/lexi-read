@@ -1,0 +1,29 @@
+# Allow only the backend Python source and the exact deployment inputs.
+# Everything else (including every .env file and local data) stays outside
+# the build context, rather than merely being omitted by COPY.
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!requirements-ocr.txt
+!backend/**/*.py
+!scripts/serve_public.py
+!scripts/ocr_smoke.py
+!samples/reading.png
+
+# Runtime and test directories remain excluded even if they contain .py files.
+backend/data/
+backend/tests/
+**/__pycache__/
+**/.env
+**/.env.*
+**/uploads/
+**/backups/
+**/credentials*
+**/secrets*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.db*
+**/*.sqlite*

@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -23,19 +23,28 @@ def document_summary(doc: Document) -> DocumentSummary:
                            created_at=doc.created_at, word_count=len(doc.words))
 
 
-def document_out(doc: Document, session: Session) -> DocumentOut:
-    statuses = {entry.lemma: entry.status for entry in VocabularyRepository(session).all()}
+def document_out(doc: Document, session: Session, user_id: int = 1) -> DocumentOut:
+    statuses = {entry.lemma: entry.status for entry in VocabularyRepository(session, user_id).all()}
     words = tuple(WordOut(id=w.id, word=w.word, lemma=w.lemma, sentence=w.sentence,
                           bbox=tuple(w.bbox), line=w.line, confidence=w.confidence,
                           bbox_source=w.bbox_source, status=statuses.get(w.lemma)) for w in doc.words)
     return DocumentOut(**document_summary(doc).model_dump(), ocr_text=doc.ocr_text, words=words)
 
 
-def require_document(session: Session, document_id: int) -> Document:
+def require_document(session: Session, document_id: int, user_id: int = 1) -> Document:
     document = session.get(Document, document_id)
-    if document is None or document.user_id != 1:
+    if document is None or document.user_id != user_id:
         raise HTTPException(404, "未找到这篇阅读材料。")
     return document
+
+
+def require_document_capacity(session: Session, user_id: int) -> None:
+    settings = get_settings()
+    if settings.app_mode != "public":
+        return
+    count = session.scalar(select(func.count(Document.id)).where(Document.user_id == user_id))
+    if count >= settings.public_max_documents_per_user:
+        raise HTTPException(409, "当前访客的阅读材料数量已达上限，请联系网站管理员。")
 
 
 def sentence_contexts(result: OCRResult) -> list[str]:
@@ -57,10 +66,11 @@ def sentence_contexts(result: OCRResult) -> list[str]:
     return contexts
 
 
-def save_document(session: Session, path: Path, title: str, result: OCRResult, source: str) -> Document:
+def save_document(session: Session, path: Path, title: str, result: OCRResult, source: str,
+                  user_id: int = 1) -> Document:
     if not result.words:
         raise HTTPException(422, "图片中没有识别到英文单词，请上传清晰的英文 JPG 或 PNG。")
-    doc = Document(title=title[:250], image_path=str(path), width=result.width, height=result.height,
+    doc = Document(user_id=user_id, title=title[:250], image_path=str(path), width=result.width, height=result.height,
                    ocr_text=result.text, source=source)
     session.add(doc)
     counts: Counter[str] = Counter()
@@ -77,7 +87,7 @@ def save_document(session: Session, path: Path, title: str, result: OCRResult, s
         surface_words.setdefault(lemma, word.word)
     if not counts:
         raise HTTPException(422, "未识别到可用的英文单词。")
-    service = VocabularyService(VocabularyRepository(session))
+    service = VocabularyService(VocabularyRepository(session, user_id))
     for lemma, count in counts.items():
         service.observe(surface_words[lemma], lemma, count)
     session.commit()
@@ -85,8 +95,9 @@ def save_document(session: Session, path: Path, title: str, result: OCRResult, s
     return doc
 
 
-def import_image(session: Session, upload: UploadFile) -> Document:
+def import_image(session: Session, upload: UploadFile, user_id: int = 1) -> Document:
     settings = get_settings()
+    require_document_capacity(session, user_id)
     if Path(upload.filename or "").suffix.lower() not in {".jpg", ".jpeg", ".png"}:
         raise HTTPException(415, "仅支持 JPG 和 PNG 图片。")
     data = upload.file.read(settings.max_upload_bytes + 1)
@@ -111,7 +122,7 @@ def import_image(session: Session, upload: UploadFile) -> Document:
     try:
         normalized.save(path, "PNG")
         result = get_ocr_service().recognize(path)
-        return save_document(session, path, Path(upload.filename).name, result, "upload")
+        return save_document(session, path, Path(upload.filename).name, result, "upload", user_id)
     except Exception:
         session.rollback()
         path.unlink(missing_ok=True)
@@ -131,10 +142,11 @@ DEMO_LINES = [
 ]
 
 
-def create_demo(session: Session) -> Document:
-    existing = session.scalar(select(Document).where(Document.user_id == 1, Document.source == "demo"))
+def create_demo(session: Session, user_id: int = 1) -> Document:
+    existing = session.scalar(select(Document).where(Document.user_id == user_id, Document.source == "demo"))
     if existing and Path(existing.image_path).is_file():
         return existing
+    require_document_capacity(session, user_id)
     image = Image.new("RGB", (1320, 720), "#fffefb")
     draw = ImageDraw.Draw(image)
     font = None
@@ -160,7 +172,7 @@ def create_demo(session: Session) -> Document:
     try:
         image.save(path)
         return save_document(session, path, "Understanding Generalization · 示例", OCRResult(
-            "\n".join(DEMO_LINES), image.width, image.height, words), "demo")
+            "\n".join(DEMO_LINES), image.width, image.height, words), "demo", user_id)
     except Exception:
         session.rollback()
         path.unlink(missing_ok=True)

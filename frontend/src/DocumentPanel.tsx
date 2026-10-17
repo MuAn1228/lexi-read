@@ -1,5 +1,6 @@
 import { Eye, EyeOff, FileText, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { errorMessage, requestImage } from './api';
 import type { Occurrence, ReadingDocument } from './types';
 
 export default function DocumentPanel({ document, selectedId, onSelect }: {
@@ -8,7 +9,24 @@ export default function DocumentPanel({ document, selectedId, onSelect }: {
   const [zoom, setZoom] = useState(100);
   const [showBoxes, setShowBoxes] = useState(true);
   const [showText, setShowText] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [imageAttempt, setImageAttempt] = useState(0);
+  const [image, setImage] = useState<{ source: string; url: string } | null>(null);
+  const imageUrl = image?.source === document.image_url ? image.url : null;
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+    let active = true;
+    setImage(null); setImageError('');
+    void requestImage(document.image_url, controller.signal).then(blob => {
+      if (!active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setImage({ source: document.image_url, url: objectUrl });
+    }).catch(error => {
+      if (active && !controller.signal.aborted) setImageError(errorMessage(error));
+    });
+    return () => { active = false; controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [document.image_url, imageAttempt]);
   return <section className="document-panel panel">
     <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{document.source === 'demo' ? '示例图片 · 已预标注' : document.source}</span></div>
     <div className="document-toolbar">
@@ -17,9 +35,9 @@ export default function DocumentPanel({ document, selectedId, onSelect }: {
     </div>
     {showText ? <div className="ocr-text"><p className="overline">EXTRACTED TEXT</p><p>{document.ocr_text}</p><small>切换至原始图片可定位和标记单词。</small></div>
       : <div className="document-canvas">
-        {imageError ? <div className="empty-small"><p>图片暂时无法加载。</p><button className="button secondary" onClick={() => { setImageError(false); }}>重新加载</button></div> :
+        {imageError ? <div className="empty-small" role="alert"><p>{imageError}</p><button className="button secondary" onClick={() => setImageAttempt(value => value + 1)}>重新加载</button></div> : !imageUrl ? <div className="empty-small" role="status"><p>正在加载原图…</p></div> :
           <div className="image-stage" style={{ width: `${zoom}%`, aspectRatio: `${document.width} / ${document.height}` }}>
-            <img src={document.image_url} alt={`英文阅读原图：${document.title}`} onError={() => setImageError(true)} draggable={false} />
+            <img src={imageUrl} alt={`英文阅读原图：${document.title}`} onError={() => setImageError('图片暂时无法加载。')} draggable={false} />
             {showBoxes && document.words.map(word => {
               const [x0, y0, x1, y1] = word.bbox;
               return <button key={word.id}

@@ -18,6 +18,14 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class GuestCredential(Base):
+    """Only a hash is retained; the bearer credential is returned once to its browser."""
+    __tablename__ = "guest_credentials"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Vocabulary(Base):
     __tablename__ = "vocabulary"
     __table_args__ = (

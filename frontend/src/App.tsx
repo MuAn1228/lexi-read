@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowRight, BarChart3, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
-import { errorMessage, request } from './api';
+import { browserStorageKey, errorMessage, request } from './api';
 import ContextPanel from './ContextPanel';
 import DocumentPanel from './DocumentPanel';
 import DashboardView from './DashboardView';
@@ -18,8 +18,8 @@ const titles: Record<View, { eyebrow: string; title: string; subtitle: string }>
   dashboard: { eyebrow: 'A CLEARER VIEW OF YOUR LEARNING', title: '看见积累，也看见下一步。', subtitle: '用真实的学习记录，找到值得再读一次的词。' },
   relations: { eyebrow: 'WORDS CONNECTED BY YOUR CURIOSITY', title: '从一个词，走向更多理解。', subtitle: '你看过的关联、留下的反馈，慢慢连成自己的词汇地图。' },
 };
-function rememberDocument(id: number) { try { localStorage.setItem('lexi-document', String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
-function rememberedDocument(): number { try { return Number(localStorage.getItem('lexi-document')); } catch { return 0; } }
+function rememberDocument(id: number) { try { localStorage.setItem(browserStorageKey('document'), String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
+function rememberedDocument(): number { try { return Number(localStorage.getItem(browserStorageKey('document'))); } catch { return 0; } }
 
 export default function App() {
   const [view, setView] = useState<View>('reader');
@@ -195,10 +195,11 @@ export default function App() {
   return <div className="app-shell">
     <header className="topbar"><a className="brand" href="#" onClick={e => { e.preventDefault(); setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span>词间<span className="brand-en">lexi</span></span></a>
       <nav aria-label="主要导航">{navigation.map(item => <button key={item.value} className={view === item.value ? 'active' : ''} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={17} /><span>{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button>)}</nav>
-      <div className="profile"><span className="local-dot" />本地学习空间<span className="avatar">L</span></div>
+      <div className="profile"><span className="local-dot" />{health?.auth_mode === 'guest' ? '我的学习空间' : '本地学习空间'}<span className="avatar">L</span></div>
     </header>
     <main>
       <div className="page-heading"><div><p className="overline">{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><button className="button primary new-reading" disabled={isLoading || saving} onClick={() => { setView('reader'); setDragOver(false); setUploadOpen(true); }}><Plus size={17} />添加阅读材料</button></div>
+      {health?.auth_mode === 'guest' && <p className="page-subtitle">学习记录保存在服务器，访问凭证保存在当前浏览器。清除浏览器数据会失去访问权限；暂不支持跨设备登录。</p>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
@@ -212,7 +213,7 @@ export default function App() {
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
-      <footer className="app-footer"><span><Leaf size={13} />词间 · 在阅读中生长</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · 学习记录保存在本机` : '本地优先的阅读空间'}</span></footer>
+      <footer className="app-footer"><span><Leaf size={13} />词间 · 在阅读中生长</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
     {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div><FileImage size={17} /><h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭上传窗口"><X size={20} /></button></div>{uploadZone}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}

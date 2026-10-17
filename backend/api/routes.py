@@ -1,11 +1,13 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.database import get_session
+from backend.auth import create_guest_session, get_current_user_id
+from backend.config import get_settings
 from backend.models import Document, WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
@@ -17,65 +19,81 @@ from backend.services.documents import create_demo, document_out, document_summa
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
+from backend.public_limits import require_llm_budget, require_ocr_budget
 
 router = APIRouter(prefix="/api")
 
 
+@router.post("/session", status_code=201)
+def guest_session(request: Request, response: Response, session: Session = Depends(get_session)):
+    if get_settings().app_mode != "public":
+        raise HTTPException(404, "本机模式不需要访客身份。")
+    from backend.public_limits import check_signup_budget
+    check_signup_budget(request, session)
+    response.headers["Cache-Control"] = "no-store"
+    return create_guest_session(session)
+
+
 @router.get("/relations", response_model=RelationsOut)
-def relations(session: Session = Depends(get_session)):
-    return RelationService(session).read()
+def relations(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    return RelationService(session, user_id).read()
 
 
 @router.get("/dashboard", response_model=DashboardOut)
-def dashboard(session: Session = Depends(get_session)):
-    return DashboardService(session).read()
+def dashboard(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    return DashboardService(session, user_id).read()
 
 
 @router.get("/documents", response_model=list[DocumentSummary])
-def documents(session: Session = Depends(get_session)):
+def documents(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
     return [document_summary(doc) for doc in session.scalars(select(Document).where(
-        Document.user_id == 1).order_by(Document.created_at.desc(), Document.id.desc()))]
+        Document.user_id == user_id).order_by(Document.created_at.desc(), Document.id.desc()))]
 
 
-@router.post("/documents/upload", response_model=DocumentOut, status_code=201)
-@router.post("/documents", response_model=DocumentOut, status_code=201)
-def upload_document(file: UploadFile, session: Session = Depends(get_session)):
+@router.post("/documents/upload", response_model=DocumentOut, status_code=201,
+             dependencies=[Depends(require_ocr_budget)])
+@router.post("/documents", response_model=DocumentOut, status_code=201,
+             dependencies=[Depends(require_ocr_budget)])
+def upload_document(file: UploadFile, session: Session = Depends(get_session),
+                    user_id: int = Depends(get_current_user_id)):
     try:
-        return document_out(import_image(session, file), session)
+        return document_out(import_image(session, file, user_id), session, user_id)
     finally:
         file.file.close()
 
 
 @router.post("/documents/demo", response_model=DocumentOut)
-def demo_document(session: Session = Depends(get_session)):
-    return document_out(create_demo(session), session)
+def demo_document(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    return document_out(create_demo(session, user_id), session, user_id)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)
-def read_document(document_id: int, session: Session = Depends(get_session)):
-    return document_out(require_document(session, document_id), session)
+def read_document(document_id: int, session: Session = Depends(get_session),
+                  user_id: int = Depends(get_current_user_id)):
+    return document_out(require_document(session, document_id, user_id), session, user_id)
 
 
 @router.get("/documents/{document_id}/image")
-def document_image(document_id: int, session: Session = Depends(get_session)):
-    doc = require_document(session, document_id)
+def document_image(document_id: int, session: Session = Depends(get_session),
+                   user_id: int = Depends(get_current_user_id)):
+    doc = require_document(session, document_id, user_id)
     if not Path(doc.image_path).is_file():
         raise HTTPException(404, "原图文件缺失，请重新导入。")
-    return FileResponse(doc.image_path, media_type="image/png")
+    return FileResponse(doc.image_path, media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/vocabulary", response_model=list[VocabularyOut])
-def vocabulary(session: Session = Depends(get_session)):
-    return VocabularyRepository(session).all()
+def vocabulary(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    return VocabularyRepository(session, user_id).all()
 
 
 @router.get("/vocabulary/{word}/history", response_model=WordHistoryOut)
-def word_history(word: str, session: Session = Depends(get_session)):
+def word_history(word: str, session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
     try:
         lemma = normalize_word(word)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    repository = VocabularyRepository(session)
+    repository = VocabularyRepository(session, user_id)
     entry = repository.get(lemma)
     if entry is None:
         raise HTTPException(404, "该单词尚无词库记录。")
@@ -84,31 +102,34 @@ def word_history(word: str, session: Session = Depends(get_session)):
 
 
 @router.put("/vocabulary/{word}", response_model=VocabularyOut)
-def mark_word(word: str, payload: MarkRequest, session: Session = Depends(get_session)):
+def mark_word(word: str, payload: MarkRequest, session: Session = Depends(get_session),
+              user_id: int = Depends(get_current_user_id)):
     if payload.document_id is not None:
-        require_document(session, payload.document_id)
+        require_document(session, payload.document_id, user_id)
     try:
-        return VocabularyService(VocabularyRepository(session)).mark(word, payload.status, payload.document_id)
+        return VocabularyService(VocabularyRepository(session, user_id)).mark(word, payload.status, payload.document_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/events", response_model=list[EventOut])
-def events(limit: int = Query(100, ge=1, le=1000), session: Session = Depends(get_session)):
-    return VocabularyRepository(session).history(limit)
+def events(limit: int = Query(100, ge=1, le=1000), session: Session = Depends(get_session),
+           user_id: int = Depends(get_current_user_id)):
+    return VocabularyRepository(session, user_id).history(limit)
 
 
-def require_occurrence(session: Session, occurrence_id: int):
+def require_occurrence(session: Session, occurrence_id: int, user_id: int):
     occurrence = session.get(WordOccurrence, occurrence_id)
     if occurrence is None:
         raise HTTPException(404, "未找到该单词在文中的位置。")
-    return occurrence, require_document(session, occurrence.document_id)
+    return occurrence, require_document(session, occurrence.document_id, user_id)
 
 
-@router.post("/words/analyze", response_model=AnalysisOut)
-def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_session)):
-    occurrence, doc = require_occurrence(session, payload.occurrence_id)
-    repository = VocabularyRepository(session)
+@router.post("/words/analyze", response_model=AnalysisOut, dependencies=[Depends(require_llm_budget)])
+def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_session),
+                 user_id: int = Depends(get_current_user_id)):
+    occurrence, doc = require_occurrence(session, payload.occurrence_id, user_id)
+    repository = VocabularyRepository(session, user_id)
     context = VocabularyAgent(repository).build_context(occurrence, doc)
     analysis = LLMService().analyze_word(occurrence.word, occurrence.lemma, occurrence.sentence, doc.ocr_text,
                                        learner_context=context)
@@ -116,12 +137,14 @@ def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_sess
     return analysis
 
 
-@router.post("/words/recommend", response_model=RecommendationsOut)
-def recommend_words(payload: OccurrenceRequest, session: Session = Depends(get_session)):
-    occurrence, doc = require_occurrence(session, payload.occurrence_id)
-    return VocabularyAgent(VocabularyRepository(session)).recommend(occurrence, doc)
+@router.post("/words/recommend", response_model=RecommendationsOut, dependencies=[Depends(require_llm_budget)])
+def recommend_words(payload: OccurrenceRequest, session: Session = Depends(get_session),
+                    user_id: int = Depends(get_current_user_id)):
+    occurrence, doc = require_occurrence(session, payload.occurrence_id, user_id)
+    return VocabularyAgent(VocabularyRepository(session, user_id)).recommend(occurrence, doc)
 
 
 @router.post("/recommendations/{batch_id}/feedback", response_model=FeedbackOut)
-def recommendation_feedback(batch_id: int, payload: FeedbackRequest, session: Session = Depends(get_session)):
-    return FeedbackService(VocabularyRepository(session)).apply(batch_id, payload)
+def recommendation_feedback(batch_id: int, payload: FeedbackRequest, session: Session = Depends(get_session),
+                            user_id: int = Depends(get_current_user_id)):
+    return FeedbackService(VocabularyRepository(session, user_id)).apply(batch_id, payload)

@@ -1,0 +1,77 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      ready: ${{ steps.backend.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: node --test tests/api.test.mjs
+        working-directory: frontend
+      - name: Check backend configuration
+        id: backend
+        env:
+          VITE_API_ORIGIN: ${{ vars.VITE_API_ORIGIN }}
+        run: |
+          if [ -z "$VITE_API_ORIGIN" ]; then
+            echo 'Backend is not configured yet. Run checks only; Pages publication awaits VITE_API_ORIGIN.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          else
+            node -e 'const s=process.env.VITE_API_ORIGIN; const u=new URL(s); if(u.protocol!=="https:" || u.username || u.password || u.pathname!=="/" || u.search || u.hash) throw Error("VITE_API_ORIGIN must be an HTTPS origin")'
+            curl --fail --silent --show-error --max-time 30 "${VITE_API_ORIGIN%/}/api/health" > /tmp/lexi-health.json
+            node -e 'const h=JSON.parse(require("fs").readFileSync("/tmp/lexi-health.json","utf8")); if(h.status!=="ok" || h.auth_mode!=="guest") throw Error("Backend must be healthy and use public guest isolation")'
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Configure Pages
+        if: steps.backend.outputs.ready == 'true'
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_ORIGIN: ${{ vars.VITE_API_ORIGIN }}
+          PAGES_BASE: ${{ steps.pages.outputs.base_path }}
+        run: npm run build -- --base="${PAGES_BASE}/"
+      - name: Upload Pages artifact
+        if: steps.backend.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+  deploy:
+    if: needs.build.outputs.ready == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

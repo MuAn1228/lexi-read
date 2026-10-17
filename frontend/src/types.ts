@@ -67,4 +67,4 @@ export interface Relations {
     added_unknown_items: number; useful_items: number; not_useful_items: number;
   };
 }
-export interface Health { status: string; ocr_provider: string; llm_provider: string }
+export interface Health { status: string; ocr_provider: string; llm_provider: string; auth_mode: 'guest' | 'local' }
