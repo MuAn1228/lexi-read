@@ -8,7 +8,9 @@ $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
 $serverProcess = Get-Process -Id $state.pid -ErrorAction SilentlyContinue
 if ($serverProcess) {
     # A PID may have been reused. Only stop the exact process saved at launch.
-    if ($serverProcess.StartTime.ToUniversalTime().ToString('o') -ne $state.started_at) {
+    # ConvertFrom-Json returns DateTime in PowerShell 7 and a string in 5.1.
+    $savedStart = ([DateTimeOffset]$state.started_at).UtcDateTime
+    if ($serverProcess.StartTime.ToUniversalTime().Ticks -ne $savedStart.Ticks) {
         throw 'Saved process no longer matches. Nothing was stopped.'
     }
     $command = (Get-CimInstance Win32_Process -Filter "ProcessId = $($state.pid)").CommandLine
