@@ -11,13 +11,14 @@ from backend.config import get_settings
 from backend.models import Document, WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, ReviewOut, VocabularyOut, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, WordHistoryOut
 from backend.services.feedback import FeedbackService
 from backend.services.relations import RelationService
 from backend.services.dashboard import DashboardService
 from backend.services.review import ReviewService
 from backend.services.review_marks import ReviewMarkService
 from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
+from backend.services.text_import import import_text
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
@@ -78,6 +79,12 @@ def demo_document(session: Session = Depends(get_session), user_id: int = Depend
     return document_out(create_demo(session, user_id), session, user_id)
 
 
+@router.post("/documents/text", response_model=DocumentOut, status_code=201)
+def text_document(payload: TextImportRequest, session: Session = Depends(get_session),
+                  user_id: int = Depends(get_current_user_id)):
+    return document_out(import_text(session, payload, user_id), session, user_id)
+
+
 @router.get("/documents/{document_id}", response_model=DocumentOut)
 def read_document(document_id: int, session: Session = Depends(get_session),
                   user_id: int = Depends(get_current_user_id)):
@@ -88,6 +95,8 @@ def read_document(document_id: int, session: Session = Depends(get_session),
 def document_image(document_id: int, session: Session = Depends(get_session),
                    user_id: int = Depends(get_current_user_id)):
     doc = require_document(session, document_id, user_id)
+    if doc.source == "text":
+        raise HTTPException(404, "这篇文章来自粘贴文本，没有原图。")
     if not Path(doc.image_path).is_file():
         raise HTTPException(404, "原图文件缺失，请重新导入。")
     return FileResponse(doc.image_path, media_type="image/png", headers={"Cache-Control": "private, no-store"})

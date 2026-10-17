@@ -329,13 +329,33 @@ def _create_review_schedules(connection: sqlite3.Connection, tables: set[str]) -
     )
 
 
+def _create_text_imports(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Add exact plain-text positions and durable import receipts, without replay."""
+    if "word_occurrences" in tables:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(word_occurrences)")}
+        for name in ("text_start", "text_end"):
+            if name not in columns:
+                connection.execute(f"ALTER TABLE word_occurrences ADD COLUMN {name} INTEGER")
+    if {"users", "documents"} <= tables:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS text_import_receipts ("
+            "id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), "
+            "request_id VARCHAR(36) NOT NULL, payload_hash VARCHAR(64) NOT NULL, "
+            "document_id INTEGER NOT NULL REFERENCES documents(id), created_at DATETIME NOT NULL, "
+            "UNIQUE (user_id, request_id))"
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS ix_text_import_receipts_user_id "
+                           "ON text_import_receipts (user_id)")
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
               ("005_recommendation_feedback", _create_feedback_tracking),
               ("006_personal_vocabulary_relations", _create_personal_relations),
-              ("007_spaced_review_schedules", _create_review_schedules)]
+              ("007_spaced_review_schedules", _create_review_schedules),
+              ("008_plain_text_import", _create_text_imports)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

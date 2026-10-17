@@ -73,6 +73,9 @@ class WordOccurrence(Base):
     line: Mapped[int] = mapped_column(Integer)
     confidence: Mapped[float] = mapped_column(Float)
     bbox_source: Mapped[str] = mapped_column(String(40))
+    # Unicode code point offsets into Document.ocr_text, only for pasted text.
+    text_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     document: Mapped[Document] = relationship(back_populates="words")
 
 
@@ -129,6 +132,17 @@ class ReviewReceipt(Base):
     lemma: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20))
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TextImportReceipt(Base):
+    __tablename__ = "text_import_receipts"
+    __table_args__ = (UniqueConstraint("user_id", "request_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

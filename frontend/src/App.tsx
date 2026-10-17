@@ -6,6 +6,9 @@ import DocumentPanel from './DocumentPanel';
 import DashboardView from './DashboardView';
 import RelationsView from './RelationsView';
 import ReviewView from './ReviewView';
+import TextImportForm from './TextImportForm';
+import { normalizeArticle, textImportProblem } from './textArticle';
+import type { TextDraft, TextImportPayload } from './textArticle';
 import { HistoryView, VocabularyView } from './LibraryViews';
 import WordList from './WordList';
 import type { StatusFilter } from './WordList';
@@ -40,6 +43,12 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('ALL');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [importMode, setImportMode] = useState<'image' | 'text'>('image');
+  const [textDraft, setTextDraft] = useState<TextDraft>({ title: '', text: '' });
+  const [importSyncError, setImportSyncError] = useState('');
+  const [syncingImport, setSyncingImport] = useState(false);
+  const textImportRequest = useRef<TextImportPayload | null>(null);
+  const importSyncGeneration = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadModal = useRef<HTMLElement>(null);
   const pageHeading = useRef<HTMLHeadingElement>(null);
@@ -95,9 +104,9 @@ export default function App() {
     const previousFocus = dom.activeElement instanceof HTMLElement ? dom.activeElement : null;
     const previousOverflow = dom.body.style.overflow;
     dom.body.style.overflow = 'hidden';
-    const focusable = () => Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]')).filter(element => element.getClientRects().length > 0);
+    const focusable = () => Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]')).filter(element => element.getClientRects().length > 0);
     const focusFirst = () => (focusable()[0] ?? modal).focus();
-    focusFirst();
+    (modal.querySelector<HTMLElement>('[data-autofocus]') ?? focusable()[0] ?? modal).focus();
     const onModalKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -122,6 +131,45 @@ export default function App() {
       else pageHeading.current?.focus();
     };
   }, [uploadOpen]);
+
+  const refreshImportedMaterial = useCallback(async () => {
+    const generation = ++importSyncGeneration.current;
+    setSyncingImport(true);
+    const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), refreshLearning()]);
+    if (generation !== importSyncGeneration.current) return;
+    if (results[0].status === 'fulfilled') setDocuments(results[0].value);
+    const failed = results.find(result => result.status === 'rejected');
+    setImportSyncError(failed?.status === 'rejected' ? `文章已导入；阅读材料列表或词库暂未刷新：${errorMessage(failed.reason)}` : '');
+    setSyncingImport(false);
+  }, [refreshLearning]);
+  const changeTextDraft = (draft: TextDraft) => {
+    textImportRequest.current = null;
+    setTextDraft(draft); setError('');
+  };
+  const importText = async () => {
+    if (busyRef.current || savingRef.current || initializingRef.current) return;
+    const problem = textImportProblem(textDraft);
+    if (problem) { setError(problem); return; }
+    const normalized = { title: textDraft.title.trim(), text: normalizeArticle(textDraft.text) };
+    let payload = textImportRequest.current;
+    if (!payload || payload.title !== normalized.title || payload.text !== normalized.text) {
+      payload = { ...normalized, request_id: crypto.randomUUID() };
+      textImportRequest.current = payload;
+    }
+    busyRef.current = true; setBusy('正在导入英文文章…'); setError('');
+    const generation = ++requestGeneration.current;
+    try {
+      const value = await request<ReadingDocument>('/documents/text', { method: 'POST', body: JSON.stringify(payload) });
+      if (generation !== requestGeneration.current) return;
+      // A confirmed write completes import even if subsequent list/learning reads fail.
+      acceptDocument(value);
+      setDocuments(items => [{ ...value, word_count: value.words.length }, ...items.filter(item => item.id !== value.id)]);
+      textImportRequest.current = null; setTextDraft({ title: '', text: '' });
+      setNotice(`文章已导入，共 ${value.words.length} 处英文单词，开始阅读吧。`);
+      void refreshImportedMaterial();
+    } catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
+    finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
+  };
 
   const upload = async (file?: File) => {
     if (!file || busyRef.current || savingRef.current || initializingRef.current) return;
@@ -207,7 +255,7 @@ export default function App() {
   const title = titles[view];
   const isLoading = Boolean(busy) || initializing;
   const uploadZone = <div className={`upload-zone ${dragOver ? 'drag-over' : ''}`} onDragOver={event => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={event => { event.preventDefault(); setDragOver(false); void upload(event.dataTransfer.files[0]); }}>
-    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文试卷、教材或文章截图<br /><span>JPG / PNG · 最大 10 MB</span></p><button className="button primary" disabled={isLoading} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
+    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文试卷、教材或文章截图<br /><span>JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading} onClick={() => { setImportMode('text'); setUploadOpen(true); setError(''); }}><FileText size={16} />粘贴英文文章</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
   </div>;
 
   return <div className="app-shell">
@@ -220,6 +268,7 @@ export default function App() {
       {health?.auth_mode === 'guest' && <p className="page-subtitle">学习记录保存在服务器，访问凭证保存在当前浏览器。清除浏览器数据会失去访问权限；暂不支持跨设备登录。</p>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
+      {importSyncError && <div className="error-banner import-sync-warning" role="status"><AlertCircle size={19} /><span>{importSyncError}</span><button className="text-button" disabled={syncingImport} onClick={() => void refreshImportedMaterial()}><RefreshCw size={14} className={syncingImport ? 'spin' : ''} />重新刷新列表与词库</button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
       <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
       {view === 'reader' && <>
@@ -235,6 +284,6 @@ export default function App() {
       <footer className="app-footer"><span><Leaf size={13} />词间 · 在阅读中生长</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
-    {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div><FileImage size={17} /><h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭上传窗口"><X size={20} /></button></div>{uploadZone}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
+    {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'text' ? <FileText size={17} /> : <FileImage size={17} />}<h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => setImportMode('image')}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => setImportMode('text')}><FileText size={15} />粘贴文章</button></div>{importMode === 'image' ? uploadZone : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
   </div>;
 }

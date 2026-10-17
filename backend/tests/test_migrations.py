@@ -404,7 +404,9 @@ def test_relations_upgrade_backfills_only_explicit_valid_feedback_without_changi
     assert rows(path, "SELECT * FROM learning_events ORDER BY id") == before_events
     assert rows(path, "SELECT * FROM vocabulary ORDER BY id") == before_vocab
     for table, contents in before_other.items():
-        assert rows(path, f"SELECT * FROM {table} ORDER BY id") == contents
+        # Later additive columns do not change any previously stored fields.
+        projection = ",".join(contents[0]) if contents else "*"
+        assert rows(path, f"SELECT {projection} FROM {table} ORDER BY id") == contents
         assert rows(backup, f"SELECT * FROM {table} ORDER BY id") == contents
     assert migrations.migrate_database(engine) is None
     assert rows(path, "SELECT * FROM vocabulary_relations ORDER BY id") == relations

@@ -323,7 +323,7 @@ def test_recommendation_reassessment_resets_an_existing_review_streak(feedback_a
 
 def test_schedule_upgrade_seeds_only_assessed_words_preserves_evidence_and_backups_once(legacy, monkeypatch):
     path, engine, connection = legacy
-    all_migrations = migrations.MIGRATIONS
+    all_migrations = migrations.MIGRATIONS[:7]
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:-1])
     migrations.migrate_database(engine)
     # This is a released database containing every current assessment state.
@@ -360,7 +360,7 @@ def test_schedule_upgrade_seeds_only_assessed_words_preserves_evidence_and_backu
 
 def test_schedule_upgrade_rollback_leaves_original_database_and_can_retry(legacy, monkeypatch):
     path, engine, _ = legacy
-    all_migrations = migrations.MIGRATIONS
+    all_migrations = migrations.MIGRATIONS[:7]
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:-1])
     migrations.migrate_database(engine)
     before = rows(path, "SELECT * FROM vocabulary ORDER BY id")

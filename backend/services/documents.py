@@ -18,7 +18,8 @@ from backend.services.vocabulary import VocabularyService, normalize_word
 
 
 def document_summary(doc: Document) -> DocumentSummary:
-    return DocumentSummary(id=doc.id, title=doc.title, image_url=f"/api/documents/{doc.id}/image",
+    return DocumentSummary(id=doc.id, title=doc.title,
+                           image_url=None if doc.source == "text" else f"/api/documents/{doc.id}/image",
                            width=doc.width, height=doc.height, source=doc.source,
                            created_at=doc.created_at, word_count=len(doc.words))
 
@@ -26,8 +27,10 @@ def document_summary(doc: Document) -> DocumentSummary:
 def document_out(doc: Document, session: Session, user_id: int = 1) -> DocumentOut:
     statuses = {entry.lemma: entry.status for entry in VocabularyRepository(session, user_id).all()}
     words = tuple(WordOut(id=w.id, word=w.word, lemma=w.lemma, sentence=w.sentence,
-                          bbox=tuple(w.bbox), line=w.line, confidence=w.confidence,
-                          bbox_source=w.bbox_source, status=statuses.get(w.lemma)) for w in doc.words)
+                          bbox=None if doc.source == "text" else tuple(w.bbox), line=w.line,
+                          confidence=None if doc.source == "text" else w.confidence,
+                          bbox_source=w.bbox_source, text_start=w.text_start, text_end=w.text_end,
+                          status=statuses.get(w.lemma)) for w in doc.words)
     return DocumentOut(**document_summary(doc).model_dump(), ocr_text=doc.ocr_text, words=words)
 
 

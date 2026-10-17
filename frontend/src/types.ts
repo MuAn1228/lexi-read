@@ -2,15 +2,16 @@ export type WordStatus = 'KNOWN' | 'UNKNOWN' | 'UNCERTAIN';
 export type View = 'reader' | 'vocabulary' | 'review' | 'history' | 'dashboard' | 'relations';
 export interface Occurrence {
   id: number; word: string; lemma: string; sentence: string;
-  bbox: [number, number, number, number]; line: string | number;
-  confidence: number; bbox_source: string; status: WordStatus | null;
+  bbox: [number, number, number, number] | null; line: string | number;
+  confidence: number | null; bbox_source: string; status: WordStatus | null;
+  text_start?: number | null; text_end?: number | null;
 }
 export interface ReadingDocument {
-  id: number; title: string; image_url: string; width: number; height: number;
-  ocr_text: string; source: string; words: Occurrence[];
+  id: number; title: string; image_url: string | null; width: number; height: number;
+  ocr_text: string; source: string; created_at: string; words: Occurrence[];
 }
 export interface DocumentSummary {
-  id: number; title: string; image_url: string; width: number; height: number;
+  id: number; title: string; image_url: string | null; width: number; height: number;
   created_at: string; word_count: number; source: string;
 }
 export interface Vocabulary {

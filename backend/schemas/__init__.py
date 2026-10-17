@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 
 class Schema(BaseModel):
@@ -82,17 +82,19 @@ class WordOut(Schema):
     word: str
     lemma: str
     sentence: str
-    bbox: tuple[float, float, float, float]
+    bbox: tuple[float, float, float, float] | None
     line: int
-    confidence: float
+    confidence: float | None
     bbox_source: str
+    text_start: int | None = None
+    text_end: int | None = None
     status: Status | None = None
 
 
 class DocumentSummary(Schema):
     id: int
     title: str
-    image_url: str
+    image_url: str | None
     width: int
     height: int
     source: str
@@ -103,6 +105,30 @@ class DocumentSummary(Schema):
 class DocumentOut(DocumentSummary):
     ocr_text: str
     words: tuple[WordOut, ...]
+
+
+class TextImportRequest(Schema):
+    text: str = Field(strict=True, min_length=1, max_length=20_000)
+    title: str | None = Field(default=None, strict=True, max_length=250)
+    request_id: UUID
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def normalize_text(cls, value):
+        if isinstance(value, str):
+            value = value.replace("\r\n", "\n").replace("\r", "\n")
+            if any((ord(char) < 32 and char not in "\n\t") or 0xD800 <= ord(char) <= 0xDFFF for char in value):
+                raise ValueError("文章包含无效字符，请粘贴纯文本内容。")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value):
+        if value is not None:
+            if any(ord(char) < 32 or ord(char) == 127 or 0xD800 <= ord(char) <= 0xDFFF for char in value):
+                raise ValueError("标题不能包含换行或控制字符。")
+            return value.strip() or None
+        return value
 
 
 class EventOut(Schema):
