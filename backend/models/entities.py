@@ -107,3 +107,21 @@ class FeedbackReceipt(Base):
     word: Mapped[str] = mapped_column(String(200))
     action: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class VocabularyRelation(Base):
+    __tablename__ = "vocabulary_relations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_word", "target_word", "relation_type"),
+        CheckConstraint("weight >= 0 AND weight <= 1"),
+        CheckConstraint("relation_type IN ('WORD_FAMILY','SYNONYM','ANTONYM','CONCEPT','COLLOCATION','DOMAIN_RELATED')"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    source_word: Mapped[str] = mapped_column(String(200))
+    target_word: Mapped[str] = mapped_column(String(200))
+    relation_type: Mapped[str] = mapped_column(String(30))
+    weight: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_event_id: Mapped[int] = mapped_column(ForeignKey("learning_events.id"))

@@ -234,11 +234,84 @@ def _create_feedback_tracking(connection: sqlite3.Connection, tables: set[str]) 
                        "ON feedback_receipts (user_id)")
 
 
+def _create_personal_relations(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Reconstruct personal edges only from recorded, explicit item feedback.
+
+    Keep these rules frozen with this migration. Generation and exposure alone
+    do not demonstrate a useful association, and cannot create an edge.
+    """
+    if "users" not in tables:
+        return
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS vocabulary_relations ("
+        "id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), "
+        "source_word VARCHAR(200) NOT NULL, target_word VARCHAR(200) NOT NULL, "
+        "relation_type VARCHAR(30) NOT NULL, weight FLOAT NOT NULL, "
+        "created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
+        "last_event_id INTEGER NOT NULL REFERENCES learning_events(id), "
+        "UNIQUE (user_id, source_word, target_word, relation_type), "
+        "CHECK (weight >= 0 AND weight <= 1), "
+        "CHECK (relation_type IN ('WORD_FAMILY','SYNONYM','ANTONYM','CONCEPT','COLLOCATION','DOMAIN_RELATED')))"
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS ix_vocabulary_relations_user_id "
+                       "ON vocabulary_relations (user_id)")
+    if "learning_events" not in tables:
+        return
+    deltas = {"VIEW_RELATED": .05, "MARK_UNKNOWN": .08, "MARK_KNOWN": -.02,
+              "RECOMMENDATION_USEFUL": .15, "RECOMMENDATION_NOT_USEFUL": -.20}
+    relation_types = {"WORD_FAMILY", "SYNONYM", "ANTONYM", "CONCEPT", "COLLOCATION", "DOMAIN_RELATED"}
+    for event in connection.execute(
+        "SELECT e.* FROM learning_events e JOIN users u ON u.id = e.user_id ORDER BY e.id"
+    ).fetchall():
+        if event["event_type"] not in deltas:
+            continue
+        try:
+            details = json.loads(event["details"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(details, dict) or details.get("source") != "recommendation_feedback":
+            continue
+        source, target, relation = (details.get(key) for key in ("source_lemma", "target_lemma", "relation"))
+        if not all(isinstance(value, str) for value in (source, target, relation)):
+            continue
+        relation = relation.strip().upper()
+        if relation not in relation_types:
+            continue
+        try:
+            source, target = normalize_word(source), normalize_word(target)
+            _time(event["created_at"])
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if source == target or max(len(source), len(target)) > 200:
+            continue
+        key = (event["user_id"], source, target, relation)
+        existing = connection.execute(
+            "SELECT id, weight, last_event_id FROM vocabulary_relations "
+            "WHERE user_id = ? AND source_word = ? AND target_word = ? AND relation_type = ?", key,
+        ).fetchone()
+        if existing is not None and existing["last_event_id"] >= event["id"]:
+            continue
+        weight = round(min(1.0, max(0.0, (existing["weight"] if existing else .5)
+                                   + deltas[event["event_type"]])), 6)
+        if existing is None:
+            connection.execute(
+                "INSERT INTO vocabulary_relations (user_id, source_word, target_word, relation_type, "
+                "weight, created_at, updated_at, last_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (*key, weight, event["created_at"], event["created_at"], event["id"]),
+            )
+        else:
+            connection.execute(
+                "UPDATE vocabulary_relations SET weight = ?, updated_at = ?, last_event_id = ? WHERE id = ?",
+                (weight, event["created_at"], event["id"], existing["id"]),
+            )
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
-              ("005_recommendation_feedback", _create_feedback_tracking)]
+              ("005_recommendation_feedback", _create_feedback_tracking),
+              ("006_personal_vocabulary_relations", _create_personal_relations)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

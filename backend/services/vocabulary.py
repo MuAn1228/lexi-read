@@ -1,4 +1,4 @@
-from backend.models.entities import utcnow
+from backend.models.entities import LearningEvent, utcnow
 from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import Status
 from backend.services.lemmatization import normalize_word
@@ -19,7 +19,8 @@ class VocabularyService:
         return entry
 
     def mark(self, word: str, status: Status, document_id: int | None = None, *,
-             commit: bool = True, metadata: dict | None = None):
+             commit: bool = True, metadata: dict | None = None,
+             recorded_events: list[LearningEvent] | None = None):
         lemma = normalize_word(word)
         entry = self.repo.ensure(word.strip(), lemma)
         previous = entry.status
@@ -28,8 +29,10 @@ class VocabularyService:
         details = MasteryService.event_details(entry.mastery_score, event_type)
         entry.mastery_score = details["mastery_after"]
         entry.updated_at = utcnow()
-        self.repo.event(word.strip(), event_type, document_id,
-                        {**(metadata or {}), "previous_status": previous, **details})
+        event = self.repo.event(word.strip(), event_type, document_id,
+                               {**(metadata or {}), "previous_status": previous, **details})
+        if recorded_events is not None:
+            recorded_events.append(event)
         if commit:
             self.repo.session.commit()
         return entry

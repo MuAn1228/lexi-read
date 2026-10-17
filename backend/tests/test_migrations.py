@@ -255,7 +255,7 @@ def test_feedback_upgrade_from_004_preserves_data_and_has_matching_orm_schema(le
     from backend.models import Base
 
     path, engine, connection = legacy
-    all_migrations = migrations.MIGRATIONS
+    all_migrations = migrations.MIGRATIONS[:5]
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:4])
     migrations.migrate_database(engine)
     before_vocabulary = rows(path, "SELECT * FROM vocabulary ORDER BY id")
@@ -315,7 +315,7 @@ def test_feedback_upgrade_from_004_preserves_data_and_has_matching_orm_schema(le
 
 def test_feedback_upgrade_failure_rolls_back_both_tables_and_keeps_backup(legacy, monkeypatch):
     path, engine, _ = legacy
-    all_migrations = migrations.MIGRATIONS
+    all_migrations = migrations.MIGRATIONS[:5]
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:4])
     migrations.migrate_database(engine)
     before_vocabulary = rows(path, "SELECT * FROM vocabulary ORDER BY id")
@@ -339,3 +339,211 @@ def test_feedback_upgrade_failure_rolls_back_both_tables_and_keeps_backup(legacy
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
     assert migrations.migrate_database(engine) is not None
     assert len(rows(path, "SELECT * FROM schema_migrations")) == 5
+
+
+def insert_relation_event(connection, event_id, event_type="VIEW_RELATED", *, user_id=1,
+                          details=None, created_at=None):
+    if details is None:
+        details = {"source": "recommendation_feedback", "source_lemma": "generalized",
+                   "target_lemma": "models", "relation": "concept"}
+    connection.execute(
+        "INSERT INTO learning_events (id,user_id,word,lemma,event_type,document_id,details,created_at) "
+        "VALUES (?,?,?,?,?,NULL,?,?)",
+        (event_id, user_id, "models", "model", event_type,
+         details if isinstance(details, str) else json.dumps(details), created_at or date(7)),
+    )
+
+
+def test_relations_upgrade_backfills_only_explicit_valid_feedback_without_changing_evidence(legacy, monkeypatch):
+    path, engine, connection = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:5])
+    migrations.migrate_database(engine)
+    for event_id, action, day in [(5, "VIEW_RELATED", 5), (6, "MARK_UNKNOWN", 6),
+                                   (7, "RECOMMENDATION_USEFUL", 4),
+                                   (8, "RECOMMENDATION_NOT_USEFUL", 8), (9, "MARK_KNOWN", 9)]:
+        insert_relation_event(connection, event_id, action, created_at=date(day))
+    insert_relation_event(connection, 10, "RECOMMENDATION_USEFUL", user_id=2)
+    base = {"source": "recommendation_feedback", "source_lemma": "generalizes",
+            "target_lemma": "model", "relation": "concept"}
+    insert_relation_event(connection, 11, "RECOMMENDATION_NOT_USEFUL", details={**base, "relation": "SYNONYM"})
+    insert_relation_event(connection, 12, details={**base, "source_lemma": "models", "target_lemma": "generalized",
+                                                  "relation": "domain_related"})
+    for event_id, action in [(13, "RECOMMENDATION_SHOWN"), (14, "RECOMMENDATION_GENERATED"), (15, "LOOKUP")]:
+        insert_relation_event(connection, event_id, action)
+    invalid_details = [{**base, "source": "manual"}, [], "malformed JSON",
+                       {**base, "source_lemma": "123"}, {**base, "relation": "invalid"},
+                       {**base, "target_lemma": "generalizing"}, {**base, "target_lemma": None},
+                       {**base, "source_lemma": 123}, {}]
+    for event_id, details in enumerate(invalid_details, 16):
+        insert_relation_event(connection, event_id, details=details)
+    insert_relation_event(connection, 25, created_at="invalid date")
+    connection.execute(
+        "INSERT INTO recommendation_feedback VALUES (1,1,4,'model',1,1,'UNKNOWN',1,1,?,?)",
+        (date(7), date(8)),
+    )
+    connection.execute("INSERT INTO feedback_receipts VALUES (1,1,'request-id',4,'model','UNKNOWN',?)", (date(8),))
+    connection.commit()
+    before_events = rows(path, "SELECT * FROM learning_events ORDER BY id")
+    before_vocab = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+    unchanged_tables = ("users", "documents", "word_occurrences", "recommendation_feedback", "feedback_receipts")
+    before_other = {table: rows(path, f"SELECT * FROM {table} ORDER BY id") for table in unchanged_tables}
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    backup = migrations.migrate_database(engine)
+    assert backup and "before-006_personal_vocabulary_relations" in backup.name
+    assert rows(backup, "SELECT name FROM sqlite_master WHERE name = 'vocabulary_relations'") == []
+    assert rows(backup, "SELECT * FROM learning_events ORDER BY id") == before_events
+    relations = rows(path, "SELECT * FROM vocabulary_relations ORDER BY id")
+    assert len(relations) == 4
+    assert [(row["user_id"], row["source_word"], row["target_word"], row["relation_type"], row["weight"])
+            for row in relations] == [
+        (1, "generalize", "model", "CONCEPT", .56), (2, "generalize", "model", "CONCEPT", .65),
+        (1, "generalize", "model", "SYNONYM", .3), (1, "model", "generalize", "DOMAIN_RELATED", .55),
+    ]
+    assert (relations[0]["created_at"], relations[0]["updated_at"], relations[0]["last_event_id"]) == (date(5), date(9), 9)
+    assert rows(path, "SELECT * FROM learning_events ORDER BY id") == before_events
+    assert rows(path, "SELECT * FROM vocabulary ORDER BY id") == before_vocab
+    for table, contents in before_other.items():
+        assert rows(path, f"SELECT * FROM {table} ORDER BY id") == contents
+        assert rows(backup, f"SELECT * FROM {table} ORDER BY id") == contents
+    assert migrations.migrate_database(engine) is None
+    assert rows(path, "SELECT * FROM vocabulary_relations ORDER BY id") == relations
+    assert len(list((path.parent / "backups").glob("*.sqlite3"))) == 2
+    assert rows(path, "PRAGMA foreign_key_check") == []
+    # Even if the table already existed before its marker, last_event_id prevents
+    # a second replay from applying the same feedback a second time.
+    connection.execute("DELETE FROM schema_migrations WHERE version = ?", (all_migrations[5][0],))
+    connection.commit()
+    assert migrations.migrate_database(engine) is not None
+    assert rows(path, "SELECT * FROM vocabulary_relations ORDER BY id") == relations
+
+
+@pytest.mark.parametrize("relation,action,expected", [
+    ("word_family", "VIEW_RELATED", .55),
+    ("synonym", "MARK_UNKNOWN", .58),
+    ("antonym", "MARK_KNOWN", .48),
+    ("concept", "RECOMMENDATION_USEFUL", .65),
+    ("collocation", "RECOMMENDATION_NOT_USEFUL", .30),
+    ("domain_related", "VIEW_RELATED", .55),
+])
+def test_relation_backfill_accepts_all_relation_types_and_uses_each_frozen_delta(
+        legacy, monkeypatch, relation, action, expected):
+    path, engine, connection = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:5])
+    migrations.migrate_database(engine)
+    insert_relation_event(connection, 5, action, details={
+        "source": "recommendation_feedback", "source_lemma": "MEETINGS",
+        "target_lemma": "bacterium", "relation": f" {relation} ",
+    })
+    connection.commit()
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    migrations.migrate_database(engine)
+    # Event.word is "models"; relation identity must come from the evidence's
+    # canonical endpoints, including dictionary chains and cycles.
+    assert rows(path, "SELECT source_word,target_word,relation_type,weight,last_event_id FROM vocabulary_relations") == [{
+        "source_word": "meet", "target_word": "bacteria", "relation_type": relation.upper(),
+        "weight": expected, "last_event_id": 5,
+    }]
+
+
+def test_relation_backfill_existing_edge_applies_only_events_after_replay_guard(legacy, monkeypatch):
+    path, engine, connection = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:5])
+    migrations.migrate_database(engine)
+    insert_relation_event(connection, 5, "RECOMMENDATION_USEFUL", created_at=date(5))
+    connection.commit()
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    migrations.migrate_database(engine)
+    before = rows(path, "SELECT * FROM vocabulary_relations")[0]
+    assert before["weight"] == .65
+
+    connection.execute("DELETE FROM schema_migrations WHERE version = ?", (all_migrations[5][0],))
+    insert_relation_event(connection, 6, "RECOMMENDATION_NOT_USEFUL", created_at=date(6))
+    insert_relation_event(connection, 7, "RECOMMENDATION_SHOWN", created_at=date(7))
+    connection.commit()
+    backup = migrations.migrate_database(engine)
+    after = rows(path, "SELECT * FROM vocabulary_relations")[0]
+    assert after == {**before, "weight": .45, "updated_at": date(6), "last_event_id": 6}
+    assert rows(backup, "SELECT * FROM vocabulary_relations") == [before]
+    assert migrations.migrate_database(engine) is None
+    assert rows(path, "SELECT * FROM vocabulary_relations") == [after]
+
+
+@pytest.mark.parametrize("action,expected", [("RECOMMENDATION_USEFUL", 1.0), ("RECOMMENDATION_NOT_USEFUL", 0.0)])
+def test_relation_backfill_weight_bounds(legacy, monkeypatch, action, expected):
+    path, engine, connection = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:5])
+    migrations.migrate_database(engine)
+    for event_id in range(5, 15):
+        insert_relation_event(connection, event_id, action)
+    connection.commit()
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    migrations.migrate_database(engine)
+    relation = rows(path, "SELECT * FROM vocabulary_relations")[0]
+    assert relation["weight"] == expected and relation["last_event_id"] == 14
+
+
+def test_relation_upgrade_rollback_preserves_events_and_retries_once(legacy, monkeypatch):
+    path, engine, connection = legacy
+    all_migrations = migrations.MIGRATIONS
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations[:5])
+    migrations.migrate_database(engine)
+    insert_relation_event(connection, 5)
+    connection.commit()
+    before_events = rows(path, "SELECT * FROM learning_events ORDER BY id")
+    before_vocab = rows(path, "SELECT * FROM vocabulary ORDER BY id")
+
+    def fail_after_backfill(connection, tables):
+        migrations._create_personal_relations(connection, tables)
+        assert connection.execute("SELECT weight FROM vocabulary_relations").fetchone()[0] == .55
+        raise RuntimeError("relation backfill failed")
+
+    monkeypatch.setattr(migrations, "MIGRATIONS", [*all_migrations[:5], (all_migrations[5][0], fail_after_backfill)])
+    with pytest.raises(RuntimeError, match="relation backfill failed"):
+        migrations.migrate_database(engine)
+    assert rows(path, "SELECT name FROM sqlite_master WHERE name = 'vocabulary_relations'") == []
+    assert len(rows(path, "SELECT * FROM schema_migrations")) == 5
+    assert rows(path, "SELECT * FROM learning_events ORDER BY id") == before_events
+    assert rows(path, "SELECT * FROM vocabulary ORDER BY id") == before_vocab
+    backups = list((path.parent / "backups").glob("*before-006_personal_vocabulary_relations*.sqlite3"))
+    assert len(backups) == 1
+    assert rows(backups[0], "SELECT * FROM learning_events ORDER BY id") == before_events
+    monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
+    migrations.migrate_database(engine)
+    assert rows(path, "SELECT weight FROM vocabulary_relations") == [{"weight": .55}]
+    assert migrations.migrate_database(engine) is None
+
+
+def test_relation_migration_matches_fresh_schema_and_enforces_constraints(legacy, tmp_path):
+    from backend.models import Base
+
+    path, engine, connection = legacy
+    migrations.migrate_database(engine)
+    fresh = tmp_path / "fresh-relations.sqlite3"
+    fresh_engine = create_engine(f"sqlite:///{fresh}")
+    assert migrations.migrate_database(fresh_engine) is None
+    assert rows(fresh, "SELECT name FROM sqlite_master WHERE name = 'vocabulary_relations'") == []
+    Base.metadata.create_all(fresh_engine)
+    fresh_engine.dispose()
+    assert rows(path, "PRAGMA table_info(vocabulary_relations)") == rows(fresh, "PRAGMA table_info(vocabulary_relations)")
+    assert len(rows(path, "PRAGMA table_info(vocabulary_relations)")) == 9
+    def foreign_keys(database):
+        return sorted((row["table"], row["from"], row["to"]) for row in rows(database, "PRAGMA foreign_key_list(vocabulary_relations)"))
+    assert foreign_keys(path) == foreign_keys(fresh)
+    def indexes(database):
+        return sorted((row["name"], row["unique"]) for row in rows(database, "PRAGMA index_list(vocabulary_relations)"))
+    assert indexes(path) == indexes(fresh)
+    insert = "INSERT INTO vocabulary_relations VALUES (?,?,'generalize','model',?,?,?, ?,?)"
+    connection.execute(insert, (1, 1, "CONCEPT", .55, date(7), date(7), 4))
+    for relation, weight in [("INVALID", .5), ("concept", .5), ("CONCEPT", -.1), ("CONCEPT", 1.1)]:
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+            connection.execute(insert, (2, 1, relation, weight, date(7), date(7), 4))
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+        connection.execute(insert, (2, 1, "CONCEPT", .6, date(7), date(7), 4))
+    for user_id, event_id in [(99, 4), (2, 999)]:
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+            connection.execute(insert, (2, user_id, "CONCEPT", .6, date(7), date(7), event_id))
+    connection.rollback()

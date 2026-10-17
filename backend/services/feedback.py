@@ -7,6 +7,7 @@ from backend.models.entities import utcnow
 from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import FeedbackOut, FeedbackRequest, Status
 from backend.services.lemmatization import normalize_word
+from backend.services.relations import RelationService
 from backend.services.vocabulary import VocabularyService
 
 
@@ -59,13 +60,14 @@ class FeedbackService:
                     "target_lemma": word, "relation": offered["relation"],
                     "priority": offered["priority"], "source": "recommendation_feedback"}
         changed = False
+        recorded_events = []
         if not state.shown:
             state.shown = True
-            self.repo.event(word, "RECOMMENDATION_SHOWN", batch.document_id, metadata)
+            recorded_events.append(self.repo.event(word, "RECOMMENDATION_SHOWN", batch.document_id, metadata))
             changed = True
         if request.action == "VIEWED" and not state.viewed:
             state.viewed = True
-            self.repo.event(word, "VIEW_RELATED", batch.document_id, metadata)
+            recorded_events.append(self.repo.event(word, "VIEW_RELATED", batch.document_id, metadata))
             changed = True
         elif request.action in {"KNOWN", "UNKNOWN"}:
             entry = self.repo.get(word)
@@ -73,20 +75,24 @@ class FeedbackService:
                 state.added_unknown = state.added_unknown or (
                     request.action == "UNKNOWN" and (entry is None or entry.status != "UNKNOWN"))
                 VocabularyService(self.repo).mark(word, Status(request.action), batch.document_id,
-                                                   commit=False, metadata=metadata)
+                                                   commit=False, metadata=metadata, recorded_events=recorded_events)
                 state.status = request.action
                 changed = True
         elif request.action in {"USEFUL", "NOT_USEFUL"}:
             useful = request.action == "USEFUL"
             if state.useful != useful:
                 state.useful = useful
-                self.repo.event(word, "RECOMMENDATION_" + request.action, batch.document_id, metadata)
+                recorded_events.append(self.repo.event(word, "RECOMMENDATION_" + request.action,
+                                                      batch.document_id, metadata))
                 changed = True
         if changed:
             state.updated_at = utcnow()
         self.session.add(FeedbackReceipt(user_id=uid, request_id=str(request.request_id),
                                         batch_id=batch_id, word=word, action=request.action))
         self.session.flush()
+        relations = RelationService(self.session, uid)
+        for event in recorded_events:
+            relations.apply_event(event)
         return self._out(state)
 
     def _out(self, state: RecommendationFeedback) -> FeedbackOut:

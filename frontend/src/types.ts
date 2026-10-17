@@ -1,5 +1,5 @@
 export type WordStatus = 'KNOWN' | 'UNKNOWN' | 'UNCERTAIN';
-export type View = 'reader' | 'vocabulary' | 'history' | 'dashboard';
+export type View = 'reader' | 'vocabulary' | 'history' | 'dashboard' | 'relations';
 export interface Occurrence {
   id: number; word: string; lemma: string; sentence: string;
   bbox: [number, number, number, number]; line: string | number;
@@ -54,5 +54,17 @@ export type RecommendationAction = 'SHOWN' | 'VIEWED' | 'KNOWN' | 'UNKNOWN' | 'U
 export interface RecommendationFeedback {
   batch_id: number; word: string; shown: boolean; viewed: boolean;
   status: 'KNOWN' | 'UNKNOWN' | null; useful: boolean | null; vocabulary: Vocabulary | null;
+}
+export type StoredRelationType = 'WORD_FAMILY' | 'SYNONYM' | 'ANTONYM' | 'CONCEPT' | 'COLLOCATION' | 'DOMAIN_RELATED';
+export interface VocabularyRelation {
+  id: number; source_word: string; target_word: string; relation_type: StoredRelationType;
+  weight: number; created_at: string; updated_at: string;
+}
+export interface Relations {
+  items: VocabularyRelation[]; total: number;
+  metrics: {
+    generated_items: number; shown_items: number; viewed_items: number;
+    added_unknown_items: number; useful_items: number; not_useful_items: number;
+  };
 }
 export interface Health { status: string; ocr_provider: string; llm_provider: string }

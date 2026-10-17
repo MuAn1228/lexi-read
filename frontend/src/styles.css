@@ -239,6 +239,23 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 @media (max-width: 620px) { .legend { flex-wrap: wrap; gap: 7px 10px; } .word-controls.compact .mark-button { width: 31px; height: 29px; } }
 
 .dashboard-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.relations-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 18px; }
+.relations-stats .stat-card { padding: 20px 17px; min-width: 0; }
+.relations-stats .stat-card > div { margin-bottom: 15px; }
+.relations-stats .stat-card > p { font-size: 11px; color: #68796f; line-height: 1.7; margin-top: 10px; }
+.relations-panel .library-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.relation-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; list-style: none; margin: 0; padding: 6px 24px 24px; }
+.relation-card { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fafbf6; min-width: 0; }
+.relation-card-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.relation-card-heading time { color: #68796f; font-size: 11px; }
+.relation-words { display: flex; align-items: center; gap: 12px; margin: 22px 0; }
+.relation-words strong { font: 19px Georgia, serif; overflow-wrap: anywhere; min-width: 0; }
+.relation-words svg { color: #7b9684; flex-shrink: 0; }
+.relation-strength { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; margin-bottom: 9px; color: #68796f; }
+.relation-strength strong { font-size: 13px; font-weight: 500; color: #385849; }
+.relation-strength strong span { font-size: 11px; color: #68796f; }
+.relations-list-note { font-size: 12px; color: #68796f; line-height: 1.8; padding: 0 24px 24px; }
+@media (max-width: 1100px) { .relations-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }.relation-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .dashboard-toolbar > p, .dashboard-note { font-size: 12px; color: #68796f; line-height: 1.9; }
 .dashboard-toolbar .text-button { flex-shrink: 0; }
 .dashboard-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 18px; }
@@ -275,3 +292,6 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 @media (min-width: 801px) and (max-width: 1050px) { .topbar nav { gap: 10px; }.profile { font-size: 0; }.profile .avatar { font-size: 13px; margin-left: 0; } }
 @media (max-width: 800px) { .dashboard-profile { grid-template-columns: 1fr; gap: 24px; }.dashboard-stats { gap: 10px; }.dashboard-stats .stat-card { padding: 15px; } }
 @media (max-width: 620px) { .topbar nav { gap: 2px; }.topbar nav button { padding: 0 4px; gap: 4px; white-space: nowrap; }.topbar nav .nav-count { display: none; }.dashboard-toolbar { align-items: flex-start; }.dashboard-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.dashboard-stats .stat-card:first-child { grid-column: 1 / -1; }.dashboard-stats .stat-card:first-child > div { display: inline-flex; margin: 0 18px 0 0; }.dashboard-stats .stat-card:first-child strong { font-size: 26px; }.dashboard-groups { grid-template-columns: 1fr; }.dashboard-profile, .dashboard-word-detail { padding: 18px; }.dashboard-word-detail .word-history-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }.dashboard-activity { gap: 12px; }.dashboard-activity dt { font-size: 11px; }.dashboard-group-heading { padding: 20px 18px 15px; } }
+/* Five primary destinations remain available on narrow screens without widening the page. */
+@media (max-width: 800px) { .topbar { height: auto; flex-wrap: wrap; padding-top: 15px; padding-bottom: 0; gap: 12px; }.topbar nav { width: 100%; min-width: 0; height: 47px; flex: 0 0 100%; overflow-x: auto; justify-content: flex-start; scrollbar-width: thin; }.topbar nav button { flex-shrink: 0; white-space: nowrap; padding: 0 9px; }.relations-stats .stat-card { padding: 17px; } }
+@media (max-width: 620px) { .relations-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.relation-list { grid-template-columns: minmax(0, 1fr); padding: 0 18px 18px; gap: 12px; }.relations-list-note { padding: 0 18px 18px; } }

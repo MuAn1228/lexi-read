@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, BarChart3, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, Leaf, LoaderCircle, Plus, RefreshCw, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, BarChart3, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
 import { errorMessage, request } from './api';
 import ContextPanel from './ContextPanel';
 import DocumentPanel from './DocumentPanel';
 import DashboardView from './DashboardView';
+import RelationsView from './RelationsView';
 import { HistoryView, VocabularyView } from './LibraryViews';
 import WordList from './WordList';
 import type { StatusFilter } from './WordList';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
 const titles: Record<View, { eyebrow: string; title: string; subtitle: string }> = {
   reader: { eyebrow: 'YOUR PERSONAL READING SPACE', title: '读懂文章，也读懂每一个词。', subtitle: '从真实阅读出发，让遇见的单词慢慢成为你的语言。' },
   vocabulary: { eyebrow: 'A VOCABULARY THAT GROWS WITH YOU', title: '把遇见的词，变成自己的。', subtitle: '认识、陌生、偶尔忘记。每一种状态，都值得被记住。' },
   history: { eyebrow: 'YOUR LEARNING JOURNEY', title: '每一小步，都有迹可循。', subtitle: '回看你的阅读、探索与反馈，慢慢看见积累的力量。' },
   dashboard: { eyebrow: 'A CLEARER VIEW OF YOUR LEARNING', title: '看见积累，也看见下一步。', subtitle: '用真实的学习记录，找到值得再读一次的词。' },
+  relations: { eyebrow: 'WORDS CONNECTED BY YOUR CURIOSITY', title: '从一个词，走向更多理解。', subtitle: '你看过的关联、留下的反馈，慢慢连成自己的词汇地图。' },
 };
 function rememberDocument(id: number) { try { localStorage.setItem('lexi-document', String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
 function rememberedDocument(): number { try { return Number(localStorage.getItem('lexi-document')); } catch { return 0; } }
@@ -209,6 +211,7 @@ export default function App() {
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
+      {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
       <footer className="app-footer"><span><Leaf size={13} />词间 · 在阅读中生长</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · 学习记录保存在本机` : '本地优先的阅读空间'}</span></footer>
     </main>
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}

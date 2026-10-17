@@ -178,3 +178,28 @@ class FeedbackOut(Schema):
     status: Literal["KNOWN", "UNKNOWN"] | None
     useful: bool | None
     vocabulary: VocabularyOut | None
+
+
+class VocabularyRelationOut(Schema):
+    id: int
+    source_word: str
+    target_word: str
+    relation_type: Literal["WORD_FAMILY", "SYNONYM", "ANTONYM", "CONCEPT", "COLLOCATION", "DOMAIN_RELATED"]
+    weight: float = Field(ge=0, le=1)
+    created_at: datetime
+    updated_at: datetime
+
+
+class RecommendationMetrics(Schema):
+    generated_items: int = Field(ge=0)
+    shown_items: int = Field(ge=0)
+    viewed_items: int = Field(ge=0)
+    added_unknown_items: int = Field(ge=0)
+    useful_items: int = Field(ge=0)
+    not_useful_items: int = Field(ge=0)
+
+
+class RelationsOut(Schema):
+    items: list[VocabularyRelationOut]
+    total: int = Field(ge=0)
+    metrics: RecommendationMetrics
