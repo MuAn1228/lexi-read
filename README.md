@@ -52,7 +52,27 @@ LLM_BASE_URL=https://your-provider.example/v1
 LLM_MODEL=your-model-name
 LLM_API_KEY=your-key
 LLM_TIMEOUT_SECONDS=30
+LLM_JSON_MODE=true
+LLM_MAX_TOKENS=4096
 ```
+
+### Agnes 3.0 Flash
+
+使用 [Agnes 3.0 Flash 官方文档](https://www.agnes-ai.com/zh-Hans/docs/agnes-30-flash)确认的模型 ID 和接口，在本机 `.env` 填写：
+
+```dotenv
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=https://apihub.agnes-ai.com/v1
+LLM_MODEL=agnes-3.0-flash
+LLM_API_KEY=你的Agnes密钥
+LLM_TIMEOUT_SECONDS=60
+LLM_JSON_MODE=false
+LLM_MAX_TOKENS=4096
+```
+
+在 [Agnes 开发者平台](https://platform.agnes-ai.com/)创建 API Key；填入原始密钥即可，不要加 `Bearer` 前缀。`openai_compatible` 表示接口协议，请求实际发送给上面的 Agnes 地址。快速开始页面的示例仍用 2.5，本文按 3.0 Flash 专页配置。
+
+Agnes 的请求字段表未列出 `response_format`，因此这里设为 `LLM_JSON_MODE=false`，通过提示词要求 JSON，并在后端继续严格验证字段、数值、原词及词元。此配置不代表已实测 Agnes 不支持 JSON 模式。每次请求最多输出 4096 tokens；截断、异常或不符合结构的返回会明确降级。可按实际延迟及输出需要调整超时和输出预算。
 
 重新启动后生效。供应商只在 LLMService 适配器中出现；密钥仅留在后端。LLM 请求会向所配服务发送当前词、句子、截取的文章上下文和词汇/历史摘要。OCR 在本地运行。超时、无效 JSON、服务异常会返回明确警告并降级为有限的离线结果。
 

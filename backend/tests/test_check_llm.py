@@ -3,15 +3,17 @@ import json
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from backend.config import Settings
 from scripts import check_llm
 
 
-@pytest.fixture
-def configured(monkeypatch):
-    settings = Settings(llm_provider="openai_compatible", llm_model="test-model",
-                        llm_api_key="secret-test-key", llm_base_url="https://provider.invalid/v1",
+@pytest.fixture(params=[True, False], ids=["json-mode", "prompt-json"])
+def configured(monkeypatch, request):
+    settings = Settings(llm_provider="openai_compatible", llm_model="agnes-3.0-flash",
+                        llm_api_key="secret-test-key", llm_base_url="https://apihub.agnes-ai.com/v1/",
+                        llm_json_mode=request.param, llm_max_tokens=2048,
                         _env_file=None)
     monkeypatch.setattr(check_llm, "Settings", lambda: settings)
     return settings
@@ -38,7 +40,8 @@ def candidates():
 
 
 def response(data):
-    return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(data)}}]})
+    return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(data)},
+                                                "finish_reason": "stop"}]})
 
 
 def test_success_validates_both_responses_and_applies_three_word_budget(configured, monkeypatch, capsys):
@@ -46,6 +49,15 @@ def test_success_validates_both_responses_and_applies_three_word_budget(configur
 
     def handler(request):
         data = json.loads(request.content)
+        assert str(request.url) == "https://apihub.agnes-ai.com/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer secret-test-key"
+        assert request.headers["content-type"] == "application/json"
+        assert data["model"] == "agnes-3.0-flash"
+        assert data["max_tokens"] == 2048
+        if configured.llm_json_mode:
+            assert data["response_format"] == {"type": "json_object"}
+        else:
+            assert "response_format" not in data
         reading = json.loads(data["messages"][1]["content"])
         assert reading["current_word"] == reading["lemma"] == "curious"
         assert reading["current_sentence"] == check_llm.SENTENCE
@@ -81,7 +93,7 @@ def test_invalid_configuration_never_contacts_provider(configured, monkeypatch, 
 
 
 @pytest.mark.parametrize("failed_stage", ["explanation", "recommendations"])
-@pytest.mark.parametrize("failure", ["auth", "network", "invalid_json", "invalid_schema"])
+@pytest.mark.parametrize("failure", ["auth", "network", "invalid_json", "invalid_schema", "truncated"])
 def test_provider_failures_are_not_reported_as_success_or_leaked(
         configured, monkeypatch, capsys, caplog, failed_stage, failure):
     requests = []
@@ -97,6 +109,10 @@ def test_provider_failures_are_not_reported_as_success_or_leaked(
             raise httpx.ConnectError(sensitive, request=request)
         if failure == "invalid_json":
             return httpx.Response(200, json={"choices": [{"message": {"content": sensitive}}]})
+        if failure == "truncated":
+            data = explanation() if failed_stage == "explanation" else candidates()
+            return httpx.Response(200, json={"choices": [{
+                "message": {"content": json.dumps(data)}, "finish_reason": "length"}]})
         return response({"unexpected": sensitive})
 
     mock_transport(monkeypatch, handler)
@@ -119,3 +135,9 @@ def test_settings_errors_do_not_print_exception_or_secret(monkeypatch, capsys):
     output = capsys.readouterr()
     assert "FAIL [configuration]" in output.err
     assert "secret-setting-value" not in output.out + output.err
+
+
+@pytest.mark.parametrize("max_tokens", [0, -1, 1.5])
+def test_invalid_token_budget_is_rejected(max_tokens):
+    with pytest.raises(ValidationError):
+        Settings(llm_max_tokens=max_tokens, _env_file=None)

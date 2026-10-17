@@ -1,5 +1,15 @@
 # MVP 验收记录
 
+## Agnes 3.0 Flash 接入验收（2026-10-17）
+
+- 依据 [Agnes 3.0 Flash 官方文档](https://www.agnes-ai.com/zh-Hans/docs/agnes-30-flash)配置 `agnes-3.0-flash` 与 `https://apihub.agnes-ai.com/v1`，使用 Bearer 鉴权和 Chat Completions。
+- `LLM_JSON_MODE=false` 省略文档未列出的 `response_format`；提示词要求 JSON，响应仍严格校验。每次请求配置 `max_tokens=4096`、超时 60 秒；异常终止、截断或无效内容触发明确降级。
+- `python scripts/check_llm.py` 真实调用通过：语境释义与关联词生成均为 `source=llm`，结构验证成功，排序后 3 个词。仅发送内置植物学习测试句，不访问数据库或写入学习事件。
+- `python -m pytest backend/tests -q`：**178 passed**。模拟 HTTP 覆盖两种 JSON 模式、Agnes 地址和模型、鉴权、输出预算、错误降级、截断但仍可解析的 JSON、诊断信息脱敏。
+- 修复 `stop.ps1` 在 PowerShell 7 自动解析 JSON 日期后误判进程的问题：PowerShell 5.1 与 7 均验证启动时间精确匹配，保留 PID 与启动时间防误停检查。
+- 实际关闭并重新启动本机服务，首页 HTTP 200，`/api/health` 返回 `status=ok`、`llm_provider=openai_compatible`。本轮未修改前端，沿用此前已验收的生产构建。
+- 本机密钥未写入文档、日志或 Git；`.env` 仍被忽略。新环境需自行填写密钥。
+
 ## 增量学习闭环验收（2026-10-17）
 
 最终后端测试：**144 passed**；TypeScript 检查及 Vite 生产构建通过。下面的浏览器流程使用独立测试数据库，不向正式词库注入测试记录。
