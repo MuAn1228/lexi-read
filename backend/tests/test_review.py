@@ -82,12 +82,12 @@ def lemmas(result):
 
 
 def test_empty_queue_excludes_known_unassessed_and_other_users(session):
-    assert ReviewService(session).read().model_dump() == {"total": 0, "items": []}
+    assert ReviewService(session).read().model_dump(include={"total", "items"}) == {"total": 0, "items": []}
     vocabulary(session, "known", "KNOWN")
     vocabulary(session, "unassessed", None)
     vocabulary(session, "other", user_id=2)
     session.commit()
-    assert ReviewService(session).read().model_dump() == {"total": 0, "items": []}
+    assert ReviewService(session).read().model_dump(include={"total", "items"}) == {"total": 0, "items": []}
 
 
 def test_priority_is_unreviewed_oldest_review_low_mastery_seen_count_and_stable_lemma(session):
@@ -182,7 +182,8 @@ def test_reads_are_bounded_selects_and_never_flush_pending_work_or_record_events
         first = client.get("/api/review")
         second = client.get("/api/review")
         assert first.status_code == 200, first.text
-        assert first.json() == second.json()
+        assert {k: v for k, v in first.json().items() if k != "as_of"} == {
+            k: v for k, v in second.json().items() if k != "as_of"}
         assert first.json()["total"] == 12 and len(first.json()["items"]) == 10
         assert statements == ["SELECT"] * 6
         assert pending in session.new
@@ -211,7 +212,7 @@ def test_mark_rejects_invalid_review_origins_without_mutating(session, client, o
 
 
 @pytest.mark.parametrize("status,expected_score,expected_total", [
-    ("KNOWN", .6, 0), ("UNKNOWN", .25, 1), ("UNCERTAIN", .37, 1),
+    ("KNOWN", .6, 0), ("UNKNOWN", .25, 0), ("UNCERTAIN", .37, 0),
 ])
 def test_review_mark_reuses_existing_mastery_rule_and_updates_queue(session, client, status, expected_score, expected_total):
     vocabulary(session, "model", mastery_score=.45, seen_count=4, lookup_count=2)
@@ -246,9 +247,12 @@ def test_ordinary_marks_do_not_count_as_review_or_erase_previous_review(session,
     assert client.get("/api/review").json()["items"][0]["last_reviewed_at"] is None
     assert "origin" not in session.scalar(select(LearningEvent)).details
     assert client.put("/api/vocabulary/model", json={"status": "UNKNOWN", "origin": "review"}).status_code == 200
-    reviewed_at = client.get("/api/review").json()["items"][0]["last_reviewed_at"]
+    assert client.get("/api/review").json()["total"] == 0
+    reviewed_at = session.scalar(select(LearningEvent).where(
+        LearningEvent.details["origin"].as_string() == "review")).created_at
     assert client.put("/api/vocabulary/model", json=payload).status_code == 200
-    assert client.get("/api/review").json()["items"][0]["last_reviewed_at"] == reviewed_at
+    assert datetime.fromisoformat(client.get("/api/review").json()["items"][0]["last_reviewed_at"]).replace(
+        tzinfo=None) == reviewed_at.replace(tzinfo=None)
     last = session.scalar(select(LearningEvent).order_by(LearningEvent.id.desc()))
     assert "origin" not in last.details and last.document_id is None
 

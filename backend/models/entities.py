@@ -132,6 +132,15 @@ class ReviewReceipt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ReviewSchedule(Base):
+    __tablename__ = "review_schedules"
+    __table_args__ = (CheckConstraint("known_streak >= 0 AND known_streak <= 5"),)
+    vocabulary_id: Mapped[int] = mapped_column(ForeignKey("vocabulary.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    known_streak: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class VocabularyRelation(Base):
     __tablename__ = "vocabulary_relations"
     __table_args__ = (

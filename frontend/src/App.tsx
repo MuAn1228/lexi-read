@@ -175,8 +175,8 @@ export default function App() {
     } catch (e) { setError(errorMessage(e)); }
     finally { savingRef.current = false; setSaving(false); }
   }, [document, filteredWords]);
-  const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<boolean> => {
-    if (savingRef.current || busyRef.current) return false;
+  const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<void> => {
+    if (savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
     savingRef.current = true; setSaving(true); setError('');
     try {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(item.vocabulary.word)}`, {
@@ -188,8 +188,7 @@ export default function App() {
       setNotice(`${item.vocabulary.word} · 本次自评已保存`);
       // The confirmed write advances the card even if the following read fails.
       void refreshLearning().catch(e => setError(`自评已保存；暂未刷新词库与学习足迹：${errorMessage(e)}`));
-      return true;
-    } catch (e) { setError(errorMessage(e)); return false; }
+    }
     finally { savingRef.current = false; setSaving(false); }
   }, [refreshLearning]);
   useEffect(() => {
@@ -222,6 +221,7 @@ export default function App() {
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
+      <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
       {view === 'reader' && <>
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
@@ -229,7 +229,6 @@ export default function App() {
         </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />学习，发生在真实阅读里</span><h2>少一点机械记忆，<br />多一点<span>真正理解。</span></h2><p>读你感兴趣的内容，圈出还不熟悉的单词。<br />词间会记住你的反馈，陪你建立自己的词汇地图。</p><div className="reading-illustration" aria-hidden="true"><div className="paper-card"><span>A SMALL NOTE ON LEARNING</span><p>Read with <mark>curiosity.</mark><br />Make room for<br /><em>understanding.</em></p><div className="paper-lines"><i /><i /><i /></div></div><div className="word-note"><Leaf size={16} /><span>从语境里，认识一个词。</span></div></div><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel">{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>示例为已预标注的英文图片，可直接体验标记、词库和关联学习。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
-      <ReviewView active={view === 'review'} vocabulary={vocabulary} disabled={saving || isLoading} onAssess={assessReview} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}

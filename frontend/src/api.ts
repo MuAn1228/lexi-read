@@ -67,6 +67,13 @@ function guestToken(): Promise<string> {
   return sessionPromise;
 }
 
+/** Internal persistence scope; never render this value or put it in a URL. */
+export async function reviewStorageKey(): Promise<string> {
+  const mode = (await getHealth()).auth_mode;
+  const identity = mode === 'guest' ? `guest:${await guestToken()}` : 'local';
+  return browserStorageKey(`review-session:v1:${identity}`);
+}
+
 async function fetchBackend(path: string, init: RequestInit = {}, authenticated = true): Promise<Response> {
   const timeout = AbortSignal.timeout(180_000);
   try {

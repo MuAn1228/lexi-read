@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from backend.database import get_session
@@ -47,9 +47,12 @@ def dashboard(session: Session = Depends(get_session), user_id: int = Depends(ge
 
 
 @router.get("/review", response_model=ReviewOut)
-def review(limit: int = Query(10, ge=1, le=50), session: Session = Depends(get_session),
+def review(limit: int = Query(10, ge=1, le=50), tz_offset_minutes: int = Query(480, ge=-720, le=840),
+           vocabulary_ids: list[int] | None = Query(None, max_length=50), session: Session = Depends(get_session),
            user_id: int = Depends(get_current_user_id)):
-    return ReviewService(session, user_id).read(limit)
+    if vocabulary_ids is not None and any(value <= 0 for value in vocabulary_ids):
+        raise HTTPException(422, "词条编号必须为正整数。")
+    return ReviewService(session, user_id).read(limit, tz_offset_minutes, vocabulary_ids)
 
 
 @router.get("/documents", response_model=list[DocumentSummary])
@@ -116,14 +119,20 @@ def mark_word(word: str, payload: MarkRequest, session: Session = Depends(get_se
         repository = VocabularyRepository(session, user_id)
         if payload.origin == "review" and payload.request_id is not None:
             return ReviewMarkService(repository).apply(word, payload.status, payload.document_id, payload.request_id)
+        # Ordinary marks also modify the schedule. Reserve the writer before
+        # checking ownership or reading existing vocabulary to avoid lost state.
+        session.execute(text("BEGIN IMMEDIATE"))
         if payload.document_id is not None:
             require_document(session, payload.document_id, user_id)
         metadata = {"origin": "review"} if payload.origin == "review" else None
         return VocabularyService(repository).mark(
             word, payload.status, payload.document_id, metadata=metadata,
         )
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        session.rollback()
+        if isinstance(exc, ValueError):
+            raise HTTPException(422, str(exc)) from exc
+        raise
 
 
 @router.get("/events", response_model=list[EventOut])

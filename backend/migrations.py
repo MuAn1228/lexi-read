@@ -4,7 +4,7 @@ Backups use SQLite's online backup API (including committed WAL data), not a
 filesystem copy. Schema additions and canonical-lemma merging share a transaction.
 """
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sqlite3
@@ -306,12 +306,36 @@ def _create_personal_relations(connection: sqlite3.Connection, tables: set[str])
             )
 
 
+def _create_review_schedules(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Seed an upgrade-time schedule without inventing assessments or scores."""
+    if not {"users", "vocabulary"} <= tables:
+        return
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS review_schedules ("
+        "vocabulary_id INTEGER NOT NULL PRIMARY KEY REFERENCES vocabulary(id), "
+        "user_id INTEGER NOT NULL REFERENCES users(id), due_at DATETIME NOT NULL, "
+        "known_streak INTEGER NOT NULL, CHECK (known_streak >= 0 AND known_streak <= 5))"
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS ix_review_schedules_user_id ON review_schedules (user_id)")
+    connection.execute("CREATE INDEX IF NOT EXISTS ix_review_schedules_due_at ON review_schedules (due_at)")
+    # No replay of historical review events: all streaks begin at zero. An
+    # already present schedule survives a repeated/partially installed upgrade.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    connection.execute(
+        "INSERT OR IGNORE INTO review_schedules (vocabulary_id, user_id, due_at, known_streak) "
+        "SELECT id, user_id, CASE WHEN status = 'KNOWN' THEN ? ELSE ? END, 0 "
+        "FROM vocabulary WHERE status IN ('KNOWN', 'UNKNOWN', 'UNCERTAIN')",
+        ((now + timedelta(days=3)).isoformat(" "), now.isoformat(" ")),
+    )
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
               ("005_recommendation_feedback", _create_feedback_tracking),
-              ("006_personal_vocabulary_relations", _create_personal_relations)]
+              ("006_personal_vocabulary_relations", _create_personal_relations),
+              ("007_spaced_review_schedules", _create_review_schedules)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

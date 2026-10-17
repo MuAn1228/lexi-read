@@ -338,6 +338,31 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 .review-message .button { margin-top: 8px; }
 .review-complete-icon { display: grid; place-items: center; width: 60px; height: 60px; background: #edf3e4; color: #6f9265; border-radius: 50%; margin-bottom: 3px; }
 .review-note { border-top: 1px solid var(--line); background: #fcfcf8; padding: 16px 25px; font-size: 12px; line-height: 1.8; color: #68796f; }
+.today-review { padding: 23px 28px 18px; margin-bottom: 24px; }
+.today-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.today-review-heading h2 { display: flex; gap: 9px; align-items: center; font-size: 18px; font-weight: 500; margin: 8px 0; }
+.today-review-heading p:not(.overline) { font-size: 12px; color: #68796f; line-height: 1.8; }
+.today-review-heading .overline { font-size: 10px; letter-spacing: 1.4px; }
+.today-review-heading .button { flex-shrink: 0; }
+.review-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 23px; }
+.review-stats > div { display: flex; align-items: baseline; gap: 15px; min-width: 0; }
+.review-stats span { color: #68796f; font-size: 12px; }
+.review-stats strong { font: 27px Georgia, serif; color: #385849; }
+.today-review-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 20px; font-size: 12px; line-height: 1.8; color: #68796f; margin-top: 17px; }
+.review-summary { padding: 0 28px 20px; border-bottom: 1px solid var(--line); }
+.review-summary > p { margin-top: 12px; font-size: 12px; line-height: 1.8; color: #68796f; }
+.review-rating small { font-size: 12px; margin-top: 3px; line-height: 1.7; }
+.review-inline-warning, .review-restored { margin: 18px 28px 0; padding: 12px 15px; border-radius: 6px; background: #faf7e9; color: #8b742f; font-size: 12px; line-height: 1.9; }
+.today-review .review-inline-warning { margin: 15px 0 0; }
+.review-restored { background: #edf3e7; color: #456844; }
+.review-load-error { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px; margin: 18px 28px 0; color: #936344; font-size: 12px; line-height: 1.9; }
+.review-load-error > svg { flex-shrink: 0; margin-top: 3px; }
+.review-load-error > span { flex: 1; min-width: 120px; }
+.review-pending { display: flex; align-items: flex-start; gap: 9px; text-align: left; margin-top: 20px; padding: 12px 15px; border-radius: 6px; background: #faf7e9; color: #8b742f; font-size: 12px; line-height: 1.9; }
+.review-pending svg { flex-shrink: 0; margin-top: 3px; }
+.review-save-error > p:not(:first-child) { margin-top: 12px; }
+@media (max-width: 800px) { .review-stats > div { flex-direction: column; gap: 7px; }.review-stats strong { font-size: 26px; } }
+@media (max-width: 620px) { .today-review { padding: 20px 18px 16px; margin-bottom: 18px; }.today-review-heading { align-items: flex-start; flex-direction: column; gap: 14px; }.today-review-heading h2 { font-size: 17px; }.review-stats { gap: 10px; }.review-stats span { font-size: 11px; }.review-summary { padding: 0 18px 18px; }.review-inline-warning, .review-restored, .review-load-error { margin-left: 18px; margin-right: 18px; }.review-rating small { font-size: 11px; } }
 /* The sixth destination shares the existing scrollable navigation at smaller widths. */
 @media (min-width: 1101px) and (max-width: 1300px) { .topbar { gap: 16px; }.topbar nav { gap: 8px; }.profile { display: none; } }
 @media (max-width: 1100px) { .topbar { height: auto; flex-wrap: wrap; padding-top: 15px; padding-bottom: 0; gap: 12px; }.topbar nav { width: 100%; min-width: 0; height: 47px; flex: 0 0 100%; overflow-x: auto; justify-content: flex-start; scrollbar-width: thin; gap: 10px; }.topbar nav button { flex-shrink: 0; white-space: nowrap; padding: 0 9px; } }

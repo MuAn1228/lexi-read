@@ -390,7 +390,7 @@ def test_relations_upgrade_backfills_only_explicit_valid_feedback_without_changi
     before_other = {table: rows(path, f"SELECT * FROM {table} ORDER BY id") for table in unchanged_tables}
     monkeypatch.setattr(migrations, "MIGRATIONS", all_migrations)
     backup = migrations.migrate_database(engine)
-    assert backup and "before-006_personal_vocabulary_relations" in backup.name
+    assert backup and f"before-{all_migrations[-1][0]}" in backup.name
     assert rows(backup, "SELECT name FROM sqlite_master WHERE name = 'vocabulary_relations'") == []
     assert rows(backup, "SELECT * FROM learning_events ORDER BY id") == before_events
     relations = rows(path, "SELECT * FROM vocabulary_relations ORDER BY id")

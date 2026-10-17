@@ -143,6 +143,25 @@ test('storage keys are isolated by backend origin and Pages project', async () =
   assert.notEqual(first.browserStorageKey('guest-token'), otherBackend.browserStorageKey('guest-token'));
 });
 
+test('review progress is scoped to backend, Pages project, and the current local or guest identity', async () => {
+  globalThis.localStorage = storage();
+  globalThis.fetch = async () => health('local');
+  const local = await api();
+  const localKey = await local.reviewStorageKey();
+  assert.match(localKey, /review-session:v1:local$/);
+  globalThis.fetch = async () => health('guest');
+  const guest = await api();
+  globalThis.localStorage.setItem(guest.browserStorageKey('guest-token'), 'identity-one');
+  const firstKey = await guest.reviewStorageKey();
+  const next = await api();
+  globalThis.localStorage.setItem(next.browserStorageKey('guest-token'), 'identity-two');
+  assert.notEqual(await next.reviewStorageKey(), firstKey);
+  assert.notEqual(firstKey, localKey);
+  globalThis.fetch = async () => health('local');
+  assert.notEqual(await (await api('https://other-backend.example.com')).reviewStorageKey(), localKey);
+  assert.notEqual(await (await api('https://api.example.com', '/another-project/')).reviewStorageKey(), localKey);
+});
+
 test('invalid API origins fail clearly without making any network requests', async () => {
   let calls = 0;
   globalThis.fetch = async () => { calls += 1; return health('local'); };

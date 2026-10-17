@@ -23,8 +23,12 @@ export interface ReviewOccurrence {
 }
 export interface ReviewItem {
   vocabulary: Vocabulary; occurrence: ReviewOccurrence | null; last_reviewed_at: string | null;
+  due_at: string | null; known_streak: number; next_intervals_seconds: Record<WordStatus, number>;
 }
-export interface ReviewBatch { total: number; items: ReviewItem[] }
+export interface ReviewSummary {
+  total: number; reviewed_today: number; later_today: number; next_due_at: string | null; as_of: string;
+}
+export interface ReviewBatch extends ReviewSummary { items: ReviewItem[] }
 export interface LearningEvent {
   id: number; user_id: number; word: string; lemma: string; document_id: number | null;
   event_type: string; details: Record<string, unknown>; created_at: string;

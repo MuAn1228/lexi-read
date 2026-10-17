@@ -1,8 +1,11 @@
+from datetime import datetime
+
 from backend.models.entities import LearningEvent, utcnow
 from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import Status
 from backend.services.lemmatization import normalize_word
 from backend.services.mastery import MasteryService
+from backend.services.scheduling import schedule_mark
 
 
 class VocabularyService:
@@ -20,7 +23,7 @@ class VocabularyService:
 
     def mark(self, word: str, status: Status, document_id: int | None = None, *,
              commit: bool = True, metadata: dict | None = None,
-             recorded_events: list[LearningEvent] | None = None):
+             recorded_events: list[LearningEvent] | None = None, now: datetime | None = None):
         lemma = normalize_word(word)
         entry = self.repo.ensure(word.strip(), lemma)
         previous = entry.status
@@ -28,9 +31,12 @@ class VocabularyService:
         event_type = f"MARK_{status.value}"
         details = MasteryService.event_details(entry.mastery_score, event_type)
         entry.mastery_score = details["mastery_after"]
-        entry.updated_at = utcnow()
+        now = now or utcnow()
+        entry.updated_at = now
+        schedule_mark(self.repo.session, entry, status, review=(metadata or {}).get("origin") == "review", now=now)
         event = self.repo.event(word.strip(), event_type, document_id,
                                {**(metadata or {}), "previous_status": previous, **details})
+        event.created_at = now
         if recorded_events is not None:
             recorded_events.append(event)
         if commit:

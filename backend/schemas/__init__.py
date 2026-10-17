@@ -63,11 +63,18 @@ class ReviewItem(Schema):
     vocabulary: VocabularyOut
     occurrence: ReviewOccurrence | None
     last_reviewed_at: datetime | None
+    due_at: datetime | None
+    known_streak: int = Field(ge=0, le=5)
+    next_intervals_seconds: dict[Status, int]
 
 
 class ReviewOut(Schema):
     total: int = Field(ge=0)
     items: list[ReviewItem]
+    reviewed_today: int = Field(ge=0)
+    later_today: int = Field(ge=0)
+    next_due_at: datetime | None
+    as_of: datetime
 
 
 class WordOut(Schema):
