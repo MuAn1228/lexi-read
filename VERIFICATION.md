@@ -6,9 +6,11 @@
 - 前端 API 测试 **8 passed**；TypeScript 和生产构建通过。
 - 在独立数据库和两组浏览器上下文中，以 `/lexi-read/` 子路径加载静态网页并连接独立后端：独立空间/示例、认证 Blob 原图、标记隔离、刷新保留身份、手机无溢出全部通过。未调用真实 AI。验收时唯一控制台 404 为缺失 favicon，随后已在 HTML 内补入图标。
 - Render 配置通过官方 JSON Schema；隔离的公开启动脚本验证了配置拒绝、CORS、401 和重启持久化。模板为 1 CPU / 2 GB、5 GB 持久盘、单实例单 worker。
-- 本机 Docker 引擎未启动，未宣称完成 Linux 镜像或云端 OCR 验收；已添加 GitHub Actions 容器构建与真实 OCR 检查。
+- 本机 Docker 引擎未启动；随后 [GitHub Actions Linux 容器检查](https://github.com/MuAn1228/lexi-read/actions/runs/39012013525)实际构建镜像并运行 OCR 样图成功，19 个词及原生坐标校验通过。首轮 4.122 秒、热运行 1.370 秒；这不代表已验收实际云服务器的性能。
+- [GitHub Actions 后端检查](https://github.com/MuAn1228/lexi-read/actions/runs/39012013521)为 213 passed，Pages 的前端测试和构建检查通过。尚无后端地址，因此 Pages 发布按设计跳过，未声称网站已上线。
 - 发布前检查了可发布文件和提交历史未含本机 Agnes 密钥，`.env` 与个人数据库仍被忽略。
 - 实际 Render 服务创建、Agnes/云端 OCR、Pages 公网端到端验证仍需实际托管环境；操作见 [部署说明](docs/DEPLOYMENT.md)。
+- 支付方案已改为阿里云中国站；新增 Linux VPS 的 Compose + Caddy 自动 HTTPS 配置，通过 Docker Compose 静态配置校验。实际服务器、DNS 与 TLS 尚待用户提供，不宣称已上线。
 
 ## Agnes 3.0 Flash 接入验收（2026-10-17）
 

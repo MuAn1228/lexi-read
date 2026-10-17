@@ -1,0 +1,8 @@
+{
+    # Available only inside the Caddy container; do not publish port 2019.
+    admin localhost:2019
+}
+
+{$API_DOMAIN} {
+    reverse_proxy api:10000
+}

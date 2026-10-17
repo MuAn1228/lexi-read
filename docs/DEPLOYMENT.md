@@ -1,5 +1,7 @@
 # GitHub Pages + Render 部署
 
+当前选择已改为阿里云中国站（支付宝），Linux 服务器操作见 [Docker Compose 部署](../deploy/vps/README.md)。本文保留 Render 可选方案；Pages 配置与访客行为仍适用于两种后端。
+
 仓库：[MuAn1228/lexi-read](https://github.com/MuAn1228/lexi-read)。目标网页地址为 `https://muan1228.github.io/lexi-read/`；只有成功运行 Pages 部署后该地址才可使用。
 
 GitHub Pages 负责静态网页，Render 运行 FastAPI、PaddleOCR、Agnes 调用与 SQLite。[GitHub Pages 是静态托管](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)，无法运行 Python 后端。

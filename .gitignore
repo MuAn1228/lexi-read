@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+deploy/vps/backend.env
 .venv/
 venv/
 __pycache__/

@@ -49,7 +49,7 @@
 - [x] Pages 前端路径、独立后端地址、受保护图片与浏览器访客凭证。
 - [x] 全链路访客数据隔离，保留本机用户；不同访客的读写与认证失败测试。
 - [x] 持久化全站/个人尝试限额、注册限额、AI/OCR 并发上限。
-- [x] Docker、Render 持久磁盘配置、GitHub Actions 和部署说明。
-- [ ] 在 Render 创建后端并验证云端 OCR/Agnes。
+- [x] Docker、Render 持久磁盘、阿里云等 Linux VPS Compose/HTTPS 配置、GitHub Actions 和部署说明。
+- [ ] 在阿里云创建后端并验证云端 OCR/Agnes。
 - [ ] 配置后端地址并发布 GitHub Pages，验证公网端到端流程。
 

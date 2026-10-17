@@ -1,0 +1,55 @@
+name: lexi-read-vps
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    init: true
+    restart: unless-stopped
+    env_file:
+      - ./backend.env
+    environment:
+      APP_MODE: public
+      DATA_DIR: /var/data/lexi
+      PORT: "10000"
+      CORS_ORIGINS: https://muan1228.github.io
+    # serve_public.py starts exactly one worker for SQLite and OCR.
+    command: ["python", "scripts/serve_public.py"]
+    expose:
+      - "10000"
+    volumes:
+      - lexi-data:/var/data/lexi
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json, urllib.request; h = json.load(urllib.request.urlopen('http://127.0.0.1:10000/api/health', timeout=5)); assert h['status'] == 'ok' and h['auth_mode'] == 'guest'"
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 45s
+    stop_grace_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in deploy/vps/.env to your API hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  lexi-data:
+  caddy-data:
+  caddy-config:

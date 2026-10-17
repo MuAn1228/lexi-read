@@ -4,7 +4,7 @@
 
 ## 快速开始
 
-公网部署使用 **GitHub Pages 前端 + Render 后端**，见 [部署说明](docs/DEPLOYMENT.md)。公开版为每个浏览器建立独立的学习空间；本机安装继续使用原有词库。
+公网部署使用 **GitHub Pages 前端 + 云端后端**。阿里云等 Linux 服务器见 [Docker Compose 部署](deploy/vps/README.md)，Render 方式见 [部署说明](docs/DEPLOYMENT.md)。公开版为每个浏览器建立独立的学习空间；本机安装继续使用原有词库。
 
 **在本次交付的电脑上，直接双击项目文件夹中的 `打开词间.cmd`。** 它会启动后台服务并打开浏览器；重复双击会复用现有服务。关闭浏览器不会停止服务，需要退出时双击 `关闭词间.cmd`。本地网页只有在服务运行时才能打开，不能直接双击 `frontend/index.html` 使用。
 
