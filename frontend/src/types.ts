@@ -1,5 +1,5 @@
 export type WordStatus = 'KNOWN' | 'UNKNOWN' | 'UNCERTAIN';
-export type View = 'reader' | 'vocabulary' | 'history' | 'dashboard' | 'relations';
+export type View = 'reader' | 'vocabulary' | 'review' | 'history' | 'dashboard' | 'relations';
 export interface Occurrence {
   id: number; word: string; lemma: string; sentence: string;
   bbox: [number, number, number, number]; line: string | number;
@@ -18,6 +18,13 @@ export interface Vocabulary {
   mastery_score: number | null; seen_count: number; lookup_count: number;
   created_at: string; updated_at: string; first_seen_at: string | null; last_seen_at: string | null;
 }
+export interface ReviewOccurrence {
+  id: number; document_id: number; document_title: string; word: string; sentence: string;
+}
+export interface ReviewItem {
+  vocabulary: Vocabulary; occurrence: ReviewOccurrence | null; last_reviewed_at: string | null;
+}
+export interface ReviewBatch { total: number; items: ReviewItem[] }
 export interface LearningEvent {
   id: number; user_id: number; word: string; lemma: string; document_id: number | null;
   event_type: string; details: Record<string, unknown>; created_at: string;

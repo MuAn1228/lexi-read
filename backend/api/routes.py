@@ -11,10 +11,12 @@ from backend.config import get_settings
 from backend.models import Document, WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, VocabularyOut, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, ReviewOut, VocabularyOut, WordHistoryOut
 from backend.services.feedback import FeedbackService
 from backend.services.relations import RelationService
 from backend.services.dashboard import DashboardService
+from backend.services.review import ReviewService
+from backend.services.review_marks import ReviewMarkService
 from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
@@ -42,6 +44,12 @@ def relations(session: Session = Depends(get_session), user_id: int = Depends(ge
 @router.get("/dashboard", response_model=DashboardOut)
 def dashboard(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
     return DashboardService(session, user_id).read()
+
+
+@router.get("/review", response_model=ReviewOut)
+def review(limit: int = Query(10, ge=1, le=50), session: Session = Depends(get_session),
+           user_id: int = Depends(get_current_user_id)):
+    return ReviewService(session, user_id).read(limit)
 
 
 @router.get("/documents", response_model=list[DocumentSummary])
@@ -104,10 +112,16 @@ def word_history(word: str, session: Session = Depends(get_session), user_id: in
 @router.put("/vocabulary/{word}", response_model=VocabularyOut)
 def mark_word(word: str, payload: MarkRequest, session: Session = Depends(get_session),
               user_id: int = Depends(get_current_user_id)):
-    if payload.document_id is not None:
-        require_document(session, payload.document_id, user_id)
     try:
-        return VocabularyService(VocabularyRepository(session, user_id)).mark(word, payload.status, payload.document_id)
+        repository = VocabularyRepository(session, user_id)
+        if payload.origin == "review" and payload.request_id is not None:
+            return ReviewMarkService(repository).apply(word, payload.status, payload.document_id, payload.request_id)
+        if payload.document_id is not None:
+            require_document(session, payload.document_id, user_id)
+        metadata = {"origin": "review"} if payload.origin == "review" else None
+        return VocabularyService(repository).mark(
+            word, payload.status, payload.document_id, metadata=metadata,
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

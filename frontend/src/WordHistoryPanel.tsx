@@ -3,7 +3,7 @@ import { Clock3, LoaderCircle, RefreshCw } from 'lucide-react';
 import { errorMessage, formatDate, request } from './api';
 import type { WordHistory } from './types';
 import { StatusBadge } from './WordControls';
-import { eventLabels } from './eventLabels';
+import { learningEventLabel } from './eventLabels';
 
 export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
   lemma: string; updatedAt?: string; revision: number;
@@ -33,7 +33,7 @@ export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
     {loading && <div className="loading-copy" role="status"><LoaderCircle size={15} className="spin" />正在读取学习记录…</div>}
     {error && <div className="inline-error" role="alert"><p>学习记录暂时无法读取：{error}</p><button className="text-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={13} />重试学习记录</button></div>}
     {history && entry && <>
-      {history.last_mark && <p className="prior-feedback">你已在原文遇见这个词 <strong>{entry.seen_count}</strong> 次。<br />上一次{eventLabels[history.last_mark.event_type] || history.last_mark.event_type}。<time dateTime={history.last_mark.created_at}>{formatDate(history.last_mark.created_at)}</time></p>}
+      {history.last_mark && <p className="prior-feedback">你已在原文遇见这个词 <strong>{entry.seen_count}</strong> 次。<br />上一次{learningEventLabel(history.last_mark)}。<time dateTime={history.last_mark.created_at}>{formatDate(history.last_mark.created_at)}</time></p>}
       <dl className="word-history-facts">
         <div><dt>第一次出现</dt><dd>{formatDate(entry.first_seen_at)}</dd></div>
         <div><dt>最近出现</dt><dd>{formatDate(entry.last_seen_at)}</dd></div>
@@ -44,7 +44,7 @@ export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
       </dl>
       <p className="mastery-note">掌握度按你的标记和主动查词简单调整，仅供学习参考。</p>
       {history.events.length > 0 ? <>
-        <ol className="word-event-list">{visibleEvents.map(event => <li key={event.id}><span>{eventLabels[event.event_type] || event.event_type}</span><time dateTime={event.created_at}>{formatDate(event.created_at)}</time></li>)}</ol>
+        <ol className="word-event-list">{visibleEvents.map(event => <li key={event.id}><span>{learningEventLabel(event)}</span><time dateTime={event.created_at}>{formatDate(event.created_at)}</time></li>)}</ol>
         {history.events.length > 3 && <button className="text-button history-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起记录' : `查看最近 ${history.events.length} 条记录`}</button>}
       </> : <p className="service-note">还没有主动查词或标记记录。阅读遇见不会自动计为查词。</p>}
     </>}

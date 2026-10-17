@@ -30,7 +30,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: node --test tests/api.test.mjs
+      - run: npm test
         working-directory: frontend
       - name: Check backend configuration
         id: backend

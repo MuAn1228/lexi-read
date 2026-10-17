@@ -1,10 +1,40 @@
 """Output-contract tests; no model download needed. Real inference: scripts/ocr_smoke.py."""
 
 import math
+import sys
+from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
+from backend.config import Settings
 from backend.ocr.service import OCRService, OCRUnavailable, parse_paddle_results
+
+
+@pytest.mark.parametrize("threads", [1, 2, 8])
+def test_ocr_cpu_budget_reaches_both_engines_without_eager_download(monkeypatch, tmp_path, threads):
+    configured = Settings(data_dir=tmp_path, ocr_cpu_threads=threads, _env_file=None)
+    monkeypatch.setattr("backend.ocr.service.get_settings", lambda: configured)
+    cv_threads, paddle_options = [], []
+    monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(setNumThreads=cv_threads.append))
+    def create_engine(**options):
+        paddle_options.append(options)
+        return object()
+    monkeypatch.setitem(sys.modules, "paddleocr", SimpleNamespace(PaddleOCR=create_engine))
+    service = OCRService()
+    assert paddle_options == []
+    service._load_engine()
+    service._load_engine()
+    assert cv_threads == [threads]
+    assert len(paddle_options) == 1
+    assert paddle_options[0]["cpu_threads"] == threads
+    assert paddle_options[0]["device"] == "cpu"
+
+
+@pytest.mark.parametrize("threads", [0, 9, 1.5])
+def test_invalid_cpu_budget_is_rejected(threads):
+    with pytest.raises(ValidationError):
+        Settings(ocr_cpu_threads=threads, _env_file=None)
 
 
 def test_native_words_use_ocr_geometry_line_confidence_and_clip_to_image():

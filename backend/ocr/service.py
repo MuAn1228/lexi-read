@@ -147,7 +147,7 @@ class OCRService:
         try:
             # OpenCV otherwise starts one worker per logical CPU in addition to
             # Paddle's workers. Bound preprocessing resources on desktop hosts.
-            cv2.setNumThreads(4)
+            cv2.setNumThreads(settings.ocr_cpu_threads)
             self._engine = PaddleOCR(
                 text_detection_model_name="PP-OCRv5_mobile_det",
                 text_recognition_model_name="en_PP-OCRv5_mobile_rec",
@@ -156,7 +156,7 @@ class OCRService:
                 use_textline_orientation=False,
                 return_word_box=True,
                 device="cpu",
-                cpu_threads=4,
+                cpu_threads=settings.ocr_cpu_threads,
                 enable_mkldnn=False,
             )
         except Exception as exc:

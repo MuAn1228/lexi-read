@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     database_url: str = ""
     app_mode: Literal["local", "public"] = "local"
     ocr_provider: str = "paddle"
+    ocr_cpu_threads: int = Field(default=4, ge=1, le=8)
     tesseract_cmd: str = ""
     llm_provider: str = "offline"
     llm_base_url: str = "https://api.openai.com/v1"

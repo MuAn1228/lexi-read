@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
 class Schema(BaseModel):
@@ -41,6 +41,33 @@ class VocabularyOut(Schema):
 class MarkRequest(Schema):
     status: Status
     document_id: int | None = None
+    origin: Literal["review"] | None = None
+    request_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_review_request_id(self):
+        if self.request_id is not None and self.origin != "review":
+            raise ValueError("request_id 仅适用于 origin 为 review 的复习标记。")
+        return self
+
+
+class ReviewOccurrence(Schema):
+    id: int
+    document_id: int
+    document_title: str
+    word: str
+    sentence: str
+
+
+class ReviewItem(Schema):
+    vocabulary: VocabularyOut
+    occurrence: ReviewOccurrence | None
+    last_reviewed_at: datetime | None
+
+
+class ReviewOut(Schema):
+    total: int = Field(ge=0)
+    items: list[ReviewItem]
 
 
 class WordOut(Schema):

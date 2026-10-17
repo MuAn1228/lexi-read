@@ -117,6 +117,21 @@ class FeedbackReceipt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ReviewReceipt(Base):
+    __tablename__ = "review_receipts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "request_id"),
+        CheckConstraint("status IN ('KNOWN','UNKNOWN','UNCERTAIN')"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    lemma: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20))
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class VocabularyRelation(Base):
     __tablename__ = "vocabulary_relations"
     __table_args__ = (

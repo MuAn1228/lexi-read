@@ -5,15 +5,17 @@ import ContextPanel from './ContextPanel';
 import DocumentPanel from './DocumentPanel';
 import DashboardView from './DashboardView';
 import RelationsView from './RelationsView';
+import ReviewView from './ReviewView';
 import { HistoryView, VocabularyView } from './LibraryViews';
 import WordList from './WordList';
 import type { StatusFilter } from './WordList';
-import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, View, Vocabulary, WordStatus } from './types';
+import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
 const titles: Record<View, { eyebrow: string; title: string; subtitle: string }> = {
   reader: { eyebrow: 'YOUR PERSONAL READING SPACE', title: '读懂文章，也读懂每一个词。', subtitle: '从真实阅读出发，让遇见的单词慢慢成为你的语言。' },
   vocabulary: { eyebrow: 'A VOCABULARY THAT GROWS WITH YOU', title: '把遇见的词，变成自己的。', subtitle: '认识、陌生、偶尔忘记。每一种状态，都值得被记住。' },
+  review: { eyebrow: 'ANOTHER MOMENT WITH YOUR WORDS', title: '再遇见，让生词慢慢熟悉。', subtitle: '从真实阅读里遇见的词开始，回想、看原文、记录此刻的掌握程度。' },
   history: { eyebrow: 'YOUR LEARNING JOURNEY', title: '每一小步，都有迹可循。', subtitle: '回看你的阅读、探索与反馈，慢慢看见积累的力量。' },
   dashboard: { eyebrow: 'A CLEARER VIEW OF YOUR LEARNING', title: '看见积累，也看见下一步。', subtitle: '用真实的学习记录，找到值得再读一次的词。' },
   relations: { eyebrow: 'WORDS CONNECTED BY YOUR CURIOSITY', title: '从一个词，走向更多理解。', subtitle: '你看过的关联、留下的反馈，慢慢连成自己的词汇地图。' },
@@ -47,8 +49,8 @@ export default function App() {
   const busyRef = useRef(false);
   const initializingRef = useRef(false);
 
-  const acceptDocument = useCallback((value: ReadingDocument) => {
-    setDocument(value); setSelectedId(value.words[0]?.id ?? null);
+  const acceptDocument = useCallback((value: ReadingDocument, occurrenceId?: number) => {
+    setDocument(value); setSelectedId(value.words.find(word => word.id === occurrenceId)?.id ?? value.words[0]?.id ?? null);
     setQuery(''); setFilter('ALL'); setView('reader'); setUploadOpen(false); rememberDocument(value.id);
   }, []);
   const refreshLearning = useCallback(async () => {
@@ -60,11 +62,11 @@ export default function App() {
       setDocument(value => value ? { ...value, words: value.words.map(word => statuses.has(word.lemma) ? { ...word, status: statuses.get(word.lemma) ?? null } : word) } : null);
     }
   }, []);
-  const openDocument = useCallback(async (id: number) => {
+  const openDocument = useCallback(async (id: number, occurrenceId?: number) => {
     if (busyRef.current || savingRef.current) return;
     const generation = ++requestGeneration.current;
     busyRef.current = true; setBusy('正在打开阅读材料…'); setError('');
-    try { const value = await request<ReadingDocument>(`/documents/${id}`); if (generation === requestGeneration.current) acceptDocument(value); }
+    try { const value = await request<ReadingDocument>(`/documents/${id}`); if (generation === requestGeneration.current) acceptDocument(value, occurrenceId); }
     catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   }, [acceptDocument]);
@@ -173,6 +175,23 @@ export default function App() {
     } catch (e) { setError(errorMessage(e)); }
     finally { savingRef.current = false; setSaving(false); }
   }, [document, filteredWords]);
+  const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<boolean> => {
+    if (savingRef.current || busyRef.current) return false;
+    savingRef.current = true; setSaving(true); setError('');
+    try {
+      const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(item.vocabulary.word)}`, {
+        method: 'PUT', body: JSON.stringify({ status, origin: 'review', request_id: requestId, ...(item.occurrence ? { document_id: item.occurrence.document_id } : {}) }),
+      });
+      ++libraryGeneration.current;
+      setVocabulary(values => [updated, ...values.filter(word => word.id !== updated.id)]);
+      setDocument(value => value ? { ...value, words: value.words.map(word => word.lemma === updated.lemma ? { ...word, status: updated.status } : word) } : null);
+      setNotice(`${item.vocabulary.word} · 本次自评已保存`);
+      // The confirmed write advances the card even if the following read fails.
+      void refreshLearning().catch(e => setError(`自评已保存；暂未刷新词库与学习足迹：${errorMessage(e)}`));
+      return true;
+    } catch (e) { setError(errorMessage(e)); return false; }
+    finally { savingRef.current = false; setSaving(false); }
+  }, [refreshLearning]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (view !== 'reader' || !selected || busy || uploadOpen || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -210,6 +229,7 @@ export default function App() {
         </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />学习，发生在真实阅读里</span><h2>少一点机械记忆，<br />多一点<span>真正理解。</span></h2><p>读你感兴趣的内容，圈出还不熟悉的单词。<br />词间会记住你的反馈，陪你建立自己的词汇地图。</p><div className="reading-illustration" aria-hidden="true"><div className="paper-card"><span>A SMALL NOTE ON LEARNING</span><p>Read with <mark>curiosity.</mark><br />Make room for<br /><em>understanding.</em></p><div className="paper-lines"><i /><i /><i /></div></div><div className="word-note"><Leaf size={16} /><span>从语境里，认识一个词。</span></div></div><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel">{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>示例为已预标注的英文图片，可直接体验标记、词库和关联学习。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
+      <ReviewView active={view === 'review'} vocabulary={vocabulary} disabled={saving || isLoading} onAssess={assessReview} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
