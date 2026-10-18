@@ -360,6 +360,14 @@ def _create_article_library(connection: sqlite3.Connection, tables: set[str]) ->
     connection.execute("CREATE INDEX IF NOT EXISTS ix_documents_deleted_at ON documents (deleted_at)")
 
 
+def _create_pdf_reading(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Add page spans only; original materials and learning signals stay intact."""
+    if "documents" in tables:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(documents)")}
+        if "pages" not in columns:
+            connection.execute("ALTER TABLE documents ADD COLUMN pages JSON NOT NULL DEFAULT '[]'")
+
+
 # Append a new numbered migration here; do not change previously shipped versions.
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
@@ -368,7 +376,8 @@ MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic",
               ("006_personal_vocabulary_relations", _create_personal_relations),
               ("007_spaced_review_schedules", _create_review_schedules),
               ("008_plain_text_import", _create_text_imports),
-              ("009_article_library", _create_article_library)]
+              ("009_article_library", _create_article_library),
+              ("010_pdf_reading", _create_pdf_reading)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

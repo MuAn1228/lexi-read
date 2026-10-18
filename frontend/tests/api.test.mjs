@@ -135,6 +135,32 @@ test('image URLs cannot send saved credentials outside the configured backend AP
   assert.equal(calls, 0);
 });
 
+test('PDF and other file downloads authenticate GET and POST without credentials in URLs or foreign requests', async () => {
+  globalThis.localStorage = storage();
+  const client = await api();
+  globalThis.localStorage.setItem(client.browserStorageKey('guest-token'), 'saved-file-token');
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/health')) return health('guest');
+    assert.equal(init.headers.get('Authorization'), 'Bearer saved-file-token');
+    return new Response(new Blob(['file-content'], { type: 'application/pdf' }));
+  };
+  const controller = new AbortController();
+  assert.equal(await (await client.requestFile('/api/documents/42/pdf', { signal: controller.signal })).text(), 'file-content');
+  const form = new FormData(); form.append('file', new Blob(['archive']));
+  await client.requestFile('/api/data/backup', { method: 'POST', body: form, signal: controller.signal });
+  const post = calls.find(call => call.init.method === 'POST');
+  assert.equal(post.init.body, form);
+  assert.equal(post.init.headers.has('Content-Type'), false);
+  assert.ok(calls.every(call => !call.url.includes('saved-file-token')));
+  const before = calls.length;
+  for (const url of ['https://other.example.com/api/documents/42/pdf', '//other.example.com/api/file', '/outside-api/file', 'data:application/pdf,content', 'https://user:pass@api.example.com/api/file']) {
+    await assert.rejects(client.requestFile(url), /文件地址无效/);
+  }
+  assert.equal(calls.length, before);
+});
+
 test('storage keys are isolated by backend origin and Pages project', async () => {
   const first = await api('https://api.example.com', '/first/');
   const otherBase = await api('https://api.example.com', '/second/');

@@ -1,11 +1,12 @@
-import { Eye, EyeOff, FileText, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, FileText, LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { errorMessage, requestImage } from './api';
+import { errorMessage, requestFile, requestImage } from './api';
 import { articleParts } from './textArticle';
+import { pdfPageContent, pdfPageForOccurrence } from './pdfArticle';
 import type { Occurrence, ReadingDocument } from './types';
 
 export default function DocumentPanel({ document, selectedId, revealToken, onSelect }: {
-  document: ReadingDocument; selectedId: number | null; revealToken: number; onSelect: (word: Occurrence) => void;
+  document: ReadingDocument; selectedId: number | null; revealToken: number; onSelect: (word: Occurrence | null) => void;
 }) {
   const [zoom, setZoom] = useState(100);
   const [showBoxes, setShowBoxes] = useState(true);
@@ -15,8 +16,17 @@ export default function DocumentPanel({ document, selectedId, revealToken, onSel
   const [image, setImage] = useState<{ source: string; url: string } | null>(null);
   const article = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
-  const isText = document.source === 'text';
-  const parts = useMemo(() => isText ? articleParts(document.ocr_text, document.words) : [], [isText, document.ocr_text, document.words]);
+  const isPdf = document.source === 'pdf';
+  const isText = document.source === 'text' || isPdf;
+  const pages = document.pages ?? [];
+  const [pageNumber, setPageNumber] = useState(() => isPdf ? pdfPageForOccurrence(document, selectedId) ?? pages[0]?.number ?? 1 : 1);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const downloadController = useRef<AbortController | null>(null);
+  const downloadUrl = useRef<string | null>(null);
+  const page = pages.find(item => item.number === pageNumber);
+  const pageContent = useMemo(() => isPdf && page ? pdfPageContent(document.ocr_text, document.words, page) : { text: document.ocr_text, words: document.words }, [isPdf, page, document.ocr_text, document.words]);
+  const parts = useMemo(() => isText ? articleParts(pageContent.text, pageContent.words) : [], [isText, pageContent]);
   const imageUrl = image?.source === document.image_url ? image.url : null;
   useEffect(() => {
     setImage(null); setImageError('');
@@ -38,6 +48,38 @@ export default function DocumentPanel({ document, selectedId, revealToken, onSel
     setShowText(false); setShowBoxes(true);
   }, [revealToken]);
   useEffect(() => {
+    if (!isPdf) return;
+    const selectedPage = pdfPageForOccurrence(document, selectedId);
+    if (selectedPage !== null) setPageNumber(selectedPage);
+  }, [document, selectedId, isPdf, revealToken]);
+  useEffect(() => () => {
+    downloadController.current?.abort();
+    if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current);
+  }, []);
+  const changePage = (number: number) => {
+    const target = pages.find(item => item.number === number);
+    if (!target) return;
+    setPageNumber(number);
+    const word = document.words.find(item => item.text_start !== null && item.text_start !== undefined && item.text_end !== null && item.text_end !== undefined && item.text_start >= target.text_start && item.text_end <= target.text_end);
+    onSelect(word ?? null);
+    if (article.current) article.current.scrollTop = 0;
+  };
+  const downloadPdf = async () => {
+    if (downloadController.current || !document.pdf_url) return;
+    const controller = new AbortController(); downloadController.current = controller;
+    setDownloading(true); setDownloadError('');
+    try {
+      const blob = await requestFile(document.pdf_url, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current);
+      const url = URL.createObjectURL(blob); downloadUrl.current = url;
+      const link = window.document.createElement('a');
+      link.href = url; link.download = `${document.title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/\.pdf$/i, '') || '阅读材料'}.pdf`;
+      link.click();
+    } catch (error) { if (!controller.signal.aborted) setDownloadError(errorMessage(error)); }
+    finally { if (!controller.signal.aborted) { downloadController.current = null; setDownloading(false); } }
+  };
+  useEffect(() => {
     if (selectedId === null) return;
     const container = isText ? article.current : canvas.current;
     const button = container?.querySelector<HTMLButtonElement>(`[data-occurrence-id="${selectedId}"]`);
@@ -46,12 +88,14 @@ export default function DocumentPanel({ document, selectedId, revealToken, onSel
     const surface = container.getBoundingClientRect(); const word = button.getBoundingClientRect();
     if (word.top < surface.top || word.bottom > surface.bottom) container.scrollTop += word.top - surface.top - container.clientHeight / 2 + word.height / 2;
     if (word.left < surface.left || word.right > surface.right) container.scrollLeft += word.left - surface.left - container.clientWidth / 2 + word.width / 2;
-  }, [selectedId, isText, revealToken, imageUrl, showText, showBoxes, zoom]);
-  return <section className={`document-panel panel ${isText ? 'text-document-panel' : ''}`}>
-    <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{isText ? '文字文章' : document.source === 'demo' ? '示例图片 · 已预标注' : '图片文章'}</span></div>
+  }, [selectedId, isText, revealToken, imageUrl, showText, showBoxes, zoom, pageNumber]);
+  return <section className={`document-panel panel ${isText ? 'text-document-panel' : ''} ${isPdf ? 'pdf-document-panel' : ''}`}>
+    <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{isPdf ? `PDF · ${pages.length} 页` : isText ? '文字文章' : document.source === 'demo' ? '示例图片 · 已预标注' : '图片文章'}</span></div>
     {isText ? <>
-      <p className="text-reading-guide">点击英文单词，查看它在这句话里的意思。</p>
-      <div className="text-article" ref={article} aria-label="文章正文" lang="en">{parts.map((part, index) => part.occurrence ? <button key={`word-${part.occurrence.id}`} type="button"
+      {isPdf && <div className="pdf-page-toolbar"><div className="pdf-page-controls"><button className="icon-button" aria-label="PDF 上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}><ChevronLeft size={17} /></button><label><select aria-label="PDF 页码" value={pageNumber} onChange={event => changePage(Number(event.target.value))}>{pages.map(item => <option key={item.number} value={item.number}>第 {item.number} 页</option>)}</select><span>/ {pages.length} 页</span></label><button className="icon-button" aria-label="PDF 下一页" disabled={pageNumber >= pages.length} onClick={() => changePage(pageNumber + 1)}><ChevronRight size={17} /></button></div><button className="text-button" aria-label="下载原 PDF" disabled={downloading || !document.pdf_url} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}下载原 PDF</button></div>}
+      <p className="text-reading-guide">{isPdf ? 'PDF 提取正文 · 按原文件页码阅读，不保留原版排版。' : '点击英文单词，查看它在这句话里的意思。'}</p>
+      {downloadError && <p className="pdf-download-error" role="alert">{downloadError} 可点击“下载原 PDF”重试。</p>}
+      <div className="text-article" ref={article} aria-label={isPdf ? `PDF 第 ${pageNumber} 页正文` : '文章正文'} lang="en">{isPdf && !pageContent.text.trim() ? <div className="pdf-empty-page" lang="zh-CN"><FileText size={29} /><p>这一页没有可提取的文字</p><span>可能是空白页或图片页，可继续翻页或下载原 PDF 查看。</span></div> : parts.map((part, index) => part.occurrence ? <button key={`word-${part.occurrence.id}`} type="button"
         className={`article-word ${part.occurrence.status?.toLowerCase() ?? 'unmarked'} ${part.occurrence.id === selectedId ? 'selected' : ''}`}
         data-occurrence-id={part.occurrence.id} aria-label={`选择单词 ${part.text}`} aria-pressed={part.occurrence.id === selectedId}
         onClick={() => onSelect(part.occurrence!)}>{part.text}</button> : <span key={`text-${index}`}>{part.text}</span>)}</div>
@@ -77,6 +121,6 @@ export default function DocumentPanel({ document, selectedId, revealToken, onSel
             })}
           </div>}
       </div>}</>}
-    <div className="document-footer"><span><span className="pulse-dot" />点击{isText ? '文章' : '图片'}中的单词，开始学习</span>{isText ? <span>{document.words.length} 处英文单词</span> : <button className="text-button" onClick={() => setShowBoxes(v => !v)}>{showBoxes ? <Eye size={14} /> : <EyeOff size={14} />}{showBoxes ? '隐藏标注' : '显示标注'}</button>}</div>
+    <div className="document-footer"><span><span className="pulse-dot" />点击{isText ? '文章' : '图片'}中的单词，开始学习</span>{isText ? <span>{isPdf ? `本页 ${pageContent.words.length}` : document.words.length} 处英文单词</span> : <button className="text-button" onClick={() => setShowBoxes(v => !v)}>{showBoxes ? <Eye size={14} /> : <EyeOff size={14} />}{showBoxes ? '隐藏标注' : '显示标注'}</button>}</div>
   </section>;
 }

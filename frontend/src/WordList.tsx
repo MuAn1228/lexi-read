@@ -8,10 +8,11 @@ export const filters: { value: StatusFilter; label: string }[] = [
   { value: 'ALL', label: '全部' }, { value: 'UNMARKED', label: '未标记' }, { value: 'UNKNOWN', label: '不认识' }, { value: 'UNCERTAIN', label: '不确定' }, { value: 'KNOWN', label: '已掌握' },
 ];
 
-export default function WordList({ words, selectedId, query, setQuery, filter, setFilter, total, onSelect, onMark, saving }: {
+export default function WordList({ words, selectedId, query, setQuery, filter, setFilter, total, onSelect, onMark, saving, wholeDocument = false }: {
   words: Occurrence[]; selectedId: number | null; query: string; setQuery: (value: string) => void;
   filter: StatusFilter; setFilter: (value: StatusFilter) => void; total: number;
   onSelect: (word: Occurrence) => void; onMark: (word: Occurrence, status: WordStatus) => void; saving: boolean;
+  wholeDocument?: boolean;
 }) {
   const rows = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -25,8 +26,8 @@ export default function WordList({ words, selectedId, query, setQuery, filter, s
     else if (row.bottom > viewport.bottom) container.scrollTop += row.bottom - viewport.bottom;
   }, [selectedId, words]);
   return <section className="word-list panel">
-    <div className="panel-heading"><div><ListFilter size={16} /><h2>本页单词</h2><span className="count-badge">{total}</span></div></div>
-    <div className="word-search"><Search size={15} /><input aria-label="搜索本页单词" placeholder="查找单词…" value={query} onChange={event => setQuery(event.target.value)} /></div>
+    <div className="panel-heading"><div><ListFilter size={16} /><h2>{wholeDocument ? '全文单词' : '本页单词'}</h2><span className="count-badge">{total}</span></div></div>
+    <div className="word-search"><Search size={15} /><input aria-label={wholeDocument ? '搜索全文单词' : '搜索本页单词'} placeholder="查找单词…" value={query} onChange={event => setQuery(event.target.value)} /></div>
     <div className="filter-tabs" aria-label="筛选单词状态">{filters.map(item => <button key={item.value} className={filter === item.value ? 'active' : ''} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</button>)}</div>
     <div ref={rows} className="word-list-rows">{words.map((word, index) => <div key={word.id} className={`word-row ${selectedId === word.id ? 'selected' : ''}`}>
       <button className="word-select" aria-pressed={selectedId === word.id} onClick={() => onSelect(word)}><span className="word-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{word.word}</strong><StatusBadge status={word.status} /></span></button>

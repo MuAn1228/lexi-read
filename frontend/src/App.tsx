@@ -10,6 +10,8 @@ import DashboardView from './DashboardView';
 import RelationsView from './RelationsView';
 import ReviewView from './ReviewView';
 import TextImportForm from './TextImportForm';
+import PdfImportForm from './PdfImportForm';
+import { pdfImportProblem } from './pdfArticle';
 import { normalizeArticle, textImportProblem } from './textArticle';
 import type { TextDraft, TextImportPayload } from './textArticle';
 import { HistoryView, VocabularyView } from './LibraryViews';
@@ -48,7 +50,8 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('ALL');
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [importMode, setImportMode] = useState<'image' | 'text'>('image');
+  const [importMode, setImportMode] = useState<'image' | 'text' | 'pdf'>('image');
+  const [pdfDraft, setPdfDraft] = useState<{ file: File; request_id: string } | null>(null);
   const [textDraft, setTextDraft] = useState<TextDraft>({ title: '', text: '' });
   const [importSyncError, setImportSyncError] = useState('');
   const [syncingImport, setSyncingImport] = useState(false);
@@ -229,8 +232,31 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   };
 
+  const choosePdf = (file: File) => {
+    if (busyRef.current || savingRef.current || initializingRef.current) return;
+    const problem = pdfImportProblem(file);
+    if (problem) { setError(problem); return; }
+    setPdfDraft({ file, request_id: crypto.randomUUID() }); setError('');
+  };
+  const importPdf = async () => {
+    if (!pdfDraft || busyRef.current || savingRef.current || initializingRef.current) return;
+    const form = new FormData(); form.append('file', pdfDraft.file); form.append('request_id', pdfDraft.request_id);
+    busyRef.current = true; setBusy('正在提取 PDF 正文与页码…'); setError('');
+    const generation = ++requestGeneration.current;
+    try {
+      const value = await request<ReadingDocument>('/documents/pdf', { method: 'POST', body: form });
+      if (generation !== requestGeneration.current) return;
+      acceptDocument(value); ++documentEpoch.current;
+      setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length }));
+      setDocumentRevision(value => value + 1); setPdfDraft(null);
+      setNotice(`PDF 已导入，共 ${value.page_count} 页、${value.words.length} 处英文单词。`);
+      void refreshImportedMaterial();
+    } catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
+    finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
+  };
   const upload = async (file?: File) => {
     if (!file || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (/\.pdf$/i.test(file.name) || ['application/pdf', 'application/x-pdf'].includes(file.type)) { setImportMode('pdf'); setUploadOpen(true); choosePdf(file); return; }
     if (!/\.(jpe?g|png)$/i.test(file.name) || (file.type && !['image/jpeg', 'image/png'].includes(file.type))) { setError('请选择 JPG 或 PNG 格式的英文图片。'); return; }
     if (file.size > 10 * 1024 * 1024) { setError('图片不能超过 10 MB，请压缩后重新上传。'); return; }
     const form = new FormData(); form.append('file', file);
@@ -313,7 +339,7 @@ export default function App() {
   const title = titles[view];
   const isLoading = Boolean(busy) || initializing;
   const uploadZone = <div className={`upload-zone ${dragOver ? 'drag-over' : ''}`} onDragOver={event => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={event => { event.preventDefault(); setDragOver(false); void upload(event.dataTransfer.files[0]); }}>
-    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文试卷、教材或文章截图<br /><span>JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading} onClick={() => { setImportMode('text'); setUploadOpen(true); setError(''); }}><FileText size={16} />粘贴英文文章</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
+    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文 PDF、试卷或文章截图<br /><span>PDF / JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('text'); setUploadOpen(true); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('pdf'); setUploadOpen(true); setError(''); }}><FileText size={16} />导入 PDF 文档</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
   </div>;
 
   return <div className="app-shell">
@@ -334,7 +360,7 @@ export default function App() {
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
           <div className="reading-library-tools"><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
-          <div className="reading-workspace"><DocumentPanel key={document.id} document={document} selectedId={selectedId} revealToken={revealBookmark} onSelect={word => setSelectedId(word.id)} /><WordList words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => setSelectedId(word.id)} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={selectedId} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
+          <div className="reading-workspace"><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} onSelect={word => setSelectedId(word?.id ?? null)} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => setSelectedId(word.id)} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={`context-${selectedId}`} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
         </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />学习，发生在真实阅读里</span><h2>少一点机械记忆，<br />多一点<span>真正理解。</span></h2><p>读你感兴趣的内容，圈出还不熟悉的单词。<br />词间会记住你的反馈，陪你建立自己的词汇地图。</p><div className="reading-illustration" aria-hidden="true"><div className="paper-card"><span>A SMALL NOTE ON LEARNING</span><p>Read with <mark>curiosity.</mark><br />Make room for<br /><em>understanding.</em></p><div className="paper-lines"><i /><i /><i /></div></div><div className="word-note"><Leaf size={16} /><span>从语境里，认识一个词。</span></div></div><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel">{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>示例为已预标注的英文图片，可直接体验标记、词库和关联学习。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
@@ -345,6 +371,6 @@ export default function App() {
       <footer className="app-footer"><span><Leaf size={13} />词间 · 在阅读中生长</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
-    {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'text' ? <FileText size={17} /> : <FileImage size={17} />}<h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => setImportMode('image')}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => setImportMode('text')}><FileText size={15} />粘贴文章</button></div>{importMode === 'image' ? uploadZone : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
+    {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'image' ? <FileImage size={17} /> : <FileText size={17} />}<h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => setImportMode('image')}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => setImportMode('text')}><FileText size={15} />粘贴文章</button><button className={importMode === 'pdf' ? 'active' : ''} aria-pressed={importMode === 'pdf'} disabled={isLoading} onClick={() => setImportMode('pdf')}><FileText size={15} />上传 PDF</button></div>{importMode === 'image' ? uploadZone : importMode === 'pdf' ? <PdfImportForm file={pdfDraft?.file ?? null} onChoose={choosePdf} onSubmit={() => void importPdf()} disabled={isLoading || saving} /> : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
   </div>;
 }

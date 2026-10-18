@@ -20,11 +20,13 @@ from backend.services.vocabulary import VocabularyService, normalize_word
 
 def document_summary(doc: Document, word_count: int | None = None) -> DocumentSummary:
     return DocumentSummary(id=doc.id, title=doc.title,
-                           image_url=None if doc.source == "text" else f"/api/documents/{doc.id}/image",
+                           image_url=None if doc.source in {"text", "pdf"} else f"/api/documents/{doc.id}/image",
                            width=doc.width, height=doc.height, source=doc.source,
                            created_at=doc.created_at, word_count=len(doc.words) if word_count is None else word_count,
                            tags=doc.tags or [], bookmark_occurrence_id=doc.bookmark_occurrence_id,
-                           deleted_at=doc.deleted_at, excerpt=re.sub(r"\s+", " ", doc.ocr_text).strip()[:160])
+                           deleted_at=doc.deleted_at, excerpt=re.sub(r"\s+", " ", doc.ocr_text).strip()[:160],
+                           page_count=len(doc.pages or []) if doc.source == "pdf" else 1,
+                           pdf_url=f"/api/documents/{doc.id}/pdf" if doc.source == "pdf" else None)
 
 
 def list_documents(session: Session, user_id: int, *, q: str | None = None, tag: str | None = None,
@@ -58,11 +60,11 @@ def list_documents(session: Session, user_id: int, *, q: str | None = None, tag:
 def document_out(doc: Document, session: Session, user_id: int = 1) -> DocumentOut:
     statuses = {entry.lemma: entry.status for entry in VocabularyRepository(session, user_id).all()}
     words = tuple(WordOut(id=w.id, word=w.word, lemma=w.lemma, sentence=w.sentence,
-                          bbox=None if doc.source == "text" else tuple(w.bbox), line=w.line,
-                          confidence=None if doc.source == "text" else w.confidence,
+                          bbox=None if doc.source in {"text", "pdf"} else tuple(w.bbox), line=w.line,
+                          confidence=None if doc.source in {"text", "pdf"} else w.confidence,
                           bbox_source=w.bbox_source, text_start=w.text_start, text_end=w.text_end,
                           status=statuses.get(w.lemma)) for w in doc.words)
-    return DocumentOut(**document_summary(doc).model_dump(), ocr_text=doc.ocr_text, words=words)
+    return DocumentOut(**document_summary(doc).model_dump(), ocr_text=doc.ocr_text, words=words, pages=doc.pages or [])
 
 
 def require_document(session: Session, document_id: int, user_id: int = 1, *, include_deleted: bool = False) -> Document:

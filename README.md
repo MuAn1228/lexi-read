@@ -1,6 +1,6 @@
 # 词间 Lexi · Personalized Vocabulary Agent MVP
 
-把英文图片或粘贴的文章变成可交互的阅读材料，通过用户反馈积累自己的词汇模型，再推荐少量适合当前语境的关联词。
+把英文图片、PDF 或粘贴的文章变成可交互的阅读材料，通过用户反馈积累自己的词汇模型，再推荐少量适合当前语境的关联词。
 
 ## 快速开始
 
@@ -36,7 +36,7 @@ Linux/macOS 对应环境路径是 `.venv/bin/python`，运行同一条 uvicorn �
 
 ## 使用流程
 
-1. 点击“添加阅读材料”，上传 JPG/PNG 图片、粘贴英文文章，或打开内置机器学习阅读示例。
+1. 点击“添加阅读材料”，上传 JPG/PNG 图片、导入 PDF、粘贴英文文章，或打开内置机器学习阅读示例。
 2. 点击图片词框或文章中的单词，也可用单词列表快速筛选。
 3. 标记“已掌握 / 不认识 / 不确定”。未标记是独立状态，不代表不确定。
 4. 主动查看语境解释，再请求最多 3 个关联词。展开关联后可反馈认识、不认识、有用或没用。
@@ -47,6 +47,8 @@ Linux/macOS 对应环境路径是 `.venv/bin/python`，运行同一条 uvicorn �
 键盘 `1 / 2 / 3` 可快速标记选中的词，随后移到下一个词。坐标以原图像素保存，前端按显示尺寸缩放。图片支持缩放与原文切换。
 
 粘贴文章支持可选标题和最多 20,000 个字符的正文，保留段落、空格和标点；未填标题时取首个非空行。导入不运行 OCR，也不调用模型。点击正文中的词后，可以使用现有语境释义、三种标记和间隔复习；重复出现的词分别保留原句与位置，共享词库状态。复习时“回到原文”也能定位到文字文章里的原词。
+
+PDF 导入支持可以选中文字的英文文件，最大 10 MB、100 页、提取正文最多 200,000 个 Unicode 字符。阅读页按原文件页码显示提取正文，保留空白页编号，可切换页码、点击单词、保存精确书签；复习回原文会跳到对应页的原词。提取正文不保留 PDF 的原始版面，原文件可在阅读页下载。扫描件、纯图片和加密 PDF 暂不支持。导入不调用 OCR 或 AI；失败保留已选文件和请求编号，重试不会重复文章或词频。
 
 导入失败会保留当前输入，重试相同内容不会重复创建文章或累计词频；成功后主动再次导入则视为新的阅读材料。关闭导入弹窗仍保留当前草稿，刷新网页不会保存尚未导入的草稿。文字文章与图片都保存在本机 SQLite 数据库中，重开软件后可以继续阅读。
 
@@ -195,12 +197,14 @@ npm run build
 | `POST /api/documents` | multipart `file` 上传图片；`/api/documents/upload` 为别名 |
 | `POST /api/documents/demo` | 幂等打开预标注示例 |
 | `POST /api/documents/text` | JSON `text`、可选 `title`、UUID `request_id`；保存文字文章，相同请求安全重试 |
+| `POST /api/documents/pdf` | multipart `file`、UUID `request_id`；保存 PDF 原文件与逐页正文，相同请求安全重试 |
 | `GET /api/documents` | 默认正常文章；支持 `q`、`tag`、`source`、`deleted=true`、`sort=newest/oldest/title` |
 | `PUT /api/documents/{id}` | 部分更新 `title`、`tags`、`bookmark_occurrence_id`；书签传 `null` 可清除 |
 | `DELETE /api/documents/{id}` | 移到回收站，保留学习数据；重复请求不重复处理 |
 | `POST /api/documents/{id}/restore` | 恢复回收站材料，保留原词位置和书签 |
 | `GET /api/documents/{id}` | 原文、词位置和最新词汇状态；文字的 `text_start/end` 为 Unicode 码点位置 |
 | `GET /api/documents/{id}/image` | 方向归一化后的 PNG 原图；文字文章返回 404 |
+| `GET /api/documents/{id}/pdf` | 下载当前用户活跃 PDF 的原文件；回收站或其他类型返回 404 |
 | `GET /api/vocabulary` | 当前用户的全部观察/标记词汇 |
 | `GET /api/vocabulary/{word}/history` | 归一化词形后的记录、上次标记和最近 20 条事件；只读 |
 | `GET /api/review?limit=10&tz_offset_minutes=480` | 当前到期总数、最多 10 词的队列、今日已复习、稍后到期及下一次时间；只读，limit 为 1–50 |
@@ -229,10 +233,10 @@ npm run build
 学习概览中的“生词”包含当前不认识与不确定的词。近 7 天新增生词按首次明确标记陌生的时间统计，近 7 天查询仅统计明确主动查询；近 30 天高频词按该时间段导入文章的实际词位置计数。长期未掌握表示首次陌生标记已满 30 天且当前仍陌生，不推断期间一直未掌握。累计查询保留旧版本记录。各排行最多 10 项，低掌握度排行排除尚未评估的空值。
 
 - 默认 `APP_MODE=local` 为本机单用户；公网需使用 `APP_MODE=public` 的访客凭证与数据隔离。公开版暂不提供跨设备登录：清理站点存储会失去原学习空间的访问凭证。
-- 支持 JPG/PNG（单张最多 10 MB、2500 万像素）及粘贴文字（最多 20,000 字）；暂不支持 PDF 或网址抓取。
+- 支持 JPG/PNG（单张最多 10 MB、2500 万像素）、粘贴文字（最多 20,000 字）及文本型英文 PDF（10 MB、100 页、提取正文 200,000 字）；暂不支持网址抓取。
 - 模型首次加载较慢，同一进程串行执行 OCR，避免线程不安全。
 - 个人数据保存在 `backend/data/`，整体备份此目录可保留数据库和原图。
 - 词汇统计、反馈与事件是真实持久化数据；推荐模型目前是 LLM/规则，不是训练好的推荐系统。
-- 可在 OCR、LLMService、候选生成和排序接口分别替换 PDF、Embedding、Reranker 等能力。当前不引入向量数据库或知识图谱基础设施。
+- 可在 OCR、LLMService、候选生成和排序接口分别扩展扫描 PDF、Embedding、Reranker 等能力。当前不引入向量数据库或知识图谱基础设施。
 
 实现参考：[FastAPI 文件上传](https://fastapi.tiangolo.com/reference/uploadfile/)、[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)、[Vite 代理配置](https://vite.dev/config/server-options.html#server-proxy)。

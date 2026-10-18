@@ -105,6 +105,8 @@ class DocumentSummary(Schema):
     bookmark_occurrence_id: int | None = None
     deleted_at: datetime | None = None
     excerpt: str = ""
+    page_count: int = 1
+    pdf_url: str | None = None
 
 
 class DocumentUpdateRequest(Schema):
@@ -150,9 +152,16 @@ class DocumentUpdateRequest(Schema):
         return self
 
 
+class DocumentPage(Schema):
+    number: int = Field(ge=1)
+    text_start: int = Field(ge=0)
+    text_end: int = Field(ge=0)
+
+
 class DocumentOut(DocumentSummary):
     ocr_text: str
     words: tuple[WordOut, ...]
+    pages: list[DocumentPage] = Field(default_factory=list)
 
 
 class TextImportRequest(Schema):

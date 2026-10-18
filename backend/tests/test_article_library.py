@@ -290,7 +290,7 @@ def test_failed_metadata_commit_rolls_back_document_and_learning(text_app, monke
 
 def test_009_migration_backup_preserves_original_columns_and_all_learning(legacy, monkeypatch):
     path, engine, connection = legacy
-    versions = migrations.MIGRATIONS
+    versions = migrations.MIGRATIONS[:9]
     monkeypatch.setattr(migrations, "MIGRATIONS", versions[:8])
     migrations.migrate_database(engine)
     existing = {row["name"] for row in rows(path, "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -317,7 +317,7 @@ def test_009_migration_backup_preserves_original_columns_and_all_learning(legacy
 
 def test_009_schema_failure_rolls_back_and_retries(legacy, monkeypatch):
     path, engine, _ = legacy
-    versions = migrations.MIGRATIONS
+    versions = migrations.MIGRATIONS[:9]
     monkeypatch.setattr(migrations, "MIGRATIONS", versions[:8])
     migrations.migrate_database(engine)
     before = rows(path, "SELECT * FROM documents")

@@ -113,10 +113,19 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
 /** Never send a saved credential to an image host supplied by document data. */
 export async function requestImage(path: string, signal?: AbortSignal): Promise<Blob> {
+  return await requestBlob(path, { signal }, '图片地址无效，请重新打开阅读材料。');
+}
+
+/** Fetch downloads with the same identity as JSON requests, never a token in the URL. */
+export async function requestFile(path: string, init: RequestInit = {}): Promise<Blob> {
+  return await requestBlob(path, init, '文件地址无效，请重新打开阅读材料。');
+}
+
+async function requestBlob(path: string, init: RequestInit, invalidMessage: string): Promise<Blob> {
   const url = new URL(backendUrl(path), window.location.origin);
   const origin = apiOrigin() || window.location.origin;
-  if (url.origin !== origin || !url.pathname.startsWith('/api/') || url.username || url.password) throw new ApiError('图片地址无效，请重新打开阅读材料。');
-  const response = await fetchBackend(`${url.pathname}${url.search}`, { signal });
+  if (url.origin !== origin || !url.pathname.startsWith('/api/') || url.username || url.password) throw new ApiError(invalidMessage);
+  const response = await fetchBackend(`${url.pathname}${url.search}`, init);
   return await response.blob();
 }
 

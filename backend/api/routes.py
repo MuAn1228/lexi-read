@@ -1,7 +1,8 @@
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from backend.services.review import ReviewService
 from backend.services.review_marks import ReviewMarkService
 from backend.services.documents import change_document_deleted, create_demo, document_out, import_image, list_documents, require_document, update_document
 from backend.services.text_import import import_text
+from backend.services.pdf_import import import_pdf
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
@@ -59,7 +61,7 @@ def review(limit: int = Query(10, ge=1, le=50), tz_offset_minutes: int = Query(4
 
 @router.get("/documents", response_model=list[DocumentSummary])
 def documents(q: str | None = Query(None, max_length=200), tag: str | None = Query(None, max_length=20),
-              source: Literal["text", "upload", "demo"] | None = None, deleted: bool = False,
+              source: Literal["text", "upload", "demo", "pdf"] | None = None, deleted: bool = False,
               sort: Literal["newest", "oldest", "title"] = "newest",
               session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
     return list_documents(session, user_id, q=q, tag=tag, source=source, deleted=deleted, sort=sort)
@@ -88,6 +90,15 @@ def text_document(payload: TextImportRequest, session: Session = Depends(get_ses
     return document_out(import_text(session, payload, user_id), session, user_id)
 
 
+@router.post("/documents/pdf", response_model=DocumentOut, status_code=201)
+def pdf_document(file: UploadFile, request_id: UUID = Form(...), session: Session = Depends(get_session),
+                 user_id: int = Depends(get_current_user_id)):
+    try:
+        return document_out(import_pdf(session, file, request_id, user_id), session, user_id)
+    finally:
+        file.file.close()
+
+
 @router.get("/documents/{document_id}", response_model=DocumentOut)
 def read_document(document_id: int, session: Session = Depends(get_session),
                   user_id: int = Depends(get_current_user_id)):
@@ -98,11 +109,23 @@ def read_document(document_id: int, session: Session = Depends(get_session),
 def document_image(document_id: int, session: Session = Depends(get_session),
                    user_id: int = Depends(get_current_user_id)):
     doc = require_document(session, document_id, user_id)
-    if doc.source == "text":
-        raise HTTPException(404, "这篇文章来自粘贴文本，没有原图。")
+    if doc.source in {"text", "pdf"}:
+        raise HTTPException(404, "这篇文章没有可用的原图。")
     if not Path(doc.image_path).is_file():
         raise HTTPException(404, "原图文件缺失，请重新导入。")
     return FileResponse(doc.image_path, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/documents/{document_id}/pdf")
+def document_pdf(document_id: int, session: Session = Depends(get_session),
+                 user_id: int = Depends(get_current_user_id)):
+    doc = require_document(session, document_id, user_id)
+    if doc.source != "pdf":
+        raise HTTPException(404, "这篇文章没有 PDF 原文件。")
+    if not Path(doc.image_path).is_file():
+        raise HTTPException(404, "PDF 原文件缺失，请重新导入。")
+    return FileResponse(doc.image_path, media_type="application/pdf", filename=f"article-{doc.id}.pdf",
+                        headers={"Cache-Control": "private, no-store"})
 
 
 @router.put("/documents/{document_id}", response_model=DocumentSummary)

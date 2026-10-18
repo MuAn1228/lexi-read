@@ -211,7 +211,25 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 .import-entry-actions { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
 .upload-zone .import-entry-actions .button { margin: 0; padding: 11px 17px; }
 .import-mode { margin: 20px 22px 0; }
-.import-mode button { flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 9px; }
+.import-mode button { flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 9px; white-space: nowrap; }
+.pdf-import-form { padding: 22px; }
+.pdf-import-form .pdf-upload-zone { margin: 0; padding: 24px 16px; }
+.pdf-upload-zone .button { margin-top: 15px; }
+.pdf-selected-file { display: flex; align-items: center; gap: 11px; padding: 15px 2px 0; color: var(--ink); }
+.pdf-selected-file > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.pdf-selected-file strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.pdf-selected-file span { font-size: 11px; color: var(--muted); }
+.pdf-import-note { margin: 16px 0; font-size: 11px; line-height: 1.8; color: #738176; }
+.pdf-import-submit { width: 100%; }
+.pdf-page-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 15px; border-bottom: 1px solid var(--line); }
+.pdf-page-controls { display: flex; align-items: center; gap: 3px; }
+.pdf-page-controls label { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #738176; }
+.pdf-page-controls select { max-width: 110px; padding: 7px 23px 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: white; color: #405b47; font: inherit; font-size: 12px; }
+.pdf-download-error { margin: 0; padding: 9px 18px; font-size: 12px; line-height: 1.7; color: #986647; background: #fff8f0; }
+.pdf-empty-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; color: #83907e; }
+.pdf-empty-page p { margin: 12px 0 4px; font-size: 15px; color: #576d59; }
+.pdf-empty-page span { font-size: 12px; line-height: 1.8; }
+@media (max-width: 620px) { .pdf-import-form { padding: 17px; }.pdf-page-toolbar { padding: 8px 10px; }.pdf-page-toolbar > .text-button { font-size: 11px; }.pdf-page-controls { gap: 0; }.pdf-page-controls label { gap: 4px; }.import-mode button { font-size: 11px; gap: 4px; padding: 9px 6px; }.pdf-document-panel .text-reading-guide { font-size: 11px; }.pdf-empty-page { min-height: 200px; } }
 .text-import-form { padding: 20px 24px 24px; display: flex; flex-direction: column; align-items: stretch; }
 .text-import-intro { color: #68796f; font-size: 12px; line-height: 1.9; margin-bottom: 20px; }
 .text-import-form label { font-size: 12px; font-weight: 500; color: #426451; }
