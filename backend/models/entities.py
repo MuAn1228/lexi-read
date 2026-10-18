@@ -150,6 +150,13 @@ class TextImportReceipt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RestoreReceipt(Base):
+    __tablename__ = "restore_receipts"
+    token: Mapped[str] = mapped_column(String(32), primary_key=True)
+    result: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ReviewSchedule(Base):
     __tablename__ = "review_schedules"
     __table_args__ = (CheckConstraint("known_streak >= 0 AND known_streak <= 5"),)

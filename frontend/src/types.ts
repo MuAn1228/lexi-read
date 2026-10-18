@@ -1,5 +1,5 @@
 export type WordStatus = 'KNOWN' | 'UNKNOWN' | 'UNCERTAIN';
-export type View = 'reader' | 'library' | 'vocabulary' | 'review' | 'history' | 'dashboard' | 'relations';
+export type View = 'reader' | 'library' | 'vocabulary' | 'review' | 'history' | 'dashboard' | 'relations' | 'data';
 export interface Occurrence {
   id: number; word: string; lemma: string; sentence: string;
   bbox: [number, number, number, number] | null; line: string | number;

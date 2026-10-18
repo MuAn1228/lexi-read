@@ -369,6 +369,12 @@ def _create_pdf_reading(connection: sqlite3.Connection, tables: set[str]) -> Non
 
 
 # Append a new numbered migration here; do not change previously shipped versions.
+def _create_restore_receipts(connection: sqlite3.Connection, tables: set[str]) -> None:
+    if "users" in tables:
+        connection.execute("CREATE TABLE IF NOT EXISTS restore_receipts ("
+                           "token VARCHAR(32) NOT NULL PRIMARY KEY, result JSON NOT NULL, created_at DATETIME NOT NULL)")
+
+
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
@@ -377,7 +383,8 @@ MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic",
               ("007_spaced_review_schedules", _create_review_schedules),
               ("008_plain_text_import", _create_text_imports),
               ("009_article_library", _create_article_library),
-              ("010_pdf_reading", _create_pdf_reading)]
+              ("010_pdf_reading", _create_pdf_reading),
+              ("011_restore_receipts", _create_restore_receipts)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

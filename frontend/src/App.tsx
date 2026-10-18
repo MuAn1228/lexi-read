@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
-import { browserStorageKey, errorMessage, request } from './api';
+import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
+import { browserStorageKey, errorMessage, request, reviewStorageKey } from './api';
 import ContextPanel from './ContextPanel';
 import DocumentPanel from './DocumentPanel';
 import DocumentLibraryView from './DocumentLibraryView';
+import DataManagementView from './DataManagementView';
+import { clearLearningPreferences } from './backupData';
+import type { BackupRestore, RestoreOutcome } from './backupData';
 import { activeArticleList, initialArticleSelection } from './documentLibrary';
 import type { DocumentPatch } from './documentLibrary';
 import DashboardView from './DashboardView';
@@ -19,7 +22,7 @@ import WordList from './WordList';
 import type { StatusFilter } from './WordList';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
 const titles: Record<View, { eyebrow: string; title: string; subtitle: string }> = {
   reader: { eyebrow: 'YOUR PERSONAL READING SPACE', title: '读懂文章，也读懂每一个词。', subtitle: '从真实阅读出发，让遇见的单词慢慢成为你的语言。' },
   library: { eyebrow: 'MAKE ROOM FOR YOUR READING', title: '好文章，值得好好收藏。', subtitle: '整理标题、添上标签，留一个书签，下次从这里继续。' },
@@ -28,6 +31,7 @@ const titles: Record<View, { eyebrow: string; title: string; subtitle: string }>
   history: { eyebrow: 'YOUR LEARNING JOURNEY', title: '每一小步，都有迹可循。', subtitle: '回看你的阅读、探索与反馈，慢慢看见积累的力量。' },
   dashboard: { eyebrow: 'A CLEARER VIEW OF YOUR LEARNING', title: '看见积累，也看见下一步。', subtitle: '用真实的学习记录，找到值得再读一次的词。' },
   relations: { eyebrow: 'WORDS CONNECTED BY YOUR CURIOSITY', title: '从一个词，走向更多理解。', subtitle: '你看过的关联、留下的反馈，慢慢连成自己的词汇地图。' },
+  data: { eyebrow: 'KEEP YOUR LEARNING CLOSE', title: '每一份积累，都值得留下。', subtitle: '保存一份完整备份，或把熟悉的学习空间带回来。' },
 };
 function rememberDocument(id: number) { try { localStorage.setItem(browserStorageKey('document'), String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
 function rememberedDocument(): number { try { return Number(localStorage.getItem(browserStorageKey('document'))); } catch { return 0; } }
@@ -59,6 +63,8 @@ export default function App() {
   const [documentSyncError, setDocumentSyncError] = useState('');
   const [syncingDocuments, setSyncingDocuments] = useState(false);
   const [revealBookmark, setRevealBookmark] = useState(0);
+  const [restorationLocked, setRestorationLocked] = useState(false);
+  const restorationLock = useRef(false);
   const documentEpoch = useRef(0);
   const documentSyncGeneration = useRef(0);
   const currentDocumentId = useRef<number | null>(null);
@@ -79,6 +85,7 @@ export default function App() {
     setQuery(''); setFilter('ALL'); setView('reader'); setUploadOpen(false); rememberDocument(value.id);
   }, []);
   const refreshLearning = useCallback(async () => {
+    if (restorationLock.current) return;
     const generation = ++libraryGeneration.current;
     const [words, history] = await Promise.all([request<Vocabulary[]>('/vocabulary'), request<LearningEvent[]>('/events')]);
     if (generation === libraryGeneration.current) {
@@ -88,7 +95,7 @@ export default function App() {
     }
   }, []);
   const openDocument = useCallback(async (id: number, occurrenceId?: number) => {
-    if (busyRef.current || savingRef.current) return;
+    if (restorationLock.current || busyRef.current || savingRef.current) return;
     const generation = ++requestGeneration.current;
     busyRef.current = true; setBusy('正在打开阅读材料…'); setError('');
     try { const value = await request<ReadingDocument>(`/documents/${id}`); if (generation === requestGeneration.current) acceptDocument(value, occurrenceId); }
@@ -96,7 +103,7 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   }, [acceptDocument]);
   const initialize = useCallback(async () => {
-    if (initializingRef.current || busyRef.current || savingRef.current) return;
+    if (restorationLock.current || initializingRef.current || busyRef.current || savingRef.current) return;
     initializingRef.current = true;
     const epoch = documentEpoch.current;
     setInitializing(true); setError('');
@@ -179,7 +186,7 @@ export default function App() {
     } finally { if (generation === documentSyncGeneration.current) setSyncingDocuments(false); }
   }, []);
   const changeArticle = useCallback(async (id: number, action: 'update' | 'delete' | 'restore', patch?: DocumentPatch): Promise<DocumentSummary> => {
-    if (savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
+    if (restorationLock.current || savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
     savingRef.current = true; setSaving(true);
     ++documentEpoch.current; ++importSyncGeneration.current; setSyncingImport(false);
     ++requestGeneration.current;
@@ -207,7 +214,7 @@ export default function App() {
     setTextDraft(draft); setError('');
   };
   const importText = async () => {
-    if (busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = textImportProblem(textDraft);
     if (problem) { setError(problem); return; }
     const normalized = { title: textDraft.title.trim(), text: normalizeArticle(textDraft.text) };
@@ -233,13 +240,13 @@ export default function App() {
   };
 
   const choosePdf = (file: File) => {
-    if (busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = pdfImportProblem(file);
     if (problem) { setError(problem); return; }
     setPdfDraft({ file, request_id: crypto.randomUUID() }); setError('');
   };
   const importPdf = async () => {
-    if (!pdfDraft || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (!pdfDraft || restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const form = new FormData(); form.append('file', pdfDraft.file); form.append('request_id', pdfDraft.request_id);
     busyRef.current = true; setBusy('正在提取 PDF 正文与页码…'); setError('');
     const generation = ++requestGeneration.current;
@@ -255,7 +262,7 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   };
   const upload = async (file?: File) => {
-    if (!file || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (!file || restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     if (/\.pdf$/i.test(file.name) || ['application/pdf', 'application/x-pdf'].includes(file.type)) { setImportMode('pdf'); setUploadOpen(true); choosePdf(file); return; }
     if (!/\.(jpe?g|png)$/i.test(file.name) || (file.type && !['image/jpeg', 'image/png'].includes(file.type))) { setError('请选择 JPG 或 PNG 格式的英文图片。'); return; }
     if (file.size > 10 * 1024 * 1024) { setError('图片不能超过 10 MB，请压缩后重新上传。'); return; }
@@ -271,7 +278,7 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   };
   const loadDemo = async () => {
-    if (busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     busyRef.current = true; setBusy('正在准备示例阅读材料…'); setError('');
     const generation = ++requestGeneration.current;
     try {
@@ -282,6 +289,33 @@ export default function App() {
     catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   };
+  const clearRestoredBrowserState = useCallback(async (): Promise<string> => {
+    try {
+      return clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'));
+    } catch {
+      return '学习数据已恢复，但当前浏览器的复习进度与阅读位置未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
+    }
+  }, []);
+  const restoreBackup = useCallback(async (token: string): Promise<RestoreOutcome> => {
+    if (health?.auth_mode !== 'local') throw new Error('完整备份恢复仅可在本地学习空间使用。');
+    if (savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
+    // Keep navigation locked even after an uncertain response: the database may already be restored.
+    restorationLock.current = true; setRestorationLocked(true); setView('data');
+    savingRef.current = true; setSaving(true); busyRef.current = true; setBusy('正在恢复学习数据，请保持页面打开…'); setError('');
+    ++documentEpoch.current; ++requestGeneration.current; ++libraryGeneration.current;
+    ++importSyncGeneration.current; ++documentSyncGeneration.current;
+    setSyncingImport(false); setSyncingDocuments(false);
+    try {
+      const result = await request<BackupRestore>('/backups/restore', { method: 'POST', body: JSON.stringify({ token, confirm: true }) });
+      if (!result.restored) throw new Error('恢复结果尚未确认，请用当前预览重试。');
+      ++documentEpoch.current; ++requestGeneration.current; ++libraryGeneration.current;
+      setDocument(null); setSelectedId(null); setDocuments([]); setVocabulary([]); setEvents([]);
+      textImportRequest.current = null; setTextDraft({ title: '', text: '' }); setPdfDraft(null);
+      setUploadOpen(false); setImportSyncError(''); setDocumentSyncError(''); setNotice(''); setQuery(''); setFilter('ALL');
+      const warning = await clearRestoredBrowserState();
+      return { ...result, ...(warning ? { cleanup_warning: warning } : {}) };
+    } finally { savingRef.current = false; setSaving(false); busyRef.current = false; setBusy(''); }
+  }, [health?.auth_mode, clearRestoredBrowserState]);
   const selected = document?.words.find(word => word.id === selectedId) ?? null;
   const uniqueWords = useMemo(() => {
     const seen = new Set<string>();
@@ -294,7 +328,7 @@ export default function App() {
     setSelectedId(filteredWords[(index + 1) % filteredWords.length].id);
   }, [filteredWords, selectedId, selected?.lemma]);
   const mark = useCallback(async (word: string, status: WordStatus, occurrence?: Occurrence) => {
-    if (savingRef.current || busyRef.current) return;
+    if (restorationLock.current || savingRef.current || busyRef.current) return;
     savingRef.current = true; setSaving(true); setError('');
     const next = occurrence ? filteredWords[(Math.max(0, filteredWords.findIndex(item => item.lemma === occurrence.lemma)) + 1) % filteredWords.length] : undefined;
     try {
@@ -308,7 +342,7 @@ export default function App() {
     finally { savingRef.current = false; setSaving(false); }
   }, [document, filteredWords]);
   const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<void> => {
-    if (savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
+    if (restorationLock.current || savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
     savingRef.current = true; setSaving(true); setError('');
     try {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(item.vocabulary.word)}`, {
@@ -343,19 +377,19 @@ export default function App() {
   </div>;
 
   return <div className="app-shell">
-    <header className="topbar"><a className="brand" href="#" onClick={e => { e.preventDefault(); setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span>词间<span className="brand-en">lexi</span></span></a>
-      <nav aria-label="主要导航">{navigation.map(item => <button key={item.value} className={view === item.value ? 'active' : ''} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={17} /><span>{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button>)}</nav>
+    <header className="topbar"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span>词间<span className="brand-en">lexi</span></span></a>
+      <nav aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map(item => <button key={item.value} disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={17} /><span>{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button>)}</nav>
       <div className="profile"><span className="local-dot" />{health?.auth_mode === 'guest' ? '我的学习空间' : '本地学习空间'}<span className="avatar">L</span></div>
     </header>
     <main>
-      <div className="page-heading"><div><p className="overline">{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><button className="button primary new-reading" disabled={isLoading || saving} onClick={() => { setView('reader'); setDragOver(false); setUploadOpen(true); }}><Plus size={17} />添加阅读材料</button></div>
+      <div className="page-heading"><div><p className="overline">{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><button className="button primary new-reading" disabled={isLoading || saving || restorationLocked} onClick={() => { setView('reader'); setDragOver(false); setUploadOpen(true); }}><Plus size={17} />添加阅读材料</button></div>
       {health?.auth_mode === 'guest' && <p className="page-subtitle">学习记录保存在服务器，访问凭证保存在当前浏览器。清除浏览器数据会失去访问权限；暂不支持跨设备登录。</p>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
       {importSyncError && <div className="error-banner import-sync-warning" role="status"><AlertCircle size={19} /><span>{importSyncError}</span><button className="text-button" disabled={syncingImport} onClick={() => void refreshImportedMaterial()}><RefreshCw size={14} className={syncingImport ? 'spin' : ''} />重新刷新列表与词库</button></div>}
       {documentSyncError && <div className="error-banner" role="status"><AlertCircle size={19} /><span>{documentSyncError}</span><button className="text-button" disabled={syncingDocuments || saving || isLoading} onClick={() => void refreshDocumentList()}><RefreshCw size={14} className={syncingDocuments ? 'spin' : ''} />重新刷新阅读列表</button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
-      <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
+      <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading || restorationLocked} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
       {view === 'reader' && <>
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
@@ -365,6 +399,7 @@ export default function App() {
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
+      {view === 'data' && health?.auth_mode === 'local' && <DataManagementView disabled={saving || isLoading} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} />}
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
