@@ -143,10 +143,17 @@ def validate_database(connection: sqlite3.Connection):
             end = page["text_end"]
         if pages and end != len(document["ocr_text"]):
             raise invalid("备份中的 PDF 页位置不完整。")
+        if document["source"] == "web":
+            from backend.services.web_fetch import normalize_url
+            try:
+                if not document["source_url"] or normalize_url(document["source_url"]) != document["source_url"]:
+                    raise ValueError()
+            except (HTTPException, ValueError, TypeError):
+                raise invalid("备份中的网页来源链接无效。") from None
         documents[document["id"]] = document
     for word in connection.execute("SELECT document_id,word,text_start,text_end,bbox FROM word_occurrences"):
         document = documents[word["document_id"]]
-        if document["source"] in {"text", "pdf"}:
+        if document["source"] in {"text", "pdf", "web"}:
             start, end = word["text_start"], word["text_end"]
             if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(document["ocr_text"])
                     or document["ocr_text"][start:end] != word["word"]):
@@ -176,7 +183,7 @@ def export_backup(engine: Engine, destination: Path) -> Path:
             documents = list(connection.execute("SELECT id,source,image_path FROM documents ORDER BY id"))
         files, mapping, assets, sources = {"data.sqlite3": digest(database)}, {}, {}, {}
         for document in documents:
-            if document["source"] == "text":
+            if document["source"] in {"text", "web"}:
                 if document["image_path"]:
                     raise invalid("文章文件记录无效，无法生成完整备份。")
                 mapping[str(document["id"])] = None
@@ -269,7 +276,7 @@ def inspect_archive(archive_path: Path, folder: Path) -> dict:
             used = set()
             for document in documents:
                 name = mapping[str(document["id"])]
-                if document["source"] == "text":
+                if document["source"] in {"text", "web"}:
                     if name is not None:
                         raise invalid()
                 elif document["source"] in {"upload", "demo", "pdf"}:

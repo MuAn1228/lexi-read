@@ -99,6 +99,7 @@ class DocumentSummary(Schema):
     width: int
     height: int
     source: str
+    source_url: str | None = None
     created_at: datetime
     word_count: int
     tags: list[str] = Field(default_factory=list)
@@ -185,6 +186,19 @@ class TextImportRequest(Schema):
             if any(ord(char) < 32 or ord(char) == 127 or 0xD800 <= ord(char) <= 0xDFFF for char in value):
                 raise ValueError("标题不能包含换行或控制字符。")
             return value.strip() or None
+        return value
+
+
+class UrlImportRequest(Schema):
+    model_config = ConfigDict(from_attributes=True, frozen=True, extra="forbid")
+    url: str = Field(strict=True, min_length=1, max_length=2048)
+    request_id: UUID
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def normalize_url(cls, value):
+        if isinstance(value, str):
+            return value.strip()
         return value
 
 

@@ -11,7 +11,7 @@ export function libraryPath(filters: LibraryFilters): string {
   return `/documents?${query}`;
 }
 export function articleSource(source: string): string {
-  return ({ text: '文字文章', upload: '图片文章', demo: '示例文章', pdf: 'PDF 文档' } as Record<string, string>)[source] ?? '阅读材料';
+  return ({ text: '文字文章', upload: '图片文章', demo: '示例文章', pdf: 'PDF 文档', web: '网页文章' } as Record<string, string>)[source] ?? '阅读材料';
 }
 export function articleEdit(title: string, tags: readonly string[], added: string): { patch?: DocumentPatch; error?: string } {
   const normalizedTitle = title.trim();

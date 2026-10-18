@@ -10,14 +10,14 @@ export interface ReadingDocument {
   id: number; title: string; image_url: string | null; width: number; height: number;
   ocr_text: string; source: string; created_at: string; words: Occurrence[];
   tags: string[]; bookmark_occurrence_id: number | null; deleted_at: string | null; excerpt: string;
-  pages: DocumentPage[]; page_count: number; pdf_url: string | null;
+  pages: DocumentPage[]; page_count: number; pdf_url: string | null; source_url: string | null;
 }
 export interface DocumentPage { number: number; text_start: number; text_end: number }
 export interface DocumentSummary {
   id: number; title: string; image_url: string | null; width: number; height: number;
   created_at: string; word_count: number; source: string;
   tags: string[]; bookmark_occurrence_id: number | null; deleted_at: string | null; excerpt: string;
-  page_count: number;
+  page_count: number; source_url: string | null;
 }
 export interface Vocabulary {
   id: number; user_id: number; word: string; lemma: string; status: WordStatus | null;

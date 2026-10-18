@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
+import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
 import { browserStorageKey, errorMessage, request, reviewStorageKey } from './api';
 import ContextPanel from './ContextPanel';
 import DocumentPanel from './DocumentPanel';
@@ -14,7 +14,10 @@ import RelationsView from './RelationsView';
 import ReviewView from './ReviewView';
 import TextImportForm from './TextImportForm';
 import PdfImportForm from './PdfImportForm';
+import UrlImportForm from './UrlImportForm';
 import { pdfImportProblem } from './pdfArticle';
+import { urlImportProblem } from './urlArticle';
+import type { UrlImportPayload } from './urlArticle';
 import { normalizeArticle, textImportProblem } from './textArticle';
 import type { TextDraft, TextImportPayload } from './textArticle';
 import { HistoryView, VocabularyView } from './LibraryViews';
@@ -54,9 +57,10 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('ALL');
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [importMode, setImportMode] = useState<'image' | 'text' | 'pdf'>('image');
+  const [importMode, setImportMode] = useState<'image' | 'text' | 'pdf' | 'url'>('image');
   const [pdfDraft, setPdfDraft] = useState<{ file: File; request_id: string } | null>(null);
   const [textDraft, setTextDraft] = useState<TextDraft>({ title: '', text: '' });
+  const [urlDraft, setUrlDraft] = useState('');
   const [importSyncError, setImportSyncError] = useState('');
   const [syncingImport, setSyncingImport] = useState(false);
   const [documentRevision, setDocumentRevision] = useState(0);
@@ -70,6 +74,7 @@ export default function App() {
   const currentDocumentId = useRef<number | null>(null);
   currentDocumentId.current = document?.id ?? null;
   const textImportRequest = useRef<TextImportPayload | null>(null);
+  const urlImportRequest = useRef<UrlImportPayload | null>(null);
   const importSyncGeneration = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadModal = useRef<HTMLElement>(null);
@@ -239,6 +244,36 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   };
 
+  const changeUrlDraft = (url: string) => {
+    urlImportRequest.current = null;
+    setUrlDraft(url); setError('');
+  };
+  const importUrl = async () => {
+    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    const problem = urlImportProblem(urlDraft);
+    if (problem) { setError(problem); return; }
+    const url = urlDraft.trim();
+    let payload = urlImportRequest.current;
+    if (!payload || payload.url !== url) {
+      payload = { url, request_id: crypto.randomUUID() };
+      urlImportRequest.current = payload;
+    }
+    busyRef.current = true; setBusy('正在提取网页正文…'); setError('');
+    const generation = ++requestGeneration.current;
+    try {
+      const value = await request<ReadingDocument>('/documents/url', { method: 'POST', body: JSON.stringify(payload) });
+      if (generation !== requestGeneration.current) return;
+      acceptDocument(value); ++documentEpoch.current;
+      setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length }));
+      setDocumentRevision(value => value + 1);
+      urlImportRequest.current = null; setUrlDraft('');
+      setNotice(`网页已导入，共 ${value.words.length} 处英文单词。`);
+      // Only reconcile through reads after the import is confirmed; never repeat a successful POST.
+      void refreshImportedMaterial();
+    } catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
+    finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
+  };
+
   const choosePdf = (file: File) => {
     if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = pdfImportProblem(file);
@@ -311,6 +346,7 @@ export default function App() {
       ++documentEpoch.current; ++requestGeneration.current; ++libraryGeneration.current;
       setDocument(null); setSelectedId(null); setDocuments([]); setVocabulary([]); setEvents([]);
       textImportRequest.current = null; setTextDraft({ title: '', text: '' }); setPdfDraft(null);
+      urlImportRequest.current = null; setUrlDraft('');
       setUploadOpen(false); setImportSyncError(''); setDocumentSyncError(''); setNotice(''); setQuery(''); setFilter('ALL');
       const warning = await clearRestoredBrowserState();
       return { ...result, ...(warning ? { cleanup_warning: warning } : {}) };
@@ -373,7 +409,7 @@ export default function App() {
   const title = titles[view];
   const isLoading = Boolean(busy) || initializing;
   const uploadZone = <div className={`upload-zone ${dragOver ? 'drag-over' : ''}`} onDragOver={event => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={event => { event.preventDefault(); setDragOver(false); void upload(event.dataTransfer.files[0]); }}>
-    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文 PDF、试卷或文章截图<br /><span>PDF / JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('text'); setUploadOpen(true); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('pdf'); setUploadOpen(true); setError(''); }}><FileText size={16} />导入 PDF 文档</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
+    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文 PDF、试卷或文章截图<br /><span>PDF / JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('text'); setUploadOpen(true); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('pdf'); setUploadOpen(true); setError(''); }}><FileText size={16} />导入 PDF 文档</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('url'); setUploadOpen(true); setError(''); }}><Globe size={16} />导入网页链接</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
   </div>;
 
   return <div className="app-shell">
@@ -406,6 +442,6 @@ export default function App() {
       <footer className="app-footer"><span><Leaf size={13} />词间 · 在阅读中生长</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
-    {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'image' ? <FileImage size={17} /> : <FileText size={17} />}<h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => setImportMode('image')}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => setImportMode('text')}><FileText size={15} />粘贴文章</button><button className={importMode === 'pdf' ? 'active' : ''} aria-pressed={importMode === 'pdf'} disabled={isLoading} onClick={() => setImportMode('pdf')}><FileText size={15} />上传 PDF</button></div>{importMode === 'image' ? uploadZone : importMode === 'pdf' ? <PdfImportForm file={pdfDraft?.file ?? null} onChoose={choosePdf} onSubmit={() => void importPdf()} disabled={isLoading || saving} /> : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
+    {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'image' ? <FileImage size={17} /> : importMode === 'url' ? <Globe size={17} /> : <FileText size={17} />}<h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => { setImportMode('image'); setError(''); }}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => { setImportMode('text'); setError(''); }}><FileText size={15} />粘贴文章</button><button className={importMode === 'pdf' ? 'active' : ''} aria-pressed={importMode === 'pdf'} disabled={isLoading} onClick={() => { setImportMode('pdf'); setError(''); }}><FileText size={15} />上传 PDF</button><button className={importMode === 'url' ? 'active' : ''} aria-pressed={importMode === 'url'} disabled={isLoading} onClick={() => { setImportMode('url'); setError(''); }}><Globe size={15} />网页链接</button></div>{importMode === 'image' ? uploadZone : importMode === 'pdf' ? <PdfImportForm file={pdfDraft?.file ?? null} onChoose={choosePdf} onSubmit={() => void importPdf()} disabled={isLoading || saving} /> : importMode === 'url' ? <UrlImportForm url={urlDraft} onChange={changeUrlDraft} onSubmit={() => void importUrl()} disabled={isLoading || saving} /> : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
   </div>;
 }

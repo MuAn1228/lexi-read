@@ -22,6 +22,8 @@ from backend.services.review_marks import ReviewMarkService
 from backend.services.documents import change_document_deleted, create_demo, document_out, import_image, list_documents, require_document, update_document
 from backend.services.text_import import import_text
 from backend.services.pdf_import import import_pdf
+from backend.schemas import UrlImportRequest
+from backend.services.url_import import import_url
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
@@ -61,7 +63,7 @@ def review(limit: int = Query(10, ge=1, le=50), tz_offset_minutes: int = Query(4
 
 @router.get("/documents", response_model=list[DocumentSummary])
 def documents(q: str | None = Query(None, max_length=200), tag: str | None = Query(None, max_length=20),
-              source: Literal["text", "upload", "demo", "pdf"] | None = None, deleted: bool = False,
+              source: Literal["text", "upload", "demo", "pdf", "web"] | None = None, deleted: bool = False,
               sort: Literal["newest", "oldest", "title"] = "newest",
               session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
     return list_documents(session, user_id, q=q, tag=tag, source=source, deleted=deleted, sort=sort)
@@ -105,11 +107,17 @@ def read_document(document_id: int, session: Session = Depends(get_session),
     return document_out(require_document(session, document_id, user_id), session, user_id)
 
 
+@router.post("/documents/url", response_model=DocumentOut, status_code=201)
+def url_document(payload: UrlImportRequest, session: Session = Depends(get_session),
+                 user_id: int = Depends(get_current_user_id)):
+    return document_out(import_url(session, payload, user_id), session, user_id)
+
+
 @router.get("/documents/{document_id}/image")
 def document_image(document_id: int, session: Session = Depends(get_session),
                    user_id: int = Depends(get_current_user_id)):
     doc = require_document(session, document_id, user_id)
-    if doc.source in {"text", "pdf"}:
+    if doc.source in {"text", "pdf", "web"}:
         raise HTTPException(404, "这篇文章没有可用的原图。")
     if not Path(doc.image_path).is_file():
         raise HTTPException(404, "原图文件缺失，请重新导入。")

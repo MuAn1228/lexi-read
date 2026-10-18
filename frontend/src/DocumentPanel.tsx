@@ -1,8 +1,9 @@
-import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, FileText, LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileText, Globe, LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage, requestFile, requestImage } from './api';
 import { articleParts } from './textArticle';
 import { pdfPageContent, pdfPageForOccurrence } from './pdfArticle';
+import { originalWebLink } from './urlArticle';
 import type { Occurrence, ReadingDocument } from './types';
 
 export default function DocumentPanel({ document, selectedId, revealToken, onSelect }: {
@@ -17,7 +18,9 @@ export default function DocumentPanel({ document, selectedId, revealToken, onSel
   const article = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const isPdf = document.source === 'pdf';
-  const isText = document.source === 'text' || isPdf;
+  const isWeb = document.source === 'web';
+  const isText = document.source === 'text' || isPdf || isWeb;
+  const webLink = isWeb ? originalWebLink(document.source_url) : null;
   const pages = document.pages ?? [];
   const [pageNumber, setPageNumber] = useState(() => isPdf ? pdfPageForOccurrence(document, selectedId) ?? pages[0]?.number ?? 1 : 1);
   const [downloading, setDownloading] = useState(false);
@@ -90,10 +93,11 @@ export default function DocumentPanel({ document, selectedId, revealToken, onSel
     if (word.left < surface.left || word.right > surface.right) container.scrollLeft += word.left - surface.left - container.clientWidth / 2 + word.width / 2;
   }, [selectedId, isText, revealToken, imageUrl, showText, showBoxes, zoom, pageNumber]);
   return <section className={`document-panel panel ${isText ? 'text-document-panel' : ''} ${isPdf ? 'pdf-document-panel' : ''}`}>
-    <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{isPdf ? `PDF · ${pages.length} 页` : isText ? '文字文章' : document.source === 'demo' ? '示例图片 · 已预标注' : '图片文章'}</span></div>
+    <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{isPdf ? `PDF · ${pages.length} 页` : isWeb ? '网页文章' : isText ? '文字文章' : document.source === 'demo' ? '示例图片 · 已预标注' : '图片文章'}</span></div>
     {isText ? <>
       {isPdf && <div className="pdf-page-toolbar"><div className="pdf-page-controls"><button className="icon-button" aria-label="PDF 上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}><ChevronLeft size={17} /></button><label><select aria-label="PDF 页码" value={pageNumber} onChange={event => changePage(Number(event.target.value))}>{pages.map(item => <option key={item.number} value={item.number}>第 {item.number} 页</option>)}</select><span>/ {pages.length} 页</span></label><button className="icon-button" aria-label="PDF 下一页" disabled={pageNumber >= pages.length} onClick={() => changePage(pageNumber + 1)}><ChevronRight size={17} /></button></div><button className="text-button" aria-label="下载原 PDF" disabled={downloading || !document.pdf_url} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}下载原 PDF</button></div>}
-      <p className="text-reading-guide">{isPdf ? 'PDF 提取正文 · 按原文件页码阅读，不保留原版排版。' : '点击英文单词，查看它在这句话里的意思。'}</p>
+      {webLink && <div className="web-source-toolbar"><span><Globe size={14} />{webLink.host}</span><a className="text-button" href={webLink.href} target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开原网页">查看原网页<ExternalLink size={14} /></a></div>}
+      <p className="text-reading-guide">{isPdf ? 'PDF 提取正文 · 按原文件页码阅读，不保留原版排版。' : isWeb ? '网页正文已保存 · 点击英文单词，在原句中学习。' : '点击英文单词，查看它在这句话里的意思。'}</p>
       {downloadError && <p className="pdf-download-error" role="alert">{downloadError} 可点击“下载原 PDF”重试。</p>}
       <div className="text-article" ref={article} aria-label={isPdf ? `PDF 第 ${pageNumber} 页正文` : '文章正文'} lang="en">{isPdf && !pageContent.text.trim() ? <div className="pdf-empty-page" lang="zh-CN"><FileText size={29} /><p>这一页没有可提取的文字</p><span>可能是空白页或图片页，可继续翻页或下载原 PDF 查看。</span></div> : parts.map((part, index) => part.occurrence ? <button key={`word-${part.occurrence.id}`} type="button"
         className={`article-word ${part.occurrence.status?.toLowerCase() ?? 'unmarked'} ${part.occurrence.id === selectedId ? 'selected' : ''}`}

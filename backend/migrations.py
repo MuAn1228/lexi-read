@@ -375,6 +375,13 @@ def _create_restore_receipts(connection: sqlite3.Connection, tables: set[str]) -
                            "token VARCHAR(32) NOT NULL PRIMARY KEY, result JSON NOT NULL, created_at DATETIME NOT NULL)")
 
 
+def _create_web_import(connection: sqlite3.Connection, tables: set[str]) -> None:
+    if "documents" in tables:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(documents)")}
+        if "source_url" not in columns:
+            connection.execute("ALTER TABLE documents ADD COLUMN source_url TEXT")
+
+
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
@@ -384,7 +391,8 @@ MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic",
               ("008_plain_text_import", _create_text_imports),
               ("009_article_library", _create_article_library),
               ("010_pdf_reading", _create_pdf_reading),
-              ("011_restore_receipts", _create_restore_receipts)]
+              ("011_restore_receipts", _create_restore_receipts),
+              ("012_web_import", _create_web_import)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

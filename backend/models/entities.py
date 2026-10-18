@@ -58,6 +58,7 @@ class Document(Base):
     height: Mapped[int] = mapped_column(Integer)
     ocr_text: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(30), default="upload")
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     pages: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     bookmark_occurrence_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
