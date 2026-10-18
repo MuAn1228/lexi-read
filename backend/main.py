@@ -14,6 +14,7 @@ from backend.database import initialize_database
 from backend.api.routes import router
 from backend.api.backup_routes import router as backup_router
 from backend.api.sentence_routes import router as sentence_router
+from backend.api.review_routes import router as review_router
 from backend.services.maintenance import MaintenanceMiddleware
 from backend.ocr.service import OCRUnavailable
 
@@ -73,6 +74,7 @@ async def unexpected_error(request, exc):
 app.include_router(router)
 app.include_router(backup_router)
 app.include_router(sentence_router)
+app.include_router(review_router)
 frontend_dist = PROJECT_ROOT / "frontend" / "dist"
 if frontend_dist.is_dir():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

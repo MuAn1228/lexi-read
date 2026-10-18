@@ -26,6 +26,7 @@ export interface Vocabulary {
 }
 export interface ReviewOccurrence {
   id: number; document_id: number; document_title: string; word: string; sentence: string;
+  target_start?: number | null; target_end?: number | null;
 }
 export interface ReviewItem {
   vocabulary: Vocabulary; occurrence: ReviewOccurrence | null; last_reviewed_at: string | null;
@@ -35,6 +36,10 @@ export interface ReviewSummary {
   total: number; reviewed_today: number; later_today: number; next_due_at: string | null; as_of: string;
 }
 export interface ReviewBatch extends ReviewSummary { items: ReviewItem[] }
+export interface ReviewMeaning {
+  word: string; lemma: string; meaning_in_context: string | null; simple_explanation: string | null;
+  part_of_speech: string | null; source: 'llm' | 'offline' | 'unavailable'; cached: boolean; warning: string | null;
+}
 export interface LearningEvent {
   id: number; user_id: number; word: string; lemma: string; document_id: number | null;
   event_type: string; details: Record<string, unknown>; created_at: string;

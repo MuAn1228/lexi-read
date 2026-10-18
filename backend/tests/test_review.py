@@ -152,6 +152,7 @@ def test_context_uses_latest_owned_actual_occurrence_and_stable_document_occurre
         "id": latest.words[-1].id, "document_id": latest.id,
         "document_title": "latest tied document", "word": "Model",
         "sentence": "latest tied document: model 1",
+        "target_start": None, "target_end": None,
     }
     assert items["recommendation"].occurrence is None
 

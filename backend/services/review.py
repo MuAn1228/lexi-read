@@ -1,5 +1,6 @@
 """Read-only due queue and local-calendar review totals."""
 from datetime import datetime, time, timedelta, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from backend.models import Document, LearningEvent, ReviewSchedule, Vocabulary, 
 from backend.models.entities import utcnow
 from backend.schemas import ReviewItem, ReviewOccurrence, ReviewOut
 from backend.services.scheduling import next_intervals, utc
+from backend.services.review_context import review_target_range
 
 
 class ReviewService:
@@ -83,6 +85,7 @@ class ReviewService:
             WordOccurrence.lemma.label("lemma"), WordOccurrence.id.label("id"),
             Document.id.label("document_id"), Document.title.label("document_title"),
             WordOccurrence.word.label("word"), WordOccurrence.sentence.label("sentence"),
+            WordOccurrence.text_start.label("text_start"), WordOccurrence.text_end.label("text_end"),
             func.row_number().over(
                 partition_by=WordOccurrence.lemma,
                 order_by=(Document.created_at.desc(), Document.id.desc(), WordOccurrence.id.desc()),
@@ -92,14 +95,19 @@ class ReviewService:
             Document.deleted_at.is_(None),
             WordOccurrence.lemma.in_([entry.lemma for entry, _, _ in rows]),
         ).subquery()
-        contexts = {
-            row["lemma"]: ReviewOccurrence(**{key: row[key] for key in (
+        context_rows = self.session.execute(select(occurrences, Document).join(
+            Document, Document.id == occurrences.c.document_id,
+        ).where(
+            occurrences.c.position == 1,
+        )).mappings()
+        # Load original text only for this bounded batch of contexts, keeping
+        # the queue at three SELECTs rather than adding one query per card.
+        contexts = {}
+        for row in context_rows:
+            target = review_target_range(row["Document"], SimpleNamespace(**row))
+            contexts[row["lemma"]] = ReviewOccurrence(**{key: row[key] for key in (
                 "id", "document_id", "document_title", "word", "sentence",
-            )})
-            for row in self.session.execute(select(occurrences).where(
-                occurrences.c.position == 1,
-            )).mappings()
-        }
+            )}, target_start=target[0] if target else None, target_end=target[1] if target else None)
         return ReviewOut(items=[ReviewItem(
             vocabulary=entry, occurrence=contexts.get(entry.lemma), last_reviewed_at=last_at,
             due_at=state.due_at if state else None, known_streak=state.known_streak if state else 0,

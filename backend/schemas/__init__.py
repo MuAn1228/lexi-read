@@ -58,6 +58,8 @@ class ReviewOccurrence(Schema):
     document_title: str
     word: str
     sentence: str
+    target_start: int | None = None
+    target_end: int | None = None
 
 
 class ReviewItem(Schema):

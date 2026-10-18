@@ -30,7 +30,7 @@ const titles: Record<View, { eyebrow: string; title: string; subtitle: string }>
   reader: { eyebrow: 'YOUR PERSONAL READING SPACE', title: '读懂文章，也读懂每一个词。', subtitle: '从真实阅读出发，让遇见的单词慢慢成为你的语言。' },
   library: { eyebrow: 'MAKE ROOM FOR YOUR READING', title: '好文章，值得好好收藏。', subtitle: '整理标题、添上标签，留一个书签，下次从这里继续。' },
   vocabulary: { eyebrow: 'A VOCABULARY THAT GROWS WITH YOU', title: '把遇见的词，变成自己的。', subtitle: '认识、陌生、偶尔忘记。每一种状态，都值得被记住。' },
-  review: { eyebrow: 'ANOTHER MOMENT WITH YOUR WORDS', title: '再遇见，让生词慢慢熟悉。', subtitle: '从真实阅读里遇见的词开始，回想、看原文、记录此刻的掌握程度。' },
+  review: { eyebrow: 'ANOTHER MOMENT WITH YOUR WORDS', title: '再遇见，让生词慢慢熟悉。', subtitle: '先回想再揭晓释义，也可以填回原句中的词，记录此刻的掌握程度。' },
   history: { eyebrow: 'YOUR LEARNING JOURNEY', title: '每一小步，都有迹可循。', subtitle: '回看你的阅读、探索与反馈，慢慢看见积累的力量。' },
   dashboard: { eyebrow: 'A CLEARER VIEW OF YOUR LEARNING', title: '看见积累，也看见下一步。', subtitle: '用真实的学习记录，找到值得再读一次的词。' },
   relations: { eyebrow: 'WORDS CONNECTED BY YOUR CURIOSITY', title: '从一个词，走向更多理解。', subtitle: '你看过的关联、留下的反馈，慢慢连成自己的词汇地图。' },

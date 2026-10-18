@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, BookOpen, Check, CircleHelp, Clock3, Eye, LoaderCircle, RefreshCw, RotateCcw, SkipForward, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, BookOpen, Check, CircleHelp, Clock3, LoaderCircle, RefreshCw, RotateCcw, SkipForward, X } from 'lucide-react';
 import { ApiError, errorMessage, formatDate, request, reviewStorageKey } from './api';
 import { finishReviewCard, intervalLabel, newReviewSession, readReviewSession, reconcileReviewSession, reviewQuery, writeReviewSession } from './reviewStorage';
 import type { ReviewSession } from './reviewStorage';
 import { StatusBadge } from './WordControls';
+import ReviewPractice from './ReviewPractice';
+import { reviewCloze, reviewPracticeKey } from './reviewExercise';
+import type { ReviewMode } from './reviewExercise';
 import type { ReviewBatch, ReviewItem, ReviewSummary, Vocabulary, WordStatus } from './types';
 
 const ratings = [
@@ -29,7 +32,8 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
   const [saveError, setSaveError] = useState('');
   const [failedStatus, setFailedStatus] = useState<WordStatus | null>(null);
   const [canDismiss, setCanDismiss] = useState(false);
-  const [showContext, setShowContext] = useState(false);
+  const [mode, setMode] = useState<ReviewMode>('recall');
+  const [revealedCard, setRevealedCard] = useState('');
   const sessionRef = useRef<ReviewSession | null>(null);
   const storageKey = useRef('');
   const restoreAttempted = useRef(false);
@@ -40,7 +44,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
   const lastCheck = useRef(0);
   const wordHeading = useRef<HTMLHeadingElement>(null);
   const summaryHeading = useRef<HTMLHeadingElement>(null);
-  const previousCard = useRef<number | null>(null);
+  const previousCard = useRef<string | null>(null);
   activeRef.current = active;
   enabledRef.current = !disabled && (active || readerActive);
 
@@ -81,7 +85,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
       if (activeRef.current && restoreAttempted.current) {
         commit(next || !current ? newReviewSession(batch.items) : reconcileReviewSession(current, batch.items));
         setSessionVerified(true);
-        if (next) { setRestored(false); previousCard.current = null; }
+        if (next) { setRestored(false); setRevealedCard(''); previousCard.current = null; }
       }
     } catch (error) { setLoadError(errorMessage(error)); }
     finally { loadingRef.current = false; setLoading(false); }
@@ -108,22 +112,24 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
   }, [active, readerActive, disabled, summary, loading, refresh]);
 
   const item = session?.items[session.cursor];
+  const practiceKey = item ? reviewPracticeKey(item.vocabulary.id, item.occurrence, mode) : '';
+  const needsReveal = mode === 'cloze' && Boolean(reviewCloze(item?.occurrence ?? null)) && revealedCard !== practiceKey;
   const pending = session?.pending;
   const finished = Boolean(session && !item && session.size > 0);
   useEffect(() => {
-    setShowContext(false); setSaveError(''); setFailedStatus(null); setCanDismiss(false);
+    setSaveError(''); setFailedStatus(null); setCanDismiss(false);
   }, [item?.vocabulary.id]);
   useEffect(() => {
     if (!active || loading) return;
-    if (item && previousCard.current !== item.vocabulary.id) {
-      previousCard.current = item.vocabulary.id; wordHeading.current?.focus();
+    if (item && previousCard.current !== practiceKey) {
+      previousCard.current = practiceKey; wordHeading.current?.focus();
     } else if (finished) summaryHeading.current?.focus();
-  }, [active, loading, item?.vocabulary.id, finished]);
+  }, [active, loading, practiceKey, finished]);
 
   const assess = async (status: WordStatus) => {
     const current = sessionRef.current;
     const card = current?.items[current.cursor];
-    if (!current || !card || savingRef.current || disabled || loadingRef.current || (!sessionVerified && !current.pending)) return;
+    if (!current || !card || savingRef.current || disabled || loadingRef.current || (!sessionVerified && !current.pending) || (needsReveal && !current.pending)) return;
     if (current.pending && current.pending.status !== status) return;
     savingRef.current = true; setSaving(true); setSaveError(''); setCanDismiss(false); setFailedStatus(status);
     let confirmed = false;
@@ -173,13 +179,9 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
       {session && <>
         {session.size > 0 && <div className="review-progress"><div><span aria-live="polite">已处理 {processed} / {session.size}</span><span>已自评 {session.assessed} · 已跳过 {session.skipped}{session.removed > 0 && ` · 已移出 ${session.removed}`}</span></div><div className="progress-track" role="progressbar" aria-label="本组复习进度" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={processed}><div style={{ width: `${processed / session.size * 100}%` }} /></div></div>}
         {item && <div className="review-card" aria-busy={saving}>
-          <p className="overline">先回想这个词的意思，再给自己一个评价</p>
-          <h3 className="review-word" ref={wordHeading} tabIndex={-1}>{item.vocabulary.word}</h3>
-          {item.vocabulary.lemma !== item.vocabulary.word.toLowerCase() && <p className="review-lemma">词元 · {item.vocabulary.lemma}</p>}
-          <div className="review-meta"><StatusBadge status={latestWord?.status ?? item.vocabulary.status} /><span>{item.last_reviewed_at ? <>最近复习 · <time dateTime={item.last_reviewed_at}>{formatDate(item.last_reviewed_at)}</time></> : '尚未在这里复习'}</span><span>{item.due_at ? <>已到期 · {formatDate(item.due_at)}</> : '首次复习'}</span></div>
-          <div className="review-context-actions"><button className="button secondary" disabled={blocked || !item.occurrence} aria-expanded={showContext} aria-controls="review-context" onClick={() => setShowContext(current => !current)}><Eye size={15} />{showContext ? '收起原文提示' : '显示原文提示'}</button>{item.occurrence && <button className="text-button" disabled={blocked} onClick={() => onOpenDocument(item.occurrence!.document_id, item.occurrence!.id)}><BookOpen size={15} />回到原文 <ArrowRight size={14} /></button>}</div>
-          {item.occurrence ? <div id="review-context" className="review-context" hidden={!showContext}><p className="section-label">原文 · {item.occurrence.document_title}</p><blockquote>{item.occurrence.sentence || '该词暂无可用的原句，可回到原文查看。'}</blockquote></div> : <p className="review-context-empty">这个词暂时没有关联原文，可以根据记忆自评。</p>}
-          <fieldset className="review-ratings" disabled={blocked || Boolean(pending) || !sessionVerified}><legend>这次，你对它有多熟悉？</legend><div>{ratings.map(rating => <button className={`review-rating ${rating.status.toLowerCase()}`} key={rating.status} onClick={() => void assess(rating.status)}><rating.icon size={20} /><strong>{rating.label}</strong><span>{rating.description}</span><small>下次 · {intervalLabel(item.next_intervals_seconds[rating.status])}后</small></button>)}</div></fieldset>
+          <ReviewPractice key={practiceKey} item={item} mode={mode} onModeChange={value => { if (value !== mode) { setRevealedCard(''); setMode(value); } }} active={active} disabled={blocked || Boolean(pending) || !sessionVerified} onReveal={() => setRevealedCard(practiceKey)} onOpenDocument={onOpenDocument} headingRef={wordHeading} meta={<div className="review-meta"><StatusBadge status={latestWord?.status ?? item.vocabulary.status} /><span>{item.last_reviewed_at ? <>最近复习 · <time dateTime={item.last_reviewed_at}>{formatDate(item.last_reviewed_at)}</time></> : '尚未在这里复习'}</span><span>{item.due_at ? <>已到期 · {formatDate(item.due_at)}</> : '首次复习'}</span></div>} />
+          {needsReveal && !pending && <p className="review-rating-hint">先检查或揭晓原句答案，再按自己的掌握程度自评。</p>}
+          <fieldset className="review-ratings" disabled={blocked || Boolean(pending) || !sessionVerified || needsReveal}><legend>这次，你对它有多熟悉？</legend><div>{ratings.map(rating => <button className={`review-rating ${rating.status.toLowerCase()}`} key={rating.status} onClick={() => void assess(rating.status)}><rating.icon size={20} /><strong>{rating.label}</strong><span>{rating.description}</span><small>下次 · {intervalLabel(item.next_intervals_seconds[rating.status])}后</small></button>)}</div></fieldset>
           {pending && <div className="review-pending" role="status"><Clock3 size={16} /><p>待确认的自评：{ratings.find(rating => rating.status === pending.status)?.label}。请先重试原评价，再继续其他单词；重试不会重复记分。</p></div>}
           {(saveError || pending) && <div className="review-save-error" role={saveError ? 'alert' : undefined}>{saveError && <p><AlertCircle size={16} />{saveError}</p>}{(pending?.status ?? failedStatus) && <button className="text-button" disabled={blocked} onClick={() => void assess((pending?.status ?? failedStatus)!)}><RefreshCw size={14} />重试保存</button>}{canDismiss && <><p>这张卡无法继续确认。可以放下它，已保存的学习记录不会被撤销。</p><button className="text-button" disabled={blocked} onClick={() => skip(true)}>放下这张卡</button></>}</div>}
           <div className="review-card-footer"><p>{saving ? <><LoaderCircle className="spin" size={14} />正在保存自评…</> : '自评后自动安排下次复习，进度保存在当前浏览器。'}</p><button className="text-button" disabled={blocked || Boolean(pending)} onClick={() => skip()}><SkipForward size={15} />跳过这个词</button></div>
@@ -187,7 +189,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
         {finished && <div className="review-message review-complete"><span className="review-complete-icon"><Check size={29} /></span><h3 ref={summaryHeading} tabIndex={-1}>这一组，已经走完了。</h3><p>已自评 <strong>{session.assessed}</strong> 个词 · 已跳过 <strong>{session.skipped}</strong> 个词</p>{session.removed > 0 && <p>另有 {session.removed} 个词已移出本组，未计入本次自评。</p>}<p>已自评的词会按新间隔再出现；跳过的词保留原安排。</p><button className="button primary" disabled={blocked} onClick={() => void refresh(true)}><RefreshCw size={16} />加载下一组</button></div>}
         {session.size === 0 && <div className="review-message"><BookOpen size={32} /><h3>{summary?.total ? '有新的单词到期了' : '当前没有到期的单词'}</h3><p>{summary?.total ? '可以开始下一组复习。' : summary?.next_due_at ? <>下一批单词将在 {formatDate(summary.next_due_at)} 到期，可以先继续阅读。</> : '阅读时把单词标为「不认识」或「不确定」，就能在这里再次遇见。'}</p><button className="button secondary" disabled={blocked} onClick={() => void refresh(true)}><RefreshCw size={15} />{summary?.total ? '加载下一组' : '重新检查词库'}</button></div>}
       </>}
-      <div className="review-note">不认识：10 分钟后；不确定：1 天后；连续掌握：3 / 7 / 14 / 30 / 60 天后。普通标记为已掌握的词也会在 3 天后回顾。查看提示和跳过不会修改复习安排。</div>
+      <div className="review-note">不认识：10 分钟后；不确定：1 天后；连续掌握：3 / 7 / 14 / 30 / 60 天后。普通标记为已掌握的词也会在 3 天后回顾。揭晓、填空和跳过不会修改复习安排，只有明确自评才会安排下次复习。</div>
     </section>
   </>;
 }
