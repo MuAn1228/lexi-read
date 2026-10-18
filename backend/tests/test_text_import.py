@@ -355,7 +355,7 @@ def test_concurrent_different_payloads_with_same_uuid_commit_only_one(text_app):
 
 def test_008_upgrade_preserves_all_installed_data_and_backs_up_wal(legacy, monkeypatch):
     path, engine, connection = legacy
-    versions = migrations.MIGRATIONS
+    versions = migrations.MIGRATIONS[:8]
     monkeypatch.setattr(migrations, "MIGRATIONS", versions[:7])
     migrations.migrate_database(engine)
     tables = ("users", "documents", "word_occurrences", "vocabulary", "learning_events",
@@ -389,7 +389,7 @@ def test_008_upgrade_preserves_all_installed_data_and_backs_up_wal(legacy, monke
 
 def test_008_migration_rolls_back_ddl_and_retries_safely(legacy, monkeypatch):
     path, engine, _ = legacy
-    versions = migrations.MIGRATIONS
+    versions = migrations.MIGRATIONS[:8]
     monkeypatch.setattr(migrations, "MIGRATIONS", versions[:7])
     migrations.migrate_database(engine)
     before = rows(path, "SELECT * FROM word_occurrences")

@@ -37,6 +37,7 @@ class DashboardService:
             func.count(WordOccurrence.id).label("recent_seen_count"),
         ).join(Document, Document.id == WordOccurrence.document_id).where(
             Document.user_id == self.user_id,
+            Document.deleted_at.is_(None),
             Document.created_at >= month,
             Document.created_at <= now,
         ).group_by(WordOccurrence.lemma).subquery()
@@ -74,7 +75,7 @@ class DashboardService:
             LearningEvent.details["intentional"].as_boolean().is_(True),
         ))
         document_count = self.session.scalar(select(func.count(Document.id)).where(
-            Document.user_id == self.user_id,
+            Document.user_id == self.user_id, Document.deleted_at.is_(None),
         ))
         assessed = counts["total"] - counts["unassessed"]
         return DashboardOut(

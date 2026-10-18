@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, BarChart3, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
 import { browserStorageKey, errorMessage, request } from './api';
 import ContextPanel from './ContextPanel';
 import DocumentPanel from './DocumentPanel';
+import DocumentLibraryView from './DocumentLibraryView';
+import { activeArticleList, initialArticleSelection } from './documentLibrary';
+import type { DocumentPatch } from './documentLibrary';
 import DashboardView from './DashboardView';
 import RelationsView from './RelationsView';
 import ReviewView from './ReviewView';
@@ -14,9 +17,10 @@ import WordList from './WordList';
 import type { StatusFilter } from './WordList';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }] as const;
 const titles: Record<View, { eyebrow: string; title: string; subtitle: string }> = {
   reader: { eyebrow: 'YOUR PERSONAL READING SPACE', title: '读懂文章，也读懂每一个词。', subtitle: '从真实阅读出发，让遇见的单词慢慢成为你的语言。' },
+  library: { eyebrow: 'MAKE ROOM FOR YOUR READING', title: '好文章，值得好好收藏。', subtitle: '整理标题、添上标签，留一个书签，下次从这里继续。' },
   vocabulary: { eyebrow: 'A VOCABULARY THAT GROWS WITH YOU', title: '把遇见的词，变成自己的。', subtitle: '认识、陌生、偶尔忘记。每一种状态，都值得被记住。' },
   review: { eyebrow: 'ANOTHER MOMENT WITH YOUR WORDS', title: '再遇见，让生词慢慢熟悉。', subtitle: '从真实阅读里遇见的词开始，回想、看原文、记录此刻的掌握程度。' },
   history: { eyebrow: 'YOUR LEARNING JOURNEY', title: '每一小步，都有迹可循。', subtitle: '回看你的阅读、探索与反馈，慢慢看见积累的力量。' },
@@ -25,6 +29,7 @@ const titles: Record<View, { eyebrow: string; title: string; subtitle: string }>
 };
 function rememberDocument(id: number) { try { localStorage.setItem(browserStorageKey('document'), String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
 function rememberedDocument(): number { try { return Number(localStorage.getItem(browserStorageKey('document'))); } catch { return 0; } }
+function forgetDocument() { try { localStorage.removeItem(browserStorageKey('document')); } catch { /* Optional reading preference. */ } }
 
 export default function App() {
   const [view, setView] = useState<View>('reader');
@@ -47,6 +52,14 @@ export default function App() {
   const [textDraft, setTextDraft] = useState<TextDraft>({ title: '', text: '' });
   const [importSyncError, setImportSyncError] = useState('');
   const [syncingImport, setSyncingImport] = useState(false);
+  const [documentRevision, setDocumentRevision] = useState(0);
+  const [documentSyncError, setDocumentSyncError] = useState('');
+  const [syncingDocuments, setSyncingDocuments] = useState(false);
+  const [revealBookmark, setRevealBookmark] = useState(0);
+  const documentEpoch = useRef(0);
+  const documentSyncGeneration = useRef(0);
+  const currentDocumentId = useRef<number | null>(null);
+  currentDocumentId.current = document?.id ?? null;
   const textImportRequest = useRef<TextImportPayload | null>(null);
   const importSyncGeneration = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -59,7 +72,7 @@ export default function App() {
   const initializingRef = useRef(false);
 
   const acceptDocument = useCallback((value: ReadingDocument, occurrenceId?: number) => {
-    setDocument(value); setSelectedId(value.words.find(word => word.id === occurrenceId)?.id ?? value.words[0]?.id ?? null);
+    setDocument(value); setSelectedId(initialArticleSelection(value, occurrenceId)); setRevealBookmark(value => value + 1);
     setQuery(''); setFilter('ALL'); setView('reader'); setUploadOpen(false); rememberDocument(value.id);
   }, []);
   const refreshLearning = useCallback(async () => {
@@ -80,14 +93,15 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   }, [acceptDocument]);
   const initialize = useCallback(async () => {
-    if (initializingRef.current || busyRef.current) return;
+    if (initializingRef.current || busyRef.current || savingRef.current) return;
     initializingRef.current = true;
+    const epoch = documentEpoch.current;
     setInitializing(true); setError('');
     const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), request<Health>('/health'), refreshLearning()]);
-    if (results[0].status === 'fulfilled') {
+    if (results[0].status === 'fulfilled' && epoch === documentEpoch.current) {
       const list = results[0].value; setDocuments(list);
       if (list.length) await openDocument(list.find(item => item.id === rememberedDocument())?.id ?? list[0].id);
-    } else setError(errorMessage(results[0].reason));
+    } else if (results[0].status === 'rejected') setError(errorMessage(results[0].reason));
     if (results[1].status === 'fulfilled') setHealth(results[1].value);
     if (results[2].status === 'rejected') setError(errorMessage(results[2].reason));
     initializingRef.current = false; setInitializing(false);
@@ -134,14 +148,57 @@ export default function App() {
 
   const refreshImportedMaterial = useCallback(async () => {
     const generation = ++importSyncGeneration.current;
+    const epoch = documentEpoch.current;
     setSyncingImport(true);
     const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), refreshLearning()]);
     if (generation !== importSyncGeneration.current) return;
-    if (results[0].status === 'fulfilled') setDocuments(results[0].value);
+    if (results[0].status === 'fulfilled' && epoch === documentEpoch.current) setDocuments(results[0].value);
     const failed = results.find(result => result.status === 'rejected');
     setImportSyncError(failed?.status === 'rejected' ? `文章已导入；阅读材料列表或词库暂未刷新：${errorMessage(failed.reason)}` : '');
     setSyncingImport(false);
   }, [refreshLearning]);
+  const refreshDocumentList = useCallback(async () => {
+    const generation = ++documentSyncGeneration.current;
+    const epoch = documentEpoch.current;
+    setSyncingDocuments(true);
+    try {
+      const items = await request<DocumentSummary[]>('/documents');
+      if (generation !== documentSyncGeneration.current || epoch !== documentEpoch.current) return;
+      setDocuments(items); setDocumentSyncError('');
+      const id = currentDocumentId.current;
+      if (id !== null) {
+        const summary = items.find(item => item.id === id);
+        if (summary) setDocument(value => value?.id === id ? { ...value, ...summary } : value);
+        else { setDocument(value => value?.id === id ? null : value); setSelectedId(null); forgetDocument(); }
+      }
+    } catch (e) {
+      if (generation === documentSyncGeneration.current && epoch === documentEpoch.current) setDocumentSyncError(`阅读材料列表暂未刷新：${errorMessage(e)}`);
+    } finally { if (generation === documentSyncGeneration.current) setSyncingDocuments(false); }
+  }, []);
+  const changeArticle = useCallback(async (id: number, action: 'update' | 'delete' | 'restore', patch?: DocumentPatch): Promise<DocumentSummary> => {
+    if (savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
+    savingRef.current = true; setSaving(true);
+    ++documentEpoch.current; ++importSyncGeneration.current; setSyncingImport(false);
+    ++requestGeneration.current;
+    try {
+      const updated = await request<DocumentSummary>(`/documents/${id}${action === 'restore' ? '/restore' : ''}`, {
+        method: action === 'update' ? 'PUT' : action === 'delete' ? 'DELETE' : 'POST',
+        ...(patch ? { body: JSON.stringify(patch) } : {}),
+      });
+      ++documentEpoch.current;
+      setDocuments(items => activeArticleList(items, updated));
+      setDocument(value => value?.id === id ? updated.deleted_at ? null : { ...value, ...updated } : value);
+      if (updated.deleted_at && document?.id === id) { setSelectedId(null); forgetDocument(); }
+      setDocumentRevision(value => value + 1);
+      setNotice(action === 'delete' ? '文章已移到回收站，词库和学习记录保留。' : action === 'restore' ? '文章已恢复，可以继续阅读。' : patch && 'bookmark_occurrence_id' in patch ? patch.bookmark_occurrence_id === null ? '阅读书签已清除。' : '当前阅读位置已保存。' : '文章标题与标签已保存。');
+      void refreshDocumentList();
+      return updated;
+    } catch (e) {
+      // A lost response may follow a committed write. Reconcile through GET, never replay automatically.
+      void refreshDocumentList();
+      throw e;
+    } finally { savingRef.current = false; setSaving(false); }
+  }, [document?.id, refreshDocumentList]);
   const changeTextDraft = (draft: TextDraft) => {
     textImportRequest.current = null;
     setTextDraft(draft); setError('');
@@ -164,6 +221,7 @@ export default function App() {
       // A confirmed write completes import even if subsequent list/learning reads fail.
       acceptDocument(value);
       setDocuments(items => [{ ...value, word_count: value.words.length }, ...items.filter(item => item.id !== value.id)]);
+      ++documentEpoch.current; setDocumentRevision(value => value + 1);
       textImportRequest.current = null; setTextDraft({ title: '', text: '' });
       setNotice(`文章已导入，共 ${value.words.length} 处英文单词，开始阅读吧。`);
       void refreshImportedMaterial();
@@ -181,7 +239,7 @@ export default function App() {
     try {
       const value = await request<ReadingDocument>('/documents', { method: 'POST', body: form });
       if (generation !== requestGeneration.current) return;
-      acceptDocument(value); setDocuments(await request<DocumentSummary[]>('/documents')); await refreshLearning();
+      acceptDocument(value); ++documentEpoch.current; setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length })); setDocumentRevision(value => value + 1); void refreshImportedMaterial();
       setNotice(`已识别 ${value.words.length} 处英文单词，开始阅读吧。`);
     } catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
@@ -193,7 +251,7 @@ export default function App() {
     try {
       const value = await request<ReadingDocument>('/documents/demo', { method: 'POST' });
       if (generation !== requestGeneration.current) return;
-      acceptDocument(value); setDocuments(await request<DocumentSummary[]>('/documents')); await refreshLearning();
+      acceptDocument(value); ++documentEpoch.current; setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length })); setDocumentRevision(value => value + 1); void refreshImportedMaterial();
     }
     catch (e) { if (generation === requestGeneration.current) setError(errorMessage(e)); }
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
@@ -269,15 +327,18 @@ export default function App() {
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
       {importSyncError && <div className="error-banner import-sync-warning" role="status"><AlertCircle size={19} /><span>{importSyncError}</span><button className="text-button" disabled={syncingImport} onClick={() => void refreshImportedMaterial()}><RefreshCw size={14} className={syncingImport ? 'spin' : ''} />重新刷新列表与词库</button></div>}
+      {documentSyncError && <div className="error-banner" role="status"><AlertCircle size={19} /><span>{documentSyncError}</span><button className="text-button" disabled={syncingDocuments || saving || isLoading} onClick={() => void refreshDocumentList()}><RefreshCw size={14} className={syncingDocuments ? 'spin' : ''} />重新刷新阅读列表</button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
       <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
       {view === 'reader' && <>
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
-          <div className="reading-workspace"><DocumentPanel key={document.id} document={document} selectedId={selectedId} onSelect={word => setSelectedId(word.id)} /><WordList words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => setSelectedId(word.id)} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={selectedId} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
+          <div className="reading-library-tools"><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
+          <div className="reading-workspace"><DocumentPanel key={document.id} document={document} selectedId={selectedId} revealToken={revealBookmark} onSelect={word => setSelectedId(word.id)} /><WordList words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => setSelectedId(word.id)} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={selectedId} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
         </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />学习，发生在真实阅读里</span><h2>少一点机械记忆，<br />多一点<span>真正理解。</span></h2><p>读你感兴趣的内容，圈出还不熟悉的单词。<br />词间会记住你的反馈，陪你建立自己的词汇地图。</p><div className="reading-illustration" aria-hidden="true"><div className="paper-card"><span>A SMALL NOTE ON LEARNING</span><p>Read with <mark>curiosity.</mark><br />Make room for<br /><em>understanding.</em></p><div className="paper-lines"><i /><i /><i /></div></div><div className="word-note"><Leaf size={16} /><span>从语境里，认识一个词。</span></div></div><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel">{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>示例为已预标注的英文图片，可直接体验标记、词库和关联学习。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
+      {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}

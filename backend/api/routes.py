@@ -1,23 +1,24 @@
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.database import get_session
 from backend.auth import create_guest_session, get_current_user_id
 from backend.config import get_settings
-from backend.models import Document, WordOccurrence
+from backend.models import WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, DocumentUpdateRequest, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, WordHistoryOut
 from backend.services.feedback import FeedbackService
 from backend.services.relations import RelationService
 from backend.services.dashboard import DashboardService
 from backend.services.review import ReviewService
 from backend.services.review_marks import ReviewMarkService
-from backend.services.documents import create_demo, document_out, document_summary, import_image, require_document
+from backend.services.documents import change_document_deleted, create_demo, document_out, import_image, list_documents, require_document, update_document
 from backend.services.text_import import import_text
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
@@ -57,9 +58,11 @@ def review(limit: int = Query(10, ge=1, le=50), tz_offset_minutes: int = Query(4
 
 
 @router.get("/documents", response_model=list[DocumentSummary])
-def documents(session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
-    return [document_summary(doc) for doc in session.scalars(select(Document).where(
-        Document.user_id == user_id).order_by(Document.created_at.desc(), Document.id.desc()))]
+def documents(q: str | None = Query(None, max_length=200), tag: str | None = Query(None, max_length=20),
+              source: Literal["text", "upload", "demo"] | None = None, deleted: bool = False,
+              sort: Literal["newest", "oldest", "title"] = "newest",
+              session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    return list_documents(session, user_id, q=q, tag=tag, source=source, deleted=deleted, sort=sort)
 
 
 @router.post("/documents/upload", response_model=DocumentOut, status_code=201,
@@ -100,6 +103,24 @@ def document_image(document_id: int, session: Session = Depends(get_session),
     if not Path(doc.image_path).is_file():
         raise HTTPException(404, "原图文件缺失，请重新导入。")
     return FileResponse(doc.image_path, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+
+@router.put("/documents/{document_id}", response_model=DocumentSummary)
+def edit_document(document_id: int, payload: DocumentUpdateRequest, session: Session = Depends(get_session),
+                  user_id: int = Depends(get_current_user_id)):
+    return update_document(session, document_id, payload, user_id)
+
+
+@router.delete("/documents/{document_id}", response_model=DocumentSummary)
+def trash_document(document_id: int, session: Session = Depends(get_session),
+                   user_id: int = Depends(get_current_user_id)):
+    return change_document_deleted(session, document_id, user_id, restore=False)
+
+
+@router.post("/documents/{document_id}/restore", response_model=DocumentSummary)
+def restore_document(document_id: int, session: Session = Depends(get_session),
+                     user_id: int = Depends(get_current_user_id)):
+    return change_document_deleted(session, document_id, user_id, restore=True)
 
 
 @router.get("/vocabulary", response_model=list[VocabularyOut])
@@ -165,7 +186,14 @@ def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_sess
     context = VocabularyAgent(repository).build_context(occurrence, doc)
     analysis = LLMService().analyze_word(occurrence.word, occurrence.lemma, occurrence.sentence, doc.ocr_text,
                                        learner_context=context)
-    VocabularyService(repository).lookup(occurrence.word, doc.id, analysis.source)
+    try:
+        # A slow model response may finish after another tab trashes this article.
+        session.execute(text("BEGIN IMMEDIATE"))
+        require_document(session, doc.id, user_id)
+        VocabularyService(repository).lookup(occurrence.word, doc.id, analysis.source)
+    except Exception:
+        session.rollback()
+        raise
     return analysis
 
 

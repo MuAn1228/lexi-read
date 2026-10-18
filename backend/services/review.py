@@ -89,6 +89,7 @@ class ReviewService:
             ).label("position"),
         ).join(Document, Document.id == WordOccurrence.document_id).where(
             Document.user_id == self.user_id,
+            Document.deleted_at.is_(None),
             WordOccurrence.lemma.in_([entry.lemma for entry, _, _ in rows]),
         ).subquery()
         contexts = {

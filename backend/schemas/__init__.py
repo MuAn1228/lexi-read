@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 from uuid import UUID
+import unicodedata
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
@@ -100,6 +101,53 @@ class DocumentSummary(Schema):
     source: str
     created_at: datetime
     word_count: int
+    tags: list[str] = Field(default_factory=list)
+    bookmark_occurrence_id: int | None = None
+    deleted_at: datetime | None = None
+    excerpt: str = ""
+
+
+class DocumentUpdateRequest(Schema):
+    model_config = ConfigDict(from_attributes=True, frozen=True, extra="forbid")
+    title: str | None = Field(default=None, strict=True, max_length=250)
+    tags: list[str] | None = Field(default=None, max_length=10)
+    bookmark_occurrence_id: int | None = Field(default=None, strict=True, gt=0, le=9_223_372_036_854_775_807)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def validate_title(cls, value):
+        if not isinstance(value, str):
+            raise ValueError("标题必须是文字。")
+        if any(unicodedata.category(char) in {"Cc", "Cs", "Zl", "Zp"} for char in value):
+            raise ValueError("标题不能包含换行或控制字符。")
+        if not value.strip():
+            raise ValueError("标题不能为空。")
+        return value.strip()
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, value):
+        if not isinstance(value, list) or len(value) > 10:
+            raise ValueError("最多可以添加 10 个标签。")
+        result, seen = [], set()
+        for tag in value:
+            if not isinstance(tag, str):
+                raise ValueError("标签必须是文字。")
+            if any(unicodedata.category(char) in {"Cc", "Cs", "Zl", "Zp"} for char in tag):
+                raise ValueError("标签不能包含换行或控制字符。")
+            tag = tag.strip()
+            if not 1 <= len(tag) <= 20:
+                raise ValueError("每个标签需要 1 到 20 个字符。")
+            if tag.casefold() not in seen:
+                result.append(tag)
+                seen.add(tag.casefold())
+        return result
+
+    @model_validator(mode="after")
+    def validate_patch(self):
+        if not self.model_fields_set:
+            raise ValueError("请提供要修改的文章信息。")
+        return self
 
 
 class DocumentOut(DocumentSummary):

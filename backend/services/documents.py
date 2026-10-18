@@ -6,22 +6,53 @@ from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.models import Document, WordOccurrence
+from backend.models.entities import utcnow
 from backend.ocr.service import ENGLISH_WORD, OCRResult, OCRWord, get_ocr_service
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import DocumentOut, DocumentSummary, WordOut
+from backend.schemas import DocumentOut, DocumentSummary, DocumentUpdateRequest, WordOut
 from backend.services.vocabulary import VocabularyService, normalize_word
 
 
-def document_summary(doc: Document) -> DocumentSummary:
+def document_summary(doc: Document, word_count: int | None = None) -> DocumentSummary:
     return DocumentSummary(id=doc.id, title=doc.title,
                            image_url=None if doc.source == "text" else f"/api/documents/{doc.id}/image",
                            width=doc.width, height=doc.height, source=doc.source,
-                           created_at=doc.created_at, word_count=len(doc.words))
+                           created_at=doc.created_at, word_count=len(doc.words) if word_count is None else word_count,
+                           tags=doc.tags or [], bookmark_occurrence_id=doc.bookmark_occurrence_id,
+                           deleted_at=doc.deleted_at, excerpt=re.sub(r"\s+", " ", doc.ocr_text).strip()[:160])
+
+
+def list_documents(session: Session, user_id: int, *, q: str | None = None, tag: str | None = None,
+                   source: str | None = None, deleted: bool = False, sort: str = "newest") -> list[DocumentSummary]:
+    # One aggregate query, without materializing the occurrences of every article.
+    # Python casefold supports Unicode titles/tags; substring search is literal,
+    # including SQL wildcard characters such as % and _.
+    query = select(Document, func.count(WordOccurrence.id)).outerjoin(
+        WordOccurrence, WordOccurrence.document_id == Document.id,
+    ).where(Document.user_id == user_id,
+            Document.deleted_at.is_not(None) if deleted else Document.deleted_at.is_(None))
+    if source is not None:
+        query = query.where(Document.source == source)
+    query = query.group_by(Document.id).order_by(
+        Document.created_at.asc() if sort == "oldest" else Document.created_at.desc(),
+        Document.id.asc() if sort == "oldest" else Document.id.desc(),
+    )
+    result = []
+    with session.no_autoflush:
+        for doc, count in session.execute(query):
+            if q and q.strip().casefold() not in (doc.title + "\n" + doc.ocr_text).casefold():
+                continue
+            if tag and tag.strip().casefold() not in {value.casefold() for value in (doc.tags or [])}:
+                continue
+            result.append(document_summary(doc, count))
+    if sort == "title":
+        result.sort(key=lambda doc: (doc.title.casefold(), doc.id))
+    return result
 
 
 def document_out(doc: Document, session: Session, user_id: int = 1) -> DocumentOut:
@@ -34,9 +65,9 @@ def document_out(doc: Document, session: Session, user_id: int = 1) -> DocumentO
     return DocumentOut(**document_summary(doc).model_dump(), ocr_text=doc.ocr_text, words=words)
 
 
-def require_document(session: Session, document_id: int, user_id: int = 1) -> Document:
-    document = session.get(Document, document_id)
-    if document is None or document.user_id != user_id:
+def require_document(session: Session, document_id: int, user_id: int = 1, *, include_deleted: bool = False) -> Document:
+    document = session.get(Document, document_id, populate_existing=True)
+    if document is None or document.user_id != user_id or (document.deleted_at is not None and not include_deleted):
         raise HTTPException(404, "未找到这篇阅读材料。")
     return document
 
@@ -45,9 +76,50 @@ def require_document_capacity(session: Session, user_id: int) -> None:
     settings = get_settings()
     if settings.app_mode != "public":
         return
-    count = session.scalar(select(func.count(Document.id)).where(Document.user_id == user_id))
+    count = session.scalar(select(func.count(Document.id)).where(
+        Document.user_id == user_id, Document.deleted_at.is_(None)))
     if count >= settings.public_max_documents_per_user:
         raise HTTPException(409, "当前访客的阅读材料数量已达上限，请联系网站管理员。")
+
+
+def update_document(session: Session, document_id: int, payload: DocumentUpdateRequest,
+                    user_id: int) -> DocumentSummary:
+    try:
+        session.execute(text("BEGIN IMMEDIATE"))
+        doc = require_document(session, document_id, user_id)
+        if "bookmark_occurrence_id" in payload.model_fields_set and payload.bookmark_occurrence_id is not None:
+            occurrence = session.get(WordOccurrence, payload.bookmark_occurrence_id)
+            if occurrence is None or occurrence.document_id != doc.id:
+                raise HTTPException(422, "书签需要指向这篇文章中的单词。")
+        for field in payload.model_fields_set:
+            setattr(doc, field, getattr(payload, field))
+        session.flush()
+        count = session.scalar(select(func.count(WordOccurrence.id)).where(WordOccurrence.document_id == doc.id))
+        result = document_summary(doc, count)
+        session.commit()
+        return result
+    except Exception:
+        session.rollback()
+        raise
+
+
+def change_document_deleted(session: Session, document_id: int, user_id: int, *, restore: bool) -> DocumentSummary:
+    try:
+        session.execute(text("BEGIN IMMEDIATE"))
+        doc = require_document(session, document_id, user_id, include_deleted=True)
+        if restore and doc.deleted_at is not None:
+            require_document_capacity(session, user_id)
+            doc.deleted_at = None
+        elif not restore and doc.deleted_at is None:
+            doc.deleted_at = utcnow()
+        session.flush()
+        count = session.scalar(select(func.count(WordOccurrence.id)).where(WordOccurrence.document_id == doc.id))
+        result = document_summary(doc, count)
+        session.commit()
+        return result
+    except Exception:
+        session.rollback()
+        raise
 
 
 def sentence_contexts(result: OCRResult) -> list[str]:
@@ -146,7 +218,8 @@ DEMO_LINES = [
 
 
 def create_demo(session: Session, user_id: int = 1) -> Document:
-    existing = session.scalar(select(Document).where(Document.user_id == user_id, Document.source == "demo"))
+    existing = session.scalar(select(Document).where(
+        Document.user_id == user_id, Document.source == "demo", Document.deleted_at.is_(None)))
     if existing and Path(existing.image_path).is_file():
         return existing
     require_document_capacity(session, user_id)

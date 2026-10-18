@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import json
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,7 +26,7 @@ settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
     expose_headers=["Retry-After"],
 )
@@ -40,6 +42,16 @@ def health():
 async def ocr_unavailable(request, exc):
     logging.getLogger(__name__).warning("OCR is unavailable: %s", exc)
     return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request, exc):
+    # Do not echo raw invalid input. In particular, an escaped lone Unicode
+    # surrogate is valid transport JSON but cannot be encoded in a response.
+    return Response(status_code=422, media_type="application/json", content=json.dumps({"detail": [
+        {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+        for error in exc.errors()
+    ]}, ensure_ascii=True))
 
 
 @app.exception_handler(SQLAlchemyError)

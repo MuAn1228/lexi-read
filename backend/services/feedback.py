@@ -9,6 +9,7 @@ from backend.schemas import FeedbackOut, FeedbackRequest, Status
 from backend.services.lemmatization import normalize_word
 from backend.services.relations import RelationService
 from backend.services.vocabulary import VocabularyService
+from backend.services.documents import require_document
 
 
 class FeedbackService:
@@ -52,6 +53,8 @@ class FeedbackService:
             # Return current state: a delayed retry must never replay an earlier
             # choice over a newer one or apply its mastery delta twice.
             return self._out(state)
+        if batch.document_id is not None:
+            require_document(self.session, batch.document_id, uid)
         if state is None:
             state = RecommendationFeedback(user_id=uid, batch_id=batch_id, word=word,
                                            shown=False, viewed=False, added_unknown=False)

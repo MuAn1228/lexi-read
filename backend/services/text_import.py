@@ -64,6 +64,8 @@ def import_text(session: Session, payload: TextImportRequest, user_id: int = 1) 
             document = session.get(Document, receipt.document_id)
             if document is None or document.user_id != user_id:
                 raise HTTPException(409, "该导入记录对应的文章已不存在，请刷新阅读材料。")
+            if document.deleted_at is not None:
+                raise HTTPException(409, "这篇文章已移入回收站，请在文章库的回收站中恢复。")
             session.commit()
             return document
         require_document_capacity(session, user_id)

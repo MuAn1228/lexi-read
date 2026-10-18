@@ -1,11 +1,13 @@
 """Deterministic personalized selection; replaceable independently of generation."""
 import re
+from sqlalchemy import text
 
 from backend.models import Document, WordOccurrence
 from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import EventOut, Recommendation, RecommendationsOut, VocabularyOut
 from backend.services.llm import Candidate, LLMService, learner_data
 from backend.services.vocabulary import normalize_word
+from backend.services.documents import require_document
 
 
 class VocabularyAgent:
@@ -79,6 +81,7 @@ class VocabularyAgent:
 
     def build_context(self, occurrence: WordOccurrence, document: Document,
                       vocabulary: list[dict] | None = None, history: list[dict] | None = None) -> dict:
+        require_document(self.repo.session, document.id, self.repo.user_id)
         if vocabulary is None:
             vocabulary = [VocabularyOut.model_validate(row).model_dump(mode="json") for row in self.repo.all()]
         if history is None:
@@ -105,8 +108,14 @@ class VocabularyAgent:
                            for row in self.repo.utility_history(occurrence.lemma)]
         selected = self.rank(generated.candidates, occurrence.lemma, document.ocr_text,
                              vocabulary, utility_history + history)
-        batch = self.repo.event(occurrence.word, "RECOMMENDATION_GENERATED", document.id,
-                        {"recommended_words": [item.word for item in selected], "source": generated.source,
-                         "items": [item.model_dump(mode="json") for item in selected]})
-        self.repo.session.commit()
+        try:
+            self.repo.session.execute(text("BEGIN IMMEDIATE"))
+            require_document(self.repo.session, document.id, self.repo.user_id)
+            batch = self.repo.event(occurrence.word, "RECOMMENDATION_GENERATED", document.id,
+                            {"recommended_words": [item.word for item in selected], "source": generated.source,
+                             "items": [item.model_dump(mode="json") for item in selected]})
+            self.repo.session.commit()
+        except Exception:
+            self.repo.session.rollback()
+            raise
         return RecommendationsOut(batch_id=batch.id, items=selected, source=generated.source, warning=generated.warning)

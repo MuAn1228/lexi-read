@@ -58,6 +58,9 @@ class Document(Base):
     height: Mapped[int] = mapped_column(Integer)
     ocr_text: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(30), default="upload")
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    bookmark_occurrence_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     words: Mapped[list["WordOccurrence"]] = relationship(back_populates="document", cascade="all, delete-orphan", order_by="WordOccurrence.id")
 

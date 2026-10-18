@@ -1,5 +1,5 @@
 export type WordStatus = 'KNOWN' | 'UNKNOWN' | 'UNCERTAIN';
-export type View = 'reader' | 'vocabulary' | 'review' | 'history' | 'dashboard' | 'relations';
+export type View = 'reader' | 'library' | 'vocabulary' | 'review' | 'history' | 'dashboard' | 'relations';
 export interface Occurrence {
   id: number; word: string; lemma: string; sentence: string;
   bbox: [number, number, number, number] | null; line: string | number;
@@ -9,10 +9,12 @@ export interface Occurrence {
 export interface ReadingDocument {
   id: number; title: string; image_url: string | null; width: number; height: number;
   ocr_text: string; source: string; created_at: string; words: Occurrence[];
+  tags: string[]; bookmark_occurrence_id: number | null; deleted_at: string | null; excerpt: string;
 }
 export interface DocumentSummary {
   id: number; title: string; image_url: string | null; width: number; height: number;
   created_at: string; word_count: number; source: string;
+  tags: string[]; bookmark_occurrence_id: number | null; deleted_at: string | null; excerpt: string;
 }
 export interface Vocabulary {
   id: number; user_id: number; word: string; lemma: string; status: WordStatus | null;
