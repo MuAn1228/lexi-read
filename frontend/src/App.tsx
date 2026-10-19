@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
+import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, Leaf, LoaderCircle, Network, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react';
 import { browserStorageKey, errorMessage, request, reviewStorageKey } from './api';
 import ContextPanel from './ContextPanel';
 import ArticleQuestionPanel from './ArticleQuestionPanel';
@@ -14,6 +14,7 @@ import type { DocumentPatch } from './documentLibrary';
 import DashboardView from './DashboardView';
 import RelationsView from './RelationsView';
 import ReviewView from './ReviewView';
+import PracticeGenerationView from './PracticeGenerationView';
 import TextImportForm from './TextImportForm';
 import PdfImportForm from './PdfImportForm';
 import UrlImportForm from './UrlImportForm';
@@ -27,12 +28,13 @@ import WordList from './WordList';
 import type { StatusFilter } from './WordList';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'practice', label: '短文练习', icon: Sparkles }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '我的关联', icon: Network }, { value: 'history', label: '学习足迹', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
 const titles: Record<View, { eyebrow: string; title: string; subtitle: string }> = {
   reader: { eyebrow: 'YOUR PERSONAL READING SPACE', title: '读懂文章，也读懂每一个词。', subtitle: '从真实阅读出发，让遇见的单词慢慢成为你的语言。' },
   library: { eyebrow: 'MAKE ROOM FOR YOUR READING', title: '好文章，值得好好收藏。', subtitle: '整理标题、添上标签，留一个书签，下次从这里继续。' },
   vocabulary: { eyebrow: 'A VOCABULARY THAT GROWS WITH YOU', title: '把遇见的词，变成自己的。', subtitle: '认识、陌生、偶尔忘记。每一种状态，都值得被记住。' },
   review: { eyebrow: 'ANOTHER MOMENT WITH YOUR WORDS', title: '再遇见，让生词慢慢熟悉。', subtitle: '先回想再揭晓释义，也可以填回原句中的词，记录此刻的掌握程度。' },
+  practice: { eyebrow: 'A NEW STORY WITH YOUR WORDS', title: '用自己的生词，读一个新故事。', subtitle: '围绕需要巩固的词，生成你感兴趣的英文短文，在新的语境里再遇见。' },
   history: { eyebrow: 'YOUR LEARNING JOURNEY', title: '每一小步，都有迹可循。', subtitle: '回看你的阅读、探索与反馈，慢慢看见积累的力量。' },
   dashboard: { eyebrow: 'A CLEARER VIEW OF YOUR LEARNING', title: '看见积累，也看见下一步。', subtitle: '用真实的学习记录，找到值得再读一次的词。' },
   relations: { eyebrow: 'WORDS CONNECTED BY YOUR CURIOSITY', title: '从一个词，走向更多理解。', subtitle: '你看过的关联、留下的反馈，慢慢连成自己的词汇地图。' },
@@ -195,6 +197,22 @@ export default function App() {
       if (generation === documentSyncGeneration.current && epoch === documentEpoch.current) setDocumentSyncError(`阅读材料列表暂未刷新：${errorMessage(e)}`);
     } finally { if (generation === documentSyncGeneration.current) setSyncingDocuments(false); }
   }, []);
+  const savePractice = useCallback(async (payload: TextImportPayload): Promise<ReadingDocument> => {
+    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试保存。');
+    busyRef.current = true; setBusy('正在保存练习短文…'); setError('');
+    const generation = ++requestGeneration.current;
+    try {
+      const value = await request<ReadingDocument>('/documents/text', { method: 'POST', body: JSON.stringify(payload) });
+      if (generation !== requestGeneration.current || restorationLock.current) throw new Error('阅读空间已变化，请重新确认这次保存。');
+      acceptDocument(value); ++documentEpoch.current;
+      setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length }));
+      setDocumentRevision(value => value + 1);
+      setNotice('练习短文已保存，可以继续阅读、查词与问答。');
+      // A confirmed import is complete. Subsequent reads never replay the successful write.
+      void refreshImportedMaterial();
+      return value;
+    } finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
+  }, [acceptDocument, refreshImportedMaterial]);
   const changeArticle = useCallback(async (id: number, action: 'update' | 'delete' | 'restore', patch?: DocumentPatch): Promise<DocumentSummary> => {
     if (restorationLock.current || savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
     savingRef.current = true; setSaving(true);
@@ -431,6 +449,7 @@ export default function App() {
       {documentSyncError && <div className="error-banner" role="status"><AlertCircle size={19} /><span>{documentSyncError}</span><button className="text-button" disabled={syncingDocuments || saving || isLoading} onClick={() => void refreshDocumentList()}><RefreshCw size={14} className={syncingDocuments ? 'spin' : ''} />重新刷新阅读列表</button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
       <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading || restorationLocked} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
+      {!restorationLocked && <PracticeGenerationView active={view === 'practice'} disabled={saving || isLoading} onSave={savePractice} onOpenDocument={id => void openDocument(id)} onGoReader={() => setView('reader')} />}
       {view === 'reader' && <>
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
