@@ -1,0 +1,33 @@
+/* Recognition choices retain native radio controls and keyboard navigation. */
+.pdf-import-form .pdf-upload-zone { background: #f7faed; }
+.pdf-recognition-modes { min-width: 0; padding: 0; margin: 21px 0 0; border: 0; }
+.pdf-recognition-modes legend { display: flex; flex-wrap: wrap; gap: 5px 10px; padding: 0; color: var(--ink); font-size: 13px; font-weight: 650; }
+.pdf-recognition-modes legend > span { color: var(--muted); font-size: 11px; font-weight: 400; }
+.pdf-recognition-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.pdf-recognition-option { display: flex; align-items: flex-start; gap: 7px; min-width: 0; padding: 12px 10px; border: 1px solid #e0e6d5; border-radius: 12px; background: #fffef8; cursor: pointer; transition: background-color .18s, border-color .18s, box-shadow .18s; }
+.pdf-recognition-option input { flex: 0 0 auto; width: 15px; height: 15px; margin: 2px 0 0; accent-color: #346447; }
+.pdf-recognition-option-copy { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pdf-recognition-option-copy > strong { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--ink); font-size: 12px; font-weight: 650; line-height: 1.6; }
+.pdf-recognition-option-copy > span { color: #68765f; font-size: 11px; line-height: 1.8; }
+.pdf-recognition-option .pdf-auto-badge { padding: 1px 5px; border-radius: 10px; background: #d9eaa9; color: #4a6636; font-size: 9px; font-weight: 500; line-height: 1.5; }
+.pdf-recognition-option.selected { border-color: #98b46e; background: #f0f6df; box-shadow: 0 2px 0 #dfe8c7; }
+.pdf-recognition-option:focus-within { outline: 2px solid #718e50; outline-offset: 3px; }
+.pdf-recognition-modes:disabled .pdf-recognition-option { cursor: default; opacity: .7; }
+.pdf-ocr-limit { display: flex; align-items: flex-start; gap: 8px; padding: 11px 12px; margin: 13px 0 0; border-radius: 10px; background: #fff3e6; color: #7d684f; font-size: 11px; line-height: 1.8; }
+.pdf-ocr-limit > svg { flex-shrink: 0; margin-top: 2px; color: #ac8252; }
+.pdf-import-form .pdf-import-note { margin: 13px 0 16px; font-size: 11px; color: var(--muted); line-height: 1.9; }
+.pdf-recognition-progress { display: flex; align-items: flex-start; gap: 11px; margin: 0 0 17px; padding: 14px; border: 1px solid #dce6c6; border-radius: 12px; background: #f1f6e4; color: #527044; }
+.pdf-recognition-progress > svg { flex-shrink: 0; margin-top: 2px; }
+.pdf-recognition-progress strong { font-size: 12px; font-weight: 650; }
+.pdf-recognition-progress p { margin: 6px 0 0; font-size: 11px; line-height: 1.8; color: #66735c; }
+@media (hover: hover) and (pointer: fine) {
+  .pdf-recognition-modes:not(:disabled) .pdf-recognition-option:hover { border-color: #a8ba8c; background: #f5f8e9; }
+}
+@media (max-width: 620px) {
+  .pdf-recognition-options { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .pdf-recognition-option { padding: 11px 12px; gap: 10px; }
+  .pdf-recognition-option-copy { gap: 3px; }
+  .pdf-recognition-option-copy > strong { font-size: 12px; }
+  .pdf-recognition-option-copy > span { line-height: 1.6; }
+}
+@media (prefers-reduced-motion: reduce) { .pdf-recognition-option { transition: none; } }

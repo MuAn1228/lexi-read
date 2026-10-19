@@ -1,5 +1,6 @@
 """Persistent attempt budgets and bounded expensive work for one public worker."""
 from datetime import datetime, timezone
+from contextlib import contextmanager
 import hashlib
 from threading import BoundedSemaphore
 
@@ -29,20 +30,25 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def consume(session: Session, limits: list[tuple[str, int, int]]) -> None:
+def consume(session: Session, limits: list[tuple[str, int, int]], units: int = 1) -> None:
     """Atomically reserve every bucket or none; commits independently of learning data.
 
     A failed provider/validation attempt still counts. Counters survive restarts.
     The separate transaction avoids committing or rolling back caller changes.
     """
+    if type(units) is not int or units < 1:
+        raise ValueError("Budget units must be a positive integer")
     now = int(_now().timestamp())
     with Session(bind=session.get_bind()) as budget, budget.begin():
         budget.execute(delete(PublicUsage).where(PublicUsage.expires_at < now - 86400))
         for bucket, limit, expiry in limits:
-            statement = insert(PublicUsage).values(bucket=bucket, count=1, expires_at=expiry)
+            if units > limit:
+                raise HTTPException(429, "今日使用额度或当前时段额度已用完，请稍后再试。",
+                                    headers={"Retry-After": str(max(1, expiry - now))})
+            statement = insert(PublicUsage).values(bucket=bucket, count=units, expires_at=expiry)
             statement = statement.on_conflict_do_update(
-                index_elements=[PublicUsage.bucket], set_={"count": PublicUsage.count + 1},
-                where=PublicUsage.count < limit).returning(PublicUsage.count)
+                index_elements=[PublicUsage.bucket], set_={"count": PublicUsage.count + units},
+                where=PublicUsage.count <= limit - units).returning(PublicUsage.count)
             if budget.scalar(statement) is None:
                 raise HTTPException(429, "今日使用额度或当前时段额度已用完，请稍后再试。",
                                     headers={"Retry-After": str(max(1, expiry - now))})
@@ -63,22 +69,22 @@ def check_signup_budget(request: Request, session: Session) -> None:
                        (hour + 1) * 3600)])
 
 
-def _reserve(session: Session, user_id: int, kind: str) -> None:
+def _reserve(session: Session, user_id: int, kind: str, units: int = 1) -> None:
     settings = get_settings()
     day = int(_now().timestamp()) // 86400
     expiry = (day + 1) * 86400
     consume(session, [(f"{kind}:{day}:global", getattr(settings, f"public_{kind}_daily_limit"), expiry),
-                      (f"{kind}:{day}:user:{user_id}", getattr(settings, f"public_{kind}_user_daily_limit"), expiry)])
+                      (f"{kind}:{day}:user:{user_id}", getattr(settings, f"public_{kind}_user_daily_limit"), expiry)], units)
 
 
-def _work_budget(session: Session, user_id: int, kind: str, slots: BoundedSemaphore):
+def _work_budget(session: Session, user_id: int, kind: str, slots: BoundedSemaphore, units: int = 1):
     if get_settings().app_mode != "public":
         yield
         return
     if not slots.acquire(blocking=False):
         raise HTTPException(429, "服务正在处理其他请求，请稍后重试。", headers={"Retry-After": "10"})
     try:
-        _reserve(session, user_id, kind)
+        _reserve(session, user_id, kind, units)
         yield
     finally:
         slots.release()
@@ -90,3 +96,9 @@ def require_llm_budget(user_id: int = Depends(get_current_user_id), session: Ses
 
 def require_ocr_budget(user_id: int = Depends(get_current_user_id), session: Session = Depends(get_session)):
     yield from _work_budget(session, user_id, "ocr", _ocr_slots)
+
+
+@contextmanager
+def pdf_ocr_budget(session: Session, user_id: int, pages: int):
+    """Reserve each planned OCR page; native imports and confirmed retries skip this."""
+    yield from _work_budget(session, user_id, "ocr", _ocr_slots, pages)

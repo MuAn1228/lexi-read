@@ -43,3 +43,16 @@ test('PDF validation accepts absent MIME but rejects wrong extension, wrong MIME
   assert.match(pdfImportProblem({ name: 'English.pdf', type: '', size: 0 }), /空文件/);
   assert.match(pdfImportProblem({ name: 'English.pdf', type: '', size: 10 * 1024 * 1024 + 1 }), /10 MB/);
 });
+
+test('all recognition modes share file limits; unsupported modes cannot silently start OCR', () => {
+  const pdf = { name: 'English.pdf', type: 'application/pdf', size: 500 };
+  for (const mode of ['auto', 'text', 'scan']) {
+    assert.equal(pdfImportProblem(pdf, mode), '');
+    assert.match(pdfImportProblem({ ...pdf, size: 10 * 1024 * 1024 + 1 }, mode), /10 MB/);
+    assert.match(pdfImportProblem({ ...pdf, name: 'English.png' }, mode), /PDF 格式/);
+  }
+  for (const mode of ['', 'AUTO', 'scanned', 'scan ', null, true, 1, {}, ['scan']]) {
+    assert.match(pdfImportProblem(pdf, mode), /识别方式/);
+  }
+  assert.equal(pdfImportProblem(pdf), '');
+});

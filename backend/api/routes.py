@@ -27,7 +27,7 @@ from backend.services.url_import import import_url
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
-from backend.public_limits import require_llm_budget, require_ocr_budget
+from backend.public_limits import pdf_ocr_budget, require_llm_budget, require_ocr_budget
 
 router = APIRouter(prefix="/api")
 
@@ -93,10 +93,12 @@ def text_document(payload: TextImportRequest, session: Session = Depends(get_ses
 
 
 @router.post("/documents/pdf", response_model=DocumentOut, status_code=201)
-def pdf_document(file: UploadFile, request_id: UUID = Form(...), session: Session = Depends(get_session),
+def pdf_document(file: UploadFile, request_id: UUID = Form(...),
+                 ocr_mode: Literal["auto", "text", "scan"] = Form("auto"), session: Session = Depends(get_session),
                  user_id: int = Depends(get_current_user_id)):
     try:
-        return document_out(import_pdf(session, file, request_id, user_id), session, user_id)
+        return document_out(import_pdf(session, file, request_id, user_id, mode=ocr_mode,
+                                       ocr_budget=lambda pages: pdf_ocr_budget(session, user_id, pages)), session, user_id)
     finally:
         file.file.close()
 

@@ -1,7 +1,11 @@
 import type { DocumentPage, Occurrence, ReadingDocument } from './types';
 
 export const PDF_IMPORT_LIMIT = 10 * 1024 * 1024;
-export function pdfImportProblem(file: Pick<File, 'name' | 'type' | 'size'>): string {
+export const PDF_RECOGNITION_MODES = ['auto', 'text', 'scan'] as const;
+export type PdfRecognitionMode = typeof PDF_RECOGNITION_MODES[number];
+
+export function pdfImportProblem(file: Pick<File, 'name' | 'type' | 'size'>, mode: unknown = 'auto'): string {
+  if (!PDF_RECOGNITION_MODES.some(value => value === mode)) return '请选择有效的 PDF 识别方式后重试。';
   if (!/\.pdf$/i.test(file.name) || (file.type && !['application/pdf', 'application/x-pdf'].includes(file.type))) return '请选择 PDF 格式的英文文档。';
   if (file.size === 0) return '这个 PDF 是空文件，请重新选择。';
   if (file.size > PDF_IMPORT_LIMIT) return 'PDF 不能超过 10 MB，请缩小文件后重新上传。';
