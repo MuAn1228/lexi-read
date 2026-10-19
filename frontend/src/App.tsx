@@ -85,6 +85,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadModal = useRef<HTMLElement>(null);
   const pageHeading = useRef<HTMLHeadingElement>(null);
+  const navigationElement = useRef<HTMLElement>(null);
   const requestGeneration = useRef(0);
   const libraryGeneration = useRef(0);
   const savingRef = useRef(false);
@@ -131,6 +132,19 @@ export default function App() {
   const initialized = useRef(false);
   useEffect(() => { if (!initialized.current) { initialized.current = true; void initialize(); } }, [initialize]);
   useEffect(() => { if (view !== 'reader') void refreshLearning().catch(e => setError(errorMessage(e))); }, [view, refreshLearning]);
+  useEffect(() => {
+    const revealActiveNavigation = () => {
+      const nav = navigationElement.current;
+      const button = nav?.querySelector<HTMLButtonElement>('[aria-current="page"]');
+      if (!nav || !button || nav.scrollWidth <= nav.clientWidth) return;
+      const container = nav.getBoundingClientRect(); const item = button.getBoundingClientRect();
+      if (item.left < container.left + 8) nav.scrollLeft += item.left - container.left - 8;
+      else if (item.right > container.right - 8) nav.scrollLeft += item.right - container.right + 8;
+    };
+    revealActiveNavigation();
+    window.addEventListener('resize', revealActiveNavigation);
+    return () => window.removeEventListener('resize', revealActiveNavigation);
+  }, [view, health?.auth_mode]);
   useEffect(() => { setCitationFocus(null); }, [view, document?.id, document?.ocr_text, selectedId, revealBookmark, restorationLocked]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 3600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => {
@@ -436,9 +450,9 @@ export default function App() {
   </div>;
 
   return <div className="app-shell">
-    <header className="topbar"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span>词间<span className="brand-en">lexi</span></span></a>
-      <nav aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map(item => <button key={item.value} disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={17} /><span>{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button>)}</nav>
-      <div className="profile"><span className="local-dot" />{health?.auth_mode === 'guest' ? '我的学习空间' : '本地学习空间'}<span className="avatar">L</span></div>
+    <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span className="brand-name">词间<span className="brand-en">lexi</span></span></a><p className="brand-tagline">在阅读里，慢慢积累。</p></div>
+      <nav ref={navigationElement} aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map((item, index) => <div className="nav-entry" key={item.value}>{(index === 0 || item.value === 'dashboard') && <p className="nav-section-label">{index === 0 ? '阅读与练习' : '积累与管理'}</p>}<button disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-label={item.label} title={item.label} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={18} /><span className="nav-label">{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button></div>)}</nav>
+      <div className="profile"><span className="avatar">L</span><div className="profile-copy"><strong>我的学习空间</strong><span><span className="local-dot" />{health?.auth_mode === 'guest' ? '学习记录已连接' : '学习记录保存在本机'}</span></div></div>
     </header>
     <main>
       <div className="page-heading"><div><p className="overline">{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><button className="button primary new-reading" disabled={isLoading || saving || restorationLocked} onClick={() => { setView('reader'); setDragOver(false); setUploadOpen(true); }}><Plus size={17} />添加阅读材料</button></div>
