@@ -25,6 +25,7 @@ import { normalizeArticle, textImportProblem } from './textArticle';
 import type { TextDraft, TextImportPayload } from './textArticle';
 import { HistoryView, VocabularyView } from './LibraryViews';
 import WordList from './WordList';
+import ReadingGarden from './components/ReadingGarden';
 import type { StatusFilter } from './WordList';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
@@ -84,6 +85,7 @@ export default function App() {
   const importSyncGeneration = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadModal = useRef<HTMLElement>(null);
+  const uploadOpener = useRef<HTMLElement | null>(null);
   const pageHeading = useRef<HTMLHeadingElement>(null);
   const navigationElement = useRef<HTMLElement>(null);
   const requestGeneration = useRef(0);
@@ -91,6 +93,13 @@ export default function App() {
   const savingRef = useRef(false);
   const busyRef = useRef(false);
   const initializingRef = useRef(false);
+
+  const openUpload = (opener: HTMLElement, mode?: typeof importMode) => {
+    // Capture before a newly mounted form's autoFocus moves focus into the dialog.
+    if (!uploadOpen) uploadOpener.current = opener;
+    if (mode) setImportMode(mode);
+    setUploadOpen(true);
+  };
 
   const acceptDocument = useCallback((value: ReadingDocument, occurrenceId?: number) => {
     setDocument(value); setSelectedId(initialArticleSelection(value, occurrenceId)); setRevealBookmark(value => value + 1);
@@ -151,7 +160,7 @@ export default function App() {
     if (!uploadOpen || !uploadModal.current) return;
     const modal = uploadModal.current;
     const dom = window.document;
-    const previousFocus = dom.activeElement instanceof HTMLElement ? dom.activeElement : null;
+    const previousFocus = uploadOpener.current;
     const previousOverflow = dom.body.style.overflow;
     dom.body.style.overflow = 'hidden';
     const focusable = () => Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]')).filter(element => element.getClientRects().length > 0);
@@ -446,16 +455,16 @@ export default function App() {
   const title = titles[view];
   const isLoading = Boolean(busy) || initializing;
   const uploadZone = <div className={`upload-zone ${dragOver ? 'drag-over' : ''}`} onDragOver={event => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={event => { event.preventDefault(); setDragOver(false); void upload(event.dataTransfer.files[0]); }}>
-    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文 PDF、试卷或文章截图<br /><span>PDF / JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('text'); setUploadOpen(true); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('pdf'); setUploadOpen(true); setError(''); }}><FileText size={16} />导入 PDF 文档</button><button className="button secondary" disabled={isLoading || saving} onClick={() => { setImportMode('url'); setUploadOpen(true); setError(''); }}><Globe size={16} />导入网页链接</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
+    <div className="upload-icon"><Upload size={25} /></div><h3>把一篇英文，带进你的阅读空间。</h3><p>拖入英文 PDF、试卷或文章截图<br /><span>PDF / JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'text'); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'pdf'); setError(''); }}><FileText size={16} />导入 PDF 文档</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'url'); setError(''); }}><Globe size={16} />导入网页链接</button></div><div className="demo-link"><span>先感受一下？</span><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>
   </div>;
 
-  return <div className="app-shell">
+  return <div className="app-shell" data-view={view}>
     <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span className="brand-name">词间<span className="brand-en">lexi</span></span></a><p className="brand-tagline">在阅读里，慢慢积累。</p></div>
       <nav ref={navigationElement} aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map((item, index) => <div className="nav-entry" key={item.value}>{(index === 0 || item.value === 'dashboard') && <p className="nav-section-label">{index === 0 ? '阅读与练习' : '积累与管理'}</p>}<button disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-label={item.label} title={item.label} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={18} /><span className="nav-label">{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button></div>)}</nav>
       <div className="profile"><span className="avatar">L</span><div className="profile-copy"><strong>我的学习空间</strong><span><span className="local-dot" />{health?.auth_mode === 'guest' ? '学习记录已连接' : '学习记录保存在本机'}</span></div></div>
     </header>
     <main>
-      <div className="page-heading"><div><p className="overline">{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><button className="button primary new-reading" disabled={isLoading || saving || restorationLocked} onClick={() => { setView('reader'); setDragOver(false); setUploadOpen(true); }}><Plus size={17} />添加阅读材料</button></div>
+      <div className="page-heading"><div key={view} className="page-heading-copy"><p className="overline"><span className="heading-spark" aria-hidden="true"><Sparkles size={12} /></span>{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><div className="heading-actions">{(view !== 'reader' || document) && <ReadingGarden compact />}<button className="button primary new-reading" disabled={isLoading || saving || restorationLocked} onClick={event => { setView('reader'); setDragOver(false); openUpload(event.currentTarget); }}><Plus size={17} />添加阅读材料</button></div></div>
       {health?.auth_mode === 'guest' && <p className="page-subtitle">学习记录保存在服务器，访问凭证保存在当前浏览器。清除浏览器数据会失去访问权限；暂不支持跨设备登录。</p>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
@@ -470,7 +479,7 @@ export default function App() {
           <div className="reading-library-tools"><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
           <div className="reading-workspace"><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} onSelect={word => { setCitationFocus(null); setSelectedId(word?.id ?? null); }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { setCitationFocus(null); setSelectedId(word.id); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={`context-${selectedId}`} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}`} document={document} disabled={saving} onClear={() => setCitationFocus(null)} onLocate={citation => setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current })} />}
-        </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />学习，发生在真实阅读里</span><h2>少一点机械记忆，<br />多一点<span>真正理解。</span></h2><p>读你感兴趣的内容，圈出还不熟悉的单词。<br />词间会记住你的反馈，陪你建立自己的词汇地图。</p><div className="reading-illustration" aria-hidden="true"><div className="paper-card"><span>A SMALL NOTE ON LEARNING</span><p>Read with <mark>curiosity.</mark><br />Make room for<br /><em>understanding.</em></p><div className="paper-lines"><i /><i /><i /></div></div><div className="word-note"><Leaf size={16} /><span>从语境里，认识一个词。</span></div></div><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel">{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>示例为已预标注的英文图片，可直接体验标记、词库和关联学习。</p></div></section></div>}
+        </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />一小页阅读，一大点好奇</span><h2>让每次阅读，<br />都长出一点<span>新发现。</span></h2><p>带上喜欢的文章，遇见还不熟悉的词。<br />让理解扎根，让表达慢慢发芽。</p><ReadingGarden /><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel"><div className="upload-card-label"><span aria-hidden="true">✳</span> 今天，从哪一篇开始？</div>{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>还没选好？下方示例文章，陪你迈出第一小步。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
