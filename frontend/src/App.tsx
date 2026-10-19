@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, Leaf, LoaderCircle, Network, Plus, RefreshCw, Upload, X } from 'lucide-react';
 import { browserStorageKey, errorMessage, request, reviewStorageKey } from './api';
 import ContextPanel from './ContextPanel';
+import ArticleQuestionPanel from './ArticleQuestionPanel';
+import type { ArticleFocus } from './articleQuestions';
 import DocumentPanel from './DocumentPanel';
 import DocumentLibraryView from './DocumentLibraryView';
 import DataManagementView from './DataManagementView';
@@ -45,6 +47,8 @@ export default function App() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [document, setDocument] = useState<ReadingDocument | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [citationFocus, setCitationFocus] = useState<ArticleFocus | null>(null);
+  const citationToken = useRef(0);
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
@@ -125,6 +129,7 @@ export default function App() {
   const initialized = useRef(false);
   useEffect(() => { if (!initialized.current) { initialized.current = true; void initialize(); } }, [initialize]);
   useEffect(() => { if (view !== 'reader') void refreshLearning().catch(e => setError(errorMessage(e))); }, [view, refreshLearning]);
+  useEffect(() => { setCitationFocus(null); }, [view, document?.id, document?.ocr_text, selectedId, revealBookmark, restorationLocked]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 3600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => {
     if (!uploadOpen || !uploadModal.current) return;
@@ -361,7 +366,7 @@ export default function App() {
   const nextWord = useCallback(() => {
     if (!filteredWords.length) return;
     const index = filteredWords.findIndex(word => word.id === selectedId || word.lemma === selected?.lemma);
-    setSelectedId(filteredWords[(index + 1) % filteredWords.length].id);
+    setCitationFocus(null); setSelectedId(filteredWords[(index + 1) % filteredWords.length].id);
   }, [filteredWords, selectedId, selected?.lemma]);
   const mark = useCallback(async (word: string, status: WordStatus, occurrence?: Occurrence) => {
     if (restorationLock.current || savingRef.current || busyRef.current) return;
@@ -430,7 +435,8 @@ export default function App() {
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
           <div className="reading-library-tools"><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
-          <div className="reading-workspace"><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} onSelect={word => setSelectedId(word?.id ?? null)} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => setSelectedId(word.id)} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={`context-${selectedId}`} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
+          <div className="reading-workspace"><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} onSelect={word => { setCitationFocus(null); setSelectedId(word?.id ?? null); }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { setCitationFocus(null); setSelectedId(word.id); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={`context-${selectedId}`} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
+          {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}`} document={document} disabled={saving} onClear={() => setCitationFocus(null)} onLocate={citation => setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current })} />}
         </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />学习，发生在真实阅读里</span><h2>少一点机械记忆，<br />多一点<span>真正理解。</span></h2><p>读你感兴趣的内容，圈出还不熟悉的单词。<br />词间会记住你的反馈，陪你建立自己的词汇地图。</p><div className="reading-illustration" aria-hidden="true"><div className="paper-card"><span>A SMALL NOTE ON LEARNING</span><p>Read with <mark>curiosity.</mark><br />Make room for<br /><em>understanding.</em></p><div className="paper-lines"><i /><i /><i /></div></div><div className="word-note"><Leaf size={16} /><span>从语境里，认识一个词。</span></div></div><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel">{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>示例为已预标注的英文图片，可直接体验标记、词库和关联学习。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
