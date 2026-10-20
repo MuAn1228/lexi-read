@@ -1,5 +1,8 @@
 .pdf-proofread-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .pdf-proofread-entry { color: #245b43; background: #eaf2ce; border: 1px solid #d7e4b6; border-radius: 8px; padding: 7px 10px; }
+.image-proofread-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--line); }
+.image-proofread-toolbar > .pdf-proofread-entry { font-size: 12px; white-space: nowrap; }
+.image-corrected-note { color: #74806a; font-size: 11px; line-height: 1.5; }
 .proofread-backdrop { position: fixed; inset: 0; z-index: 80; padding: 20px; background: #243c347d; backdrop-filter: blur(6px); display: grid; place-items: center; }
 .proofread-workbench { position: relative; width: min(1360px, 100%); height: min(900px, calc(100dvh - 40px)); min-height: 0; display: flex; flex-direction: column; border: 1px solid #dce5cf; border-radius: 22px; background: #fffef7; color: #263e35; box-shadow: 0 24px 100px #153d3638; overflow: hidden; animation: proofread-arrive .22s ease-out backwards; }
 .proofread-heading { display: flex; align-items: center; gap: 14px; padding: 20px 25px 15px; background: #f1f6e5; flex-shrink: 0; }

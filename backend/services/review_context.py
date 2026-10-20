@@ -7,8 +7,9 @@ from backend.ocr.service import ENGLISH_WORD
 def review_target_range(document, occurrence) -> tuple[int, int] | None:
     """Return Unicode code point offsets in the saved, normalized sentence.
 
-    Text and PDF imports carry authoritative document offsets. OCR imports do
-    not, so only an unambiguous complete token in their saved context is usable.
+    Text/PDF imports and corrected images carry authoritative document offsets.
+    Original OCR imports do not, so only an unambiguous complete token in their
+    saved context is usable.
     This helper is pure: opening a review never updates learning records.
     """
     word, sentence = occurrence.word, occurrence.sentence

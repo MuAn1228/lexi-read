@@ -184,6 +184,7 @@ class ProofreadPage(Schema):
 
 class ProofreadOut(Schema):
     document_id: int
+    source: Literal["pdf", "image"] = "pdf"
     revision: str
     pages: list[ProofreadPage]
     max_characters: int = 200_000
@@ -198,7 +199,7 @@ class ProofreadRequest(Schema):
     @model_validator(mode="after")
     def valid_pages(self):
         if [page.number for page in self.pages] != list(range(1, len(self.pages) + 1)):
-            raise ValueError("请按原页码顺序提交全部 PDF 页面，不能增加、删除或重复页面。")
+            raise ValueError("请按原页码顺序提交全部校对页面，不能增加、删除或重复页面。")
         if sum(len(page.text) for page in self.pages) + 2 * (len(self.pages) - 1) > 200_000:
             raise ValueError("校对后的全文不能超过 200,000 个字符（含分页分隔符）。")
         return self

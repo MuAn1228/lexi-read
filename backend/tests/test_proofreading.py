@@ -204,7 +204,7 @@ def test_read_revision_and_page_text_share_a_snapshot_during_concurrent_edit(pdf
     doc = imported(client)
     original = client.get(url(doc)).json()
     body = ProofreadRequest.model_validate(draft(client, doc, ["Correct words.", "", "A page."]))
-    require = proofreading.require_pdf
+    require = proofreading.require_proofread_document
     with factory() as reader:
         def require_then_edit(session, document_id, user_id):
             found = require(session, document_id, user_id)
@@ -213,7 +213,7 @@ def test_read_revision_and_page_text_share_a_snapshot_during_concurrent_edit(pdf
                     save_proofread(other, doc["id"], body, 1)
             return found
 
-        monkeypatch.setattr(proofreading, "require_pdf", require_then_edit)
+        monkeypatch.setattr(proofreading, "require_proofread_document", require_then_edit)
         result = read_proofread(reader, doc["id"], 1).model_dump(mode="json")
     assert result == original
     assert client.get(url(doc)).json()["revision"] != original["revision"]

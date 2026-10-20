@@ -78,7 +78,7 @@ class WordOccurrence(Base):
     line: Mapped[int] = mapped_column(Integer)
     confidence: Mapped[float] = mapped_column(Float)
     bbox_source: Mapped[str] = mapped_column(String(40))
-    # Unicode code point offsets into Document.ocr_text for text and PDF reading.
+    # Unicode code point offsets for text/PDF imports and corrected image text.
     text_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     text_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     document: Mapped[Document] = relationship(back_populates="words")

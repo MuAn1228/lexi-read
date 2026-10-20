@@ -151,9 +151,11 @@ def validate_database(connection: sqlite3.Connection):
             except (HTTPException, ValueError, TypeError):
                 raise invalid("备份中的网页来源链接无效。") from None
         documents[document["id"]] = document
-    for word in connection.execute("SELECT document_id,word,text_start,text_end,bbox FROM word_occurrences"):
+    for word in connection.execute("SELECT document_id,word,text_start,text_end,bbox,bbox_source FROM word_occurrences"):
         document = documents[word["document_id"]]
-        if document["source"] in {"text", "pdf", "web"}:
+        if (word["bbox_source"] == "corrected_text" and document["source"] not in {"upload", "demo"}):
+            raise invalid("备份中的校对单词来源无效。")
+        if document["source"] in {"text", "pdf", "web"} or word["bbox_source"] == "corrected_text":
             start, end = word["text_start"], word["text_end"]
             if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(document["ocr_text"])
                     or document["ocr_text"][start:end] != word["word"]):

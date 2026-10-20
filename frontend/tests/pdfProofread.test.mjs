@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/pdfProofread.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { normalizeProofreadText, proofreadChangedPages, proofreadCharacterCount, proofreadProblem, proofreadPayload } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { normalizeProofreadText, proofreadChangedPages, proofreadCharacterCount, proofreadClipboardText, proofreadProblem, proofreadPayload } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const page = (number, text) => ({ number, text });
 
 test('proofreading normalizes CR and CRLF without removing intentional whitespace or Unicode', () => {
@@ -74,4 +74,20 @@ test('proofreading retry payload snapshots all pages, request UUID and source re
   assert.equal(JSON.stringify(payload), encoded);
   assert.deepEqual(payload, { request_id: '00000000-0000-4000-8000-000000000001', base_revision: 'a'.repeat(64), pages: [page(1, '🌍 Corrected.\nNext.'), page(2, ''), page(3, 'Last.')] });
   assert.equal(original[0].text, 'Read.');
+});
+
+test('image proofreading copies exact text without exposing the internal virtual page', () => {
+  const text = '🌍 Read, read!\n\n  Keep\tspacing.\n';
+  assert.equal(proofreadClipboardText('image', [page(1, text)]), text);
+  assert.equal(proofreadClipboardText('pdf', [page(1, text), page(2, '')]), `--- 第 1 页 ---\n${text}\n\n--- 第 2 页 ---\n`);
+});
+
+test('image proofreading validates one exact segment and uses image-specific guidance', () => {
+  const original = [page(1, 'OCR mistake.')];
+  assert.equal(proofreadProblem(original, [page(1, '🌍 Corrected.\r\n\tRead again.')], 200_000, 'image'), '');
+  assert.equal(proofreadProblem(original, [page(1, '中文。🌍123!?')], 200_000, 'image'), '请保留至少一个英文单词。');
+  for (const draft of [[], [page(2, 'Read.')], [page(1, 'Read.'), page(2, 'More.')]]) {
+    assert.match(proofreadProblem(original, draft, 200_000, 'image'), /正文结构/);
+  }
+  assert.match(proofreadProblem(original, [page(1, `A${'🌍'.repeat(200_000)}`)], 200_000, 'image'), /200,000/);
 });

@@ -70,7 +70,7 @@ export default function App() {
   const [pdfDraft, setPdfDraft] = useState<{ file: File; request_id: string } | null>(null);
   const [pdfMode, setPdfMode] = useState<PdfRecognitionMode>('auto');
   const [pdfProcessing, setPdfProcessing] = useState(false);
-  const [proofread, setProofread] = useState<{ documentId: number; title: string; initialPage: number; opener: HTMLElement } | null>(null);
+  const [proofread, setProofread] = useState<{ documentId: number; kind: 'pdf' | 'image'; title: string; initialPage: number; opener: HTMLElement } | null>(null);
   const [proofreadSync, setProofreadSync] = useState<{ documentId: number; error: string } | null>(null);
   const [articleTextRevision, setArticleTextRevision] = useState(0);
   const proofreadLock = useRef(false);
@@ -237,12 +237,12 @@ export default function App() {
     } finally { if (generation === documentSyncGeneration.current) setSyncingDocuments(false); }
   }, []);
   const openProofread = (initialPage: number, opener: HTMLElement) => {
-    if (!document || document.source !== 'pdf' || restorationLock.current || proofreadLock.current || readerBlockedRef.current || busyRef.current || savingRef.current || initializingRef.current || uploadOpen) return;
+    if (!document || !['pdf', 'upload', 'demo'].includes(document.source) || restorationLock.current || proofreadLock.current || readerBlockedRef.current || busyRef.current || savingRef.current || initializingRef.current || uploadOpen) return;
     // Older list reads must not overwrite summaries returned by this explicit correction.
     ++documentEpoch.current; ++documentSyncGeneration.current; ++importSyncGeneration.current;
     setSyncingDocuments(false); setSyncingImport(false); setDragOver(false);
     proofreadLock.current = true;
-    setProofread({ documentId: document.id, title: document.title, initialPage, opener });
+    setProofread({ documentId: document.id, kind: document.source === 'pdf' ? 'pdf' : 'image', title: document.title, initialPage, opener });
   };
   const applyProofreadDocument = useCallback((value: ReadingDocument) => {
     ++documentEpoch.current; ++libraryGeneration.current; ++documentSyncGeneration.current; ++importSyncGeneration.current;
@@ -280,7 +280,7 @@ export default function App() {
   };
   const proofreadSaved = (value: ReadingDocument) => {
     applyProofreadDocument(value); proofreadLock.current = false; setProofread(null);
-    setNotice('校对已保存。阅读正文、单词位置与原句已更新，原 PDF 保留。');
+    setNotice(`校对已保存。阅读正文、单词位置与原句已更新，${value.source === 'pdf' ? '原 PDF' : '原始图片'}保留。`);
     void refreshImportedMaterial();
   };
   const savePractice = useCallback(async (payload: TextImportPayload): Promise<ReadingDocument> => {

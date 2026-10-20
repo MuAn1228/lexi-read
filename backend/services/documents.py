@@ -60,8 +60,8 @@ def list_documents(session: Session, user_id: int, *, q: str | None = None, tag:
 def document_out(doc: Document, session: Session, user_id: int = 1) -> DocumentOut:
     statuses = {entry.lemma: entry.status for entry in VocabularyRepository(session, user_id).all()}
     words = tuple(WordOut(id=w.id, word=w.word, lemma=w.lemma, sentence=w.sentence,
-                          bbox=None if doc.source in {"text", "pdf", "web"} else tuple(w.bbox), line=w.line,
-                          confidence=None if doc.source in {"text", "pdf", "web"} else w.confidence,
+                          bbox=None if doc.source in {"text", "pdf", "web"} or w.bbox_source == "corrected_text" else tuple(w.bbox), line=w.line,
+                          confidence=None if doc.source in {"text", "pdf", "web"} or w.bbox_source == "corrected_text" else w.confidence,
                           bbox_source=w.bbox_source, text_start=w.text_start, text_end=w.text_end,
                           status=statuses.get(w.lemma)) for w in doc.words)
     return DocumentOut(**document_summary(doc).model_dump(), ocr_text=doc.ocr_text, words=words, pages=doc.pages or [])
