@@ -167,6 +167,43 @@ class DocumentOut(DocumentSummary):
     pages: list[DocumentPage] = Field(default_factory=list)
 
 
+class ProofreadPage(Schema):
+    model_config = ConfigDict(from_attributes=True, frozen=True, extra="forbid")
+    number: int = Field(strict=True, ge=1, le=100)
+    text: str = Field(strict=True, max_length=200_000)
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def valid_text(cls, value):
+        if isinstance(value, str):
+            value = value.replace("\r\n", "\n").replace("\r", "\n")
+            if any(unicodedata.category(char) in {"Cc", "Cs"} and char not in "\n\t" for char in value):
+                raise ValueError("校对正文不能包含控制字符，请使用纯文本。")
+        return value
+
+
+class ProofreadOut(Schema):
+    document_id: int
+    revision: str
+    pages: list[ProofreadPage]
+    max_characters: int = 200_000
+
+
+class ProofreadRequest(Schema):
+    model_config = ConfigDict(from_attributes=True, frozen=True, extra="forbid")
+    request_id: UUID
+    base_revision: str = Field(strict=True, pattern=r"^[a-f0-9]{64}$")
+    pages: list[ProofreadPage] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def valid_pages(self):
+        if [page.number for page in self.pages] != list(range(1, len(self.pages) + 1)):
+            raise ValueError("请按原页码顺序提交全部 PDF 页面，不能增加、删除或重复页面。")
+        if sum(len(page.text) for page in self.pages) + 2 * (len(self.pages) - 1) > 200_000:
+            raise ValueError("校对后的全文不能超过 200,000 个字符（含分页分隔符）。")
+        return self
+
+
 class TextImportRequest(Schema):
     text: str = Field(strict=True, min_length=1, max_length=20_000)
     title: str | None = Field(default=None, strict=True, max_length=250)

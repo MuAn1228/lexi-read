@@ -19,15 +19,16 @@ from backend.services.relations import RelationService
 from backend.services.dashboard import DashboardService
 from backend.services.review import ReviewService
 from backend.services.review_marks import ReviewMarkService
-from backend.services.documents import change_document_deleted, create_demo, document_out, import_image, list_documents, require_document, update_document
+from backend.services.documents import change_document_deleted, create_demo, document_out, import_image, list_documents, require_document, require_current_occurrence, update_document
 from backend.services.text_import import import_text
 from backend.services.pdf_import import import_pdf
-from backend.schemas import UrlImportRequest
+from backend.schemas import UrlImportRequest, ProofreadOut, ProofreadRequest
+from backend.services.proofreading import read_proofread, save_proofread, pdf_page_png
 from backend.services.url_import import import_url
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
-from backend.public_limits import pdf_ocr_budget, require_llm_budget, require_ocr_budget
+from backend.public_limits import pdf_ocr_budget, require_llm_budget, require_ocr_budget, require_pdf_preview_budget
 
 router = APIRouter(prefix="/api")
 
@@ -138,6 +139,28 @@ def document_pdf(document_id: int, session: Session = Depends(get_session),
                         headers={"Cache-Control": "private, no-store"})
 
 
+@router.get("/documents/{document_id}/proofread", response_model=ProofreadOut)
+def proofread_document(document_id: int, response: Response, session: Session = Depends(get_session),
+                       user_id: int = Depends(get_current_user_id)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return read_proofread(session, document_id, user_id)
+
+
+@router.put("/documents/{document_id}/proofread", response_model=DocumentOut)
+def correct_document(document_id: int, payload: ProofreadRequest, response: Response,
+                     session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return document_out(save_proofread(session, document_id, payload, user_id), session, user_id)
+
+
+@router.get("/documents/{document_id}/pdf/pages/{page_number}/image",
+            dependencies=[Depends(require_pdf_preview_budget)])
+def document_pdf_page(document_id: int, page_number: int, session: Session = Depends(get_session),
+                      user_id: int = Depends(get_current_user_id)):
+    return Response(content=pdf_page_png(session, document_id, page_number, user_id), media_type="image/png",
+                    headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
 @router.put("/documents/{document_id}", response_model=DocumentSummary)
 def edit_document(document_id: int, payload: DocumentUpdateRequest, session: Session = Depends(get_session),
                   user_id: int = Depends(get_current_user_id)):
@@ -222,7 +245,7 @@ def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_sess
     try:
         # A slow model response may finish after another tab trashes this article.
         session.execute(text("BEGIN IMMEDIATE"))
-        require_document(session, doc.id, user_id)
+        require_current_occurrence(session, payload.occurrence_id, doc.id, user_id)
         VocabularyService(repository).lookup(occurrence.word, doc.id, analysis.source)
     except Exception:
         session.rollback()

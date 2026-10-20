@@ -24,6 +24,7 @@ class PublicUsage(Base):
 
 _llm_slots = BoundedSemaphore(2)
 _ocr_slots = BoundedSemaphore(1)
+_pdf_preview_slots = BoundedSemaphore(2)
 
 
 def _now() -> datetime:
@@ -102,3 +103,20 @@ def require_ocr_budget(user_id: int = Depends(get_current_user_id), session: Ses
 def pdf_ocr_budget(session: Session, user_id: int, pages: int):
     """Reserve each planned OCR page; native imports and confirmed retries skip this."""
     yield from _work_budget(session, user_id, "ocr", _ocr_slots, pages)
+
+
+def require_pdf_preview_budget(user_id: int = Depends(get_current_user_id), session: Session = Depends(get_session)):
+    """Bound rasterization separately; preview never spends an OCR/AI allowance."""
+    if not _pdf_preview_slots.acquire(blocking=False):
+        raise HTTPException(429, "PDF 原页预览正忙，请稍后重试。", headers={"Retry-After": "3"})
+    try:
+        if get_settings().app_mode == "public":
+            now = int(_now().timestamp())
+            minute, hour = now // 60, now // 3600
+            consume(session, [(f"pdf-preview:{minute}:global", 120, (minute + 1) * 60),
+                              (f"pdf-preview:{minute}:user:{user_id}", 30, (minute + 1) * 60),
+                              (f"pdf-preview:{hour}:hour:global", 1000, (hour + 1) * 3600),
+                              (f"pdf-preview:{hour}:hour:user:{user_id}", 300, (hour + 1) * 3600)])
+        yield
+    finally:
+        _pdf_preview_slots.release()

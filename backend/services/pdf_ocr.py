@@ -43,12 +43,8 @@ def open_renderer(data: bytes):
             document.close()
 
 
-def render_page(document, number: int, destination: Path) -> bool:
-    """Render one page and release its native/Pillow buffers before OCR.
-
-    Return False for a uniform blank bitmap; scanned blank pages retain their
-    page number without asking OCR to invent text from background noise.
-    """
+def render_page_image(document, number: int):
+    """Copy one bounded RGB image; caller closes it inside open_renderer()."""
     page = document[number - 1]
     try:
         width, height = page.get_size()
@@ -60,9 +56,16 @@ def render_page(document, number: int, destination: Path) -> bool:
             bitmap.close()
     finally:
         page.close()
+    if image.width > MAX_RENDER_EDGE or image.height > MAX_RENDER_EDGE or image.width * image.height > MAX_RENDER_PIXELS:
+        image.close()
+        raise ValueError("Rendered PDF page exceeded its pixel bound")
+    return image
+
+
+def render_page(document, number: int, destination: Path) -> bool:
+    """Render one page; skip uniform blanks only for OCR, never for preview."""
+    image = render_page_image(document, number)
     try:
-        if image.width > MAX_RENDER_EDGE or image.height > MAX_RENDER_EDGE or image.width * image.height > MAX_RENDER_PIXELS:
-            raise ValueError("Rendered PDF page exceeded its pixel bound")
         extrema = image.getextrema()
         if all(high - low <= 2 for low, high in extrema):
             return False

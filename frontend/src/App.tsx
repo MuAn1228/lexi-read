@@ -17,6 +17,7 @@ import ReviewView from './ReviewView';
 import PracticeGenerationView from './PracticeGenerationView';
 import TextImportForm from './TextImportForm';
 import PdfImportForm from './PdfImportForm';
+import PdfProofreadWorkbench from './PdfProofreadWorkbench';
 import UrlImportForm from './UrlImportForm';
 import { pdfImportProblem } from './pdfArticle';
 import type { PdfRecognitionMode } from './pdfArticle';
@@ -69,6 +70,16 @@ export default function App() {
   const [pdfDraft, setPdfDraft] = useState<{ file: File; request_id: string } | null>(null);
   const [pdfMode, setPdfMode] = useState<PdfRecognitionMode>('auto');
   const [pdfProcessing, setPdfProcessing] = useState(false);
+  const [proofread, setProofread] = useState<{ documentId: number; title: string; initialPage: number; opener: HTMLElement } | null>(null);
+  const [proofreadSync, setProofreadSync] = useState<{ documentId: number; error: string } | null>(null);
+  const [articleTextRevision, setArticleTextRevision] = useState(0);
+  const proofreadLock = useRef(false);
+  proofreadLock.current = proofread !== null;
+  const proofreadUncertain = useRef<number | null>(null);
+  const proofreadSyncGeneration = useRef(0);
+  const readerBlocked = proofreadSync !== null && document?.id === proofreadSync.documentId;
+  const readerBlockedRef = useRef(false);
+  readerBlockedRef.current = readerBlocked;
   const [textDraft, setTextDraft] = useState<TextDraft>({ title: '', text: '' });
   const [urlDraft, setUrlDraft] = useState('');
   const [importSyncError, setImportSyncError] = useState('');
@@ -98,6 +109,7 @@ export default function App() {
   const initializingRef = useRef(false);
 
   const openUpload = (opener: HTMLElement | null, mode?: typeof importMode) => {
+    if (proofreadLock.current) return;
     // Capture before a newly mounted form's autoFocus moves focus into the dialog.
     if (!uploadOpen) uploadOpener.current = opener;
     if (mode) setImportMode(mode);
@@ -105,6 +117,7 @@ export default function App() {
   };
 
   const acceptDocument = useCallback((value: ReadingDocument, occurrenceId?: number) => {
+    if (proofreadUncertain.current === value.id) { proofreadUncertain.current = null; setProofreadSync(null); }
     setDocument(value); setSelectedId(initialArticleSelection(value, occurrenceId)); setRevealBookmark(value => value + 1);
     setQuery(''); setFilter('ALL'); setView('reader'); setUploadOpen(false); rememberDocument(value.id);
   }, []);
@@ -119,7 +132,7 @@ export default function App() {
     }
   }, []);
   const openDocument = useCallback(async (id: number, occurrenceId?: number) => {
-    if (restorationLock.current || busyRef.current || savingRef.current) return;
+    if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current) return;
     const generation = ++requestGeneration.current;
     busyRef.current = true; setBusy('正在打开阅读材料…'); setError('');
     try { const value = await request<ReadingDocument>(`/documents/${id}`); if (generation === requestGeneration.current) acceptDocument(value, occurrenceId); }
@@ -127,7 +140,7 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   }, [acceptDocument]);
   const initialize = useCallback(async () => {
-    if (restorationLock.current || initializingRef.current || busyRef.current || savingRef.current) return;
+    if (restorationLock.current || proofreadLock.current || initializingRef.current || busyRef.current || savingRef.current) return;
     initializingRef.current = true;
     const epoch = documentEpoch.current;
     setInitializing(true); setError('');
@@ -202,7 +215,7 @@ export default function App() {
     if (generation !== importSyncGeneration.current) return;
     if (results[0].status === 'fulfilled' && epoch === documentEpoch.current) setDocuments(results[0].value);
     const failed = results.find(result => result.status === 'rejected');
-    setImportSyncError(failed?.status === 'rejected' ? `文章已导入；阅读材料列表或词库暂未刷新：${errorMessage(failed.reason)}` : '');
+    setImportSyncError(failed?.status === 'rejected' ? `阅读材料已保存；阅读材料列表或词库暂未刷新：${errorMessage(failed.reason)}` : '');
     setSyncingImport(false);
   }, [refreshLearning]);
   const refreshDocumentList = useCallback(async () => {
@@ -223,8 +236,55 @@ export default function App() {
       if (generation === documentSyncGeneration.current && epoch === documentEpoch.current) setDocumentSyncError(`阅读材料列表暂未刷新：${errorMessage(e)}`);
     } finally { if (generation === documentSyncGeneration.current) setSyncingDocuments(false); }
   }, []);
+  const openProofread = (initialPage: number, opener: HTMLElement) => {
+    if (!document || document.source !== 'pdf' || restorationLock.current || proofreadLock.current || readerBlockedRef.current || busyRef.current || savingRef.current || initializingRef.current || uploadOpen) return;
+    // Older list reads must not overwrite summaries returned by this explicit correction.
+    ++documentEpoch.current; ++documentSyncGeneration.current; ++importSyncGeneration.current;
+    setSyncingDocuments(false); setSyncingImport(false); setDragOver(false);
+    proofreadLock.current = true;
+    setProofread({ documentId: document.id, title: document.title, initialPage, opener });
+  };
+  const applyProofreadDocument = useCallback((value: ReadingDocument) => {
+    ++documentEpoch.current; ++libraryGeneration.current; ++documentSyncGeneration.current; ++importSyncGeneration.current;
+    setSyncingDocuments(false); setSyncingImport(false);
+    setDocument(current => current?.id === value.id ? value : current);
+    setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length }));
+    if (currentDocumentId.current === value.id) {
+      // All occurrence IDs and offsets can change; never retain the previous selection or citations.
+      setSelectedId(null); setCitationFocus(null); setQuery(''); setFilter('ALL');
+      setRevealBookmark(number => number + 1); setArticleTextRevision(number => number + 1);
+    }
+    setDocumentRevision(number => number + 1);
+  }, []);
+  const reconcileProofread = async (id: number) => {
+    if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current) return;
+    const generation = ++proofreadSyncGeneration.current;
+    proofreadUncertain.current = id; setProofreadSync({ documentId: id, error: '' });
+    busyRef.current = true; setBusy('正在核对校对后的阅读正文…');
+    try {
+      // A lost PUT response may follow a committed save. Reconciliation is strictly read-only.
+      const value = await request<ReadingDocument>(`/documents/${id}`);
+      if (generation !== proofreadSyncGeneration.current) return;
+      applyProofreadDocument(value); proofreadUncertain.current = null; setProofreadSync(null);
+      setNotice('已重新核对正文，当前显示服务器保存的最新版本。');
+      void refreshImportedMaterial();
+    } catch (e) {
+      if (generation === proofreadSyncGeneration.current) setProofreadSync({ documentId: id, error: `正文最新版本暂未核对：${errorMessage(e)} 为避免使用旧的单词位置，请先重新核对正文。` });
+    } finally { if (generation === proofreadSyncGeneration.current) { busyRef.current = false; setBusy(''); } }
+  };
+  const closeUncertainProofread = () => {
+    const id = proofread?.documentId; if (id === undefined) return;
+    proofreadLock.current = false; setProofread(null);
+    setSelectedId(null); setCitationFocus(null); setArticleTextRevision(number => number + 1);
+    void reconcileProofread(id);
+  };
+  const proofreadSaved = (value: ReadingDocument) => {
+    applyProofreadDocument(value); proofreadLock.current = false; setProofread(null);
+    setNotice('校对已保存。阅读正文、单词位置与原句已更新，原 PDF 保留。');
+    void refreshImportedMaterial();
+  };
   const savePractice = useCallback(async (payload: TextImportPayload): Promise<ReadingDocument> => {
-    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试保存。');
+    if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || busyRef.current || savingRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试保存。');
     busyRef.current = true; setBusy('正在保存练习短文…'); setError('');
     const generation = ++requestGeneration.current;
     try {
@@ -240,7 +300,7 @@ export default function App() {
     } finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   }, [acceptDocument, refreshImportedMaterial]);
   const changeArticle = useCallback(async (id: number, action: 'update' | 'delete' | 'restore', patch?: DocumentPatch): Promise<DocumentSummary> => {
-    if (restorationLock.current || savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
+    if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
     savingRef.current = true; setSaving(true);
     ++documentEpoch.current; ++importSyncGeneration.current; setSyncingImport(false);
     ++requestGeneration.current;
@@ -268,7 +328,7 @@ export default function App() {
     setTextDraft(draft); setError('');
   };
   const importText = async () => {
-    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = textImportProblem(textDraft);
     if (problem) { setError(problem); return; }
     const normalized = { title: textDraft.title.trim(), text: normalizeArticle(textDraft.text) };
@@ -298,7 +358,7 @@ export default function App() {
     setUrlDraft(url); setError('');
   };
   const importUrl = async () => {
-    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = urlImportProblem(urlDraft);
     if (problem) { setError(problem); return; }
     const url = urlDraft.trim();
@@ -324,20 +384,20 @@ export default function App() {
   };
 
   const choosePdf = (file: File) => {
-    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = pdfImportProblem(file);
     if (problem) { setError(problem); return; }
     setPdfDraft({ file, request_id: crypto.randomUUID() }); setError('');
   };
   const changePdfMode = (mode: PdfRecognitionMode) => {
-    if (mode === pdfMode || restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (mode === pdfMode || restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     setPdfMode(mode);
     // Changing recognition changes the intended import. An unchanged retry keeps its receipt.
     setPdfDraft(value => value ? { ...value, request_id: crypto.randomUUID() } : null);
     setError('');
   };
   const importPdf = async () => {
-    if (!pdfDraft || restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (!pdfDraft || restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     const problem = pdfImportProblem(pdfDraft.file, pdfMode);
     if (problem) { setError(problem); return; }
     const form = new FormData(); form.append('file', pdfDraft.file); form.append('request_id', pdfDraft.request_id); form.append('ocr_mode', pdfMode);
@@ -355,7 +415,7 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setPdfProcessing(false); setBusy(''); } }
   };
   const upload = async (file?: File) => {
-    if (!file || restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (!file || restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     if (/\.pdf$/i.test(file.name) || ['application/pdf', 'application/x-pdf'].includes(file.type)) { const focused = window.document.activeElement; openUpload(focused instanceof HTMLElement && focused !== window.document.body ? focused : pageHeading.current, 'pdf'); choosePdf(file); return; }
     if (!/\.(jpe?g|png)$/i.test(file.name) || (file.type && !['image/jpeg', 'image/png'].includes(file.type))) { setError('请选择 JPG 或 PNG 格式的英文图片。'); return; }
     if (file.size > 10 * 1024 * 1024) { setError('图片不能超过 10 MB，请压缩后重新上传。'); return; }
@@ -371,7 +431,7 @@ export default function App() {
     finally { if (generation === requestGeneration.current) { busyRef.current = false; setBusy(''); } }
   };
   const loadDemo = async () => {
-    if (restorationLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
+    if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current || initializingRef.current) return;
     busyRef.current = true; setBusy('正在准备示例阅读材料…'); setError('');
     const generation = ++requestGeneration.current;
     try {
@@ -391,7 +451,7 @@ export default function App() {
   }, []);
   const restoreBackup = useCallback(async (token: string): Promise<RestoreOutcome> => {
     if (health?.auth_mode !== 'local') throw new Error('完整备份恢复仅可在本地学习空间使用。');
-    if (savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
+    if (proofreadLock.current || savingRef.current || busyRef.current || initializingRef.current) throw new Error('正在处理其他操作，请稍后重试。');
     // Keep navigation locked even after an uncertain response: the database may already be restored.
     restorationLock.current = true; setRestorationLocked(true); setView('data');
     savingRef.current = true; setSaving(true); busyRef.current = true; setBusy('正在恢复学习数据，请保持页面打开…'); setError('');
@@ -405,6 +465,7 @@ export default function App() {
       setDocument(null); setSelectedId(null); setDocuments([]); setVocabulary([]); setEvents([]);
       textImportRequest.current = null; setTextDraft({ title: '', text: '' }); setPdfDraft(null); setPdfMode('auto'); setPdfProcessing(false);
       urlImportRequest.current = null; setUrlDraft('');
+      ++proofreadSyncGeneration.current; proofreadUncertain.current = null; setProofreadSync(null);
       setUploadOpen(false); setImportSyncError(''); setDocumentSyncError(''); setNotice(''); setQuery(''); setFilter('ALL');
       const warning = await clearRestoredBrowserState();
       return { ...result, ...(warning ? { cleanup_warning: warning } : {}) };
@@ -417,12 +478,12 @@ export default function App() {
   }, [document]);
   const filteredWords = useMemo(() => uniqueWords.filter(word => (word.word.toLowerCase().includes(query.toLowerCase()) || word.lemma.includes(query.toLowerCase())) && (filter === 'ALL' || (filter === 'UNMARKED' ? word.status === null : word.status === filter))), [uniqueWords, query, filter]);
   const nextWord = useCallback(() => {
-    if (!filteredWords.length) return;
+    if (proofreadLock.current || readerBlockedRef.current || !filteredWords.length) return;
     const index = filteredWords.findIndex(word => word.id === selectedId || word.lemma === selected?.lemma);
     setCitationFocus(null); setSelectedId(filteredWords[(index + 1) % filteredWords.length].id);
   }, [filteredWords, selectedId, selected?.lemma]);
   const mark = useCallback(async (word: string, status: WordStatus, occurrence?: Occurrence) => {
-    if (restorationLock.current || savingRef.current || busyRef.current) return;
+    if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || savingRef.current || busyRef.current) return;
     savingRef.current = true; setSaving(true); setError('');
     const next = occurrence ? filteredWords[(Math.max(0, filteredWords.findIndex(item => item.lemma === occurrence.lemma)) + 1) % filteredWords.length] : undefined;
     try {
@@ -436,7 +497,7 @@ export default function App() {
     finally { savingRef.current = false; setSaving(false); }
   }, [document, filteredWords]);
   const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<void> => {
-    if (restorationLock.current || savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
+    if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
     savingRef.current = true; setSaving(true); setError('');
     try {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(item.vocabulary.word)}`, {
@@ -453,7 +514,7 @@ export default function App() {
   }, [refreshLearning]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (view !== 'reader' || !selected || busy || uploadOpen || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (view !== 'reader' || !selected || busy || uploadOpen || proofreadLock.current || readerBlockedRef.current || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement;
       if (target.matches('input, textarea, select') || target.isContentEditable) return;
       const statuses: Record<string, WordStatus> = { '1': 'KNOWN', '2': 'UNKNOWN', '3': 'UNCERTAIN' };
@@ -482,15 +543,16 @@ export default function App() {
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}
       {importSyncError && <div className="error-banner import-sync-warning" role="status"><AlertCircle size={19} /><span>{importSyncError}</span><button className="text-button" disabled={syncingImport} onClick={() => void refreshImportedMaterial()}><RefreshCw size={14} className={syncingImport ? 'spin' : ''} />重新刷新列表与词库</button></div>}
       {documentSyncError && <div className="error-banner" role="status"><AlertCircle size={19} /><span>{documentSyncError}</span><button className="text-button" disabled={syncingDocuments || saving || isLoading} onClick={() => void refreshDocumentList()}><RefreshCw size={14} className={syncingDocuments ? 'spin' : ''} />重新刷新阅读列表</button></div>}
+      {proofreadSync && <div className="error-banner proofread-sync-warning" role="alert"><AlertCircle size={19} /><span>{proofreadSync.error || '正在重新核对正文的最新版本…'}</span><button className="text-button" disabled={saving || isLoading || proofread !== null} onClick={() => void reconcileProofread(proofreadSync.documentId)}><RefreshCw size={14} className={isLoading ? 'spin' : ''} />重新核对正文</button></div>}
       {isLoading && <div className="processing-banner" role="status"><LoaderCircle size={19} className="spin" /><span>{busy || '正在加载你的阅读空间…'}{busy.includes('识别') && <small>首次 OCR 运行需要加载模型，请保持页面打开。</small>}</span></div>}
-      <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading || restorationLocked} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
-      {!restorationLocked && <PracticeGenerationView active={view === 'practice'} disabled={saving || isLoading} onSave={savePractice} onOpenDocument={id => void openDocument(id)} onGoReader={() => setView('reader')} />}
+      <ReviewView active={view === 'review'} readerActive={view === 'reader'} vocabulary={vocabulary} disabled={saving || isLoading || restorationLocked || proofread !== null || readerBlocked} onAssess={assessReview} onStart={() => setView('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />
+      {!restorationLocked && <PracticeGenerationView active={view === 'practice'} disabled={saving || isLoading || proofread !== null || readerBlocked} onSave={savePractice} onOpenDocument={id => void openDocument(id)} onGoReader={() => setView('reader')} />}
       {view === 'reader' && <>
         {document ? <>
           <section className="reading-bar"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong>{markedCount}<span> / {uniqueWords.length}</span></strong></div><div className="progress-track"><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
-          <div className="reading-library-tools"><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
-          <div className="reading-workspace"><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} onSelect={word => { setCitationFocus(null); setSelectedId(word?.id ?? null); }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { setCitationFocus(null); setSelectedId(word.id); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading} /><ContextPanel key={`context-${selectedId}`} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
-          {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}`} document={document} disabled={saving} onClear={() => setCitationFocus(null)} onLocate={citation => setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current })} />}
+          <div className="reading-library-tools"><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || readerBlocked || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving || readerBlocked} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving || readerBlocked} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
+          <div className="reading-workspace"><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} disabled={saving || isLoading || readerBlocked || proofread !== null} onProofread={openProofread} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word?.id ?? null); }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word.id); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading || readerBlocked || proofread !== null} /><ContextPanel key={`context-${selectedId}`} word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading || readerBlocked || proofread !== null} vocabulary={vocabulary} onLearningChanged={refreshLearning} /></div>
+          {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <div className="welcome-grid"><section className="welcome-story"><span className="welcome-label"><Leaf size={15} />一小页阅读，一大点好奇</span><h2>让每次阅读，<br />都长出一点<span>新发现。</span></h2><p>带上喜欢的文章，遇见还不熟悉的词。<br />让理解扎根，让表达慢慢发芽。</p><ReadingGarden /><div className="welcome-steps"><span><b>01</b>带入文章</span><ArrowRight size={14} /><span><b>02</b>标记单词</span><ArrowRight size={14} /><span><b>03</b>连接新知</span></div></section><section className="upload-card panel"><div className="upload-card-label"><span aria-hidden="true">✳</span> 今天，从哪一篇开始？</div>{uploadZone}<div className="upload-note"><BookOpen size={16} /><p>还没选好？下方示例文章，陪你迈出第一小步。</p></div></section></div>}
       </>}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
@@ -503,5 +565,6 @@ export default function App() {
     </main>
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
     {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'image' ? <FileImage size={17} /> : importMode === 'url' ? <Globe size={17} /> : <FileText size={17} />}<h2 id="upload-title">新的阅读，从这里开始</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => { setImportMode('image'); setError(''); }}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => { setImportMode('text'); setError(''); }}><FileText size={15} />粘贴文章</button><button className={importMode === 'pdf' ? 'active' : ''} aria-pressed={importMode === 'pdf'} disabled={isLoading} onClick={() => { setImportMode('pdf'); setError(''); }}><FileText size={15} />上传 PDF</button><button className={importMode === 'url' ? 'active' : ''} aria-pressed={importMode === 'url'} disabled={isLoading} onClick={() => { setImportMode('url'); setError(''); }}><Globe size={15} />网页链接</button></div>{importMode === 'image' ? uploadZone : importMode === 'pdf' ? <PdfImportForm file={pdfDraft?.file ?? null} mode={pdfMode} onModeChange={changePdfMode} processing={pdfProcessing} onChoose={choosePdf} onSubmit={() => void importPdf()} disabled={isLoading || saving} /> : importMode === 'url' ? <UrlImportForm url={urlDraft} onChange={changeUrlDraft} onSubmit={() => void importUrl()} disabled={isLoading || saving} /> : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
+    {proofread && <PdfProofreadWorkbench key={proofread.documentId} {...proofread} onClose={() => { proofreadLock.current = false; setProofread(null); }} onSaved={proofreadSaved} onUncertainClose={closeUncertainProofread} />}
   </div>;
 }

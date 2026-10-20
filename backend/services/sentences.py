@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from backend.config import get_settings
 from backend.models import WordOccurrence
 from backend.public_limits import require_llm_budget
-from backend.services.documents import require_document
+from backend.services.documents import require_document, require_current_occurrence
 from backend.services.llm import LLMService
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ def analyze_sentence(session: Session, occurrence_id: int, user_id: int) -> Sent
     path = settings.storage_dir / "sentence-cache" / f"{key}.json"
     with _cache_locks[int(key[:8], 16) % len(_cache_locks)]:
         # The lock may have waited for another model call; check ownership/state again.
-        require_document(session, document.id, user_id)
+        require_current_occurrence(session, occurrence_id, document.id, user_id)
         saved = _cached(path, sentence)
         if saved is not None:
             return saved
@@ -144,13 +144,14 @@ def analyze_sentence(session: Session, occurrence_id: int, user_id: int) -> Sent
                 raise ValueError("Sentence or clause text does not match the source")
         except (httpx.HTTPError, ValidationError, ValueError, KeyError, IndexError, TypeError):
             logger.warning("Sentence assistance unavailable or invalid")
+            require_current_occurrence(session, occurrence_id, document.id, user_id)
             return SentenceResult(sentence=sentence, source="unavailable",
                                   warning="AI 暂时未能完成本句翻译与解析，请稍后重试。")
         # A different tab can trash a document during the network call. Acquire
         # the writer before rechecking, without recording any learning event.
         try:
             session.execute(text("BEGIN IMMEDIATE"))
-            require_document(session, document.id, user_id)
+            require_current_occurrence(session, occurrence_id, document.id, user_id)
             try:
                 _save(path, value)
             except OSError:

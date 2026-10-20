@@ -74,6 +74,15 @@ def require_document(session: Session, document_id: int, user_id: int = 1, *, in
     return document
 
 
+def require_current_occurrence(session: Session, occurrence_id: int, document_id: int, user_id: int):
+    """A slow AI response must not record a lookup against corrected old text."""
+    document = require_document(session, document_id, user_id)
+    occurrence = session.get(WordOccurrence, occurrence_id, populate_existing=True)
+    if occurrence is None or occurrence.document_id != document.id:
+        raise HTTPException(409, "文章正文已校对更新，请重新打开文章并选择单词。")
+    return occurrence, document
+
+
 def require_document_capacity(session: Session, user_id: int) -> None:
     settings = get_settings()
     if settings.app_mode != "public":

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileText, Globe, LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileCheck2, FileText, Globe, LoaderCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage, requestFile, requestImage } from './api';
 import { articleParts } from './textArticle';
@@ -8,8 +8,9 @@ import { highlightParts, validArticleFocus } from './articleQuestions';
 import type { ArticleFocus } from './articleQuestions';
 import type { Occurrence, ReadingDocument } from './types';
 
-export default function DocumentPanel({ document, selectedId, revealToken, citationFocus = null, onSelect }: {
+export default function DocumentPanel({ document, selectedId, revealToken, citationFocus = null, disabled = false, onProofread, onSelect }: {
   document: ReadingDocument; selectedId: number | null; revealToken: number; citationFocus?: ArticleFocus | null; onSelect: (word: Occurrence | null) => void;
+  disabled?: boolean; onProofread?: (page: number, opener: HTMLElement) => void;
 }) {
   const [zoom, setZoom] = useState(100);
   const [showBoxes, setShowBoxes] = useState(true);
@@ -127,13 +128,13 @@ export default function DocumentPanel({ document, selectedId, revealToken, citat
   return <section ref={panel} className={`document-panel panel ${isText ? 'text-document-panel' : ''} ${isPdf ? 'pdf-document-panel' : ''}`}>
     <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{isPdf ? `PDF · ${pages.length} 页` : isWeb ? '网页文章' : isText ? '文字文章' : document.source === 'demo' ? '示例图片 · 已预标注' : '图片文章'}</span></div>
     {isText ? <>
-      {isPdf && <div className="pdf-page-toolbar"><div className="pdf-page-controls"><button className="icon-button" aria-label="PDF 上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}><ChevronLeft size={17} /></button><label><select aria-label="PDF 页码" value={pageNumber} onChange={event => changePage(Number(event.target.value))}>{pages.map(item => <option key={item.number} value={item.number}>第 {item.number} 页</option>)}</select><span>/ {pages.length} 页</span></label><button className="icon-button" aria-label="PDF 下一页" disabled={pageNumber >= pages.length} onClick={() => changePage(pageNumber + 1)}><ChevronRight size={17} /></button></div><button className="text-button" aria-label="下载原 PDF" disabled={downloading || !document.pdf_url} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}下载原 PDF</button></div>}
+      {isPdf && <div className="pdf-page-toolbar"><div className="pdf-page-controls"><button className="icon-button" aria-label="PDF 上一页" disabled={disabled || pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}><ChevronLeft size={17} /></button><label><select aria-label="PDF 页码" disabled={disabled} value={pageNumber} onChange={event => changePage(Number(event.target.value))}>{pages.map(item => <option key={item.number} value={item.number}>第 {item.number} 页</option>)}</select><span>/ {pages.length} 页</span></label><button className="icon-button" aria-label="PDF 下一页" disabled={disabled || pageNumber >= pages.length} onClick={() => changePage(pageNumber + 1)}><ChevronRight size={17} /></button></div><div className="pdf-proofread-actions">{onProofread && <button className="text-button pdf-proofread-entry" aria-label="校对 PDF 正文" disabled={disabled} onClick={event => onProofread(pageNumber, event.currentTarget)}><FileCheck2 size={14} />校对正文</button>}<button className="text-button" aria-label="下载原 PDF" disabled={downloading || !document.pdf_url} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}下载原 PDF</button></div></div>}
       {webLink && <div className="web-source-toolbar"><span><Globe size={14} />{webLink.host}</span><a className="text-button" href={webLink.href} target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开原网页">查看原网页<ExternalLink size={14} /></a></div>}
       <p className="text-reading-guide">{isPdf ? 'PDF 正文 · 按原文件页码阅读。扫描识别结果请结合原文件核对。' : isWeb ? '网页正文已保存 · 点击英文单词，在原句中学习。' : '点击英文单词，查看它在这句话里的意思。'}</p>
       {downloadError && <p className="pdf-download-error" role="alert">{downloadError} 可点击“下载原 PDF”重试。</p>}
       <div className="text-article" ref={article} aria-label={isPdf ? `PDF 第 ${pageNumber} 页正文` : '文章正文'} lang="en">{isPdf && !pageContent.text.trim() ? <div className="pdf-empty-page" lang="zh-CN"><FileText size={29} /><p>这一页没有可提取的文字</p><span>可能是空白页，或仅提取文字时跳过的扫描页。可继续翻页或下载原 PDF 查看。</span></div> : renderedParts.map((part, index) => part.occurrence ? <button key={`word-${part.occurrence.id}`} type="button"
         className={`article-word ${part.occurrence.status?.toLowerCase() ?? 'unmarked'} ${part.occurrence.id === selectedId ? 'selected' : ''}`}
-        data-occurrence-id={part.occurrence.id} aria-label={`选择单词 ${part.text}`} aria-pressed={part.occurrence.id === selectedId}
+        data-occurrence-id={part.occurrence.id} disabled={disabled} aria-label={`选择单词 ${part.text}`} aria-pressed={part.occurrence.id === selectedId}
         onClick={() => onSelect(part.occurrence!)}>{part.highlighted.map((piece, number) => piece.highlighted ? <mark className="article-citation-highlight" data-article-citation="true" tabIndex={-1} key={number}>{piece.text}</mark> : piece.text)}</button> : <span key={`text-${index}`}>{part.highlighted.map((piece, number) => piece.highlighted ? <mark className="article-citation-highlight" data-article-citation="true" tabIndex={-1} key={number}>{piece.text}</mark> : piece.text)}</span>)}</div>
     </> : <><div className="document-toolbar">
       <div className="segmented"><button className={!showText ? 'active' : ''} onClick={() => setShowText(false)}>原始图片</button><button className={showText ? 'active' : ''} onClick={() => setShowText(true)}>识别文本</button></div>

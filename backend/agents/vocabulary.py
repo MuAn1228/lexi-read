@@ -7,7 +7,7 @@ from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import EventOut, Recommendation, RecommendationsOut, VocabularyOut
 from backend.services.llm import Candidate, LLMService, learner_data
 from backend.services.vocabulary import normalize_word
-from backend.services.documents import require_document
+from backend.services.documents import require_document, require_current_occurrence
 
 
 class VocabularyAgent:
@@ -110,7 +110,7 @@ class VocabularyAgent:
                              vocabulary, utility_history + history)
         try:
             self.repo.session.execute(text("BEGIN IMMEDIATE"))
-            require_document(self.repo.session, document.id, self.repo.user_id)
+            require_current_occurrence(self.repo.session, occurrence.id, document.id, self.repo.user_id)
             batch = self.repo.event(occurrence.word, "RECOMMENDATION_GENERATED", document.id,
                             {"recommended_words": [item.word for item in selected], "source": generated.source,
                              "items": [item.model_dump(mode="json") for item in selected]})
