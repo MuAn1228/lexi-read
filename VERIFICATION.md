@@ -1,5 +1,18 @@
 # MVP 验收记录
 
+## 交互与动效增强验收（2026-10-20）
+
+- 前端 **70 passed**，TypeScript 与 Vite 构建通过；无后端变更、依赖安装或数据迁移。独立实现借鉴官方 [Split Text](https://reactbits.dev/text-animations/split-text)、[Tilted Card](https://reactbits.dev/components/tilted-card) 和 [Click Spark](https://reactbits.dev/animations/click-spark) 的交互思路，不复制库源码、不引入远程字体或素材请求。
+- 全部页头与欢迎标题分字错落入场、鼠标悬停轻跳，读屏保持一个完整标题且中文标点自然换行；欢迎背景光波一次 5.4 秒。倾斜仅用于展示卡片和功能卡内层（最多 ±5°），磁吸仅移动装饰图标（最多 ±5px），阅读文字、选词目标、图片/PDF 坐标和模态祖先不位移。按需 RAF 不写 React 逐帧状态，不常驻循环。
+- 明确按钮点击出现 8 条短星芒及圆环，鼠标使用点击点、键盘使用按钮中心；固定装饰层无指针事件且对读屏隐藏，最多同时 3 组、700ms 结束、820ms 兜底。离开、滚动、失焦、缩放、键盘、页面隐藏、动态偏好变化及卸载等场景清理对应效果，禁用、inert 与弹窗外背景不触发装饰。
+- “灵感词卡”包含 6 个固定精选示例，可点击、Enter 或 Space 翻面查看中文和英文例句，支持前后循环、圆点选卡、长词和完整背面。页头“灵感一下”以 body portal 打开卡片，不销毁当前阅读、复习或短文组件；焦点约束、Escape/遮罩关闭、准确返回触发按钮、背景 inert 与滚动锁定正常，按 1/2/3/ArrowDown 不会误标阅读词。示例从不调用模型或写学习记录，无自动轮播。
+- 独立 offline SQLite 的 **17 组原流程回归 + 9 组新交互专项**全部通过。原流程覆盖 **36 个视图/断点组合**、四种导入、图片/PDF 校对、复习填空/短文草稿与同 UUID 失败重试、五位数积累卡。新专项另测 9 页在 1440 / 1024 / 390 / 340px 的标题/布局、倾斜与磁吸范围及复位、星芒有界/清理、6 词/两面/循环/鼠标键盘、6 种弹窗尺寸（含 844×390）、触屏和减少动态效果。0 页面脚本错误、0 意外控制台错误、0 外部 HTTP 请求、0 真实后端变更或模型调用；合成库 **15 张表**指纹一致。
+- 最终构建再做 **4 组定向复核**：纸面必要小字对保守最深渐变底色的对比度最低 **4.68**，内联与弹窗控件真正 Tab 聚焦时具有浅色焦点线；模拟导入忙碌期间词卡、6 个圆点、前后切换及灵感入口禁用，无倾斜或星芒，失败结束后恢复；阅读/复习/短文弹窗的学习快捷键隔离正常。5 张最终合成截图已查看，累计 **30 组浏览器检查**通过。
+- 正式服务仅 GET 核验首页、健康、既有接口与最终 `index-DCJZtfqn.js` / `index-VnBT9RpO.css` 和磁盘构建逐字节一致，不查询或截图个人材料。个人库 **15 张表结构/逐行指纹及 `.env` 哈希不变**，完整性与外键正常，8000 保持运行，无需重启后端。
+- 隔离 8007 按 PID、启动时间与 uvicorn 命令身份精确停止，8000 健康状态正常；代码和合成预览仅本地提交。
+
+预览仅含合成示例：[欢迎页桌面](docs/motion-plus-welcome-desktop.png)、[欢迎页手机](docs/motion-plus-welcome-mobile.png)、[翻卡与倾斜](docs/motion-plus-interaction-desktop.png)、[灵感弹窗桌面](docs/motion-plus-inspiration-desktop.png)、[灵感弹窗手机](docs/motion-plus-inspiration-mobile.png)。
+
 ## 阅读工作室视觉强化验收（2026-10-20）
 
 - 前端 **70 passed**，TypeScript 与 Vite 生产构建通过；仅修改前端展示和只读导航，无后端改动、数据迁移或新增依赖。参考官方 [Spotlight Card](https://reactbits.dev/components/spotlight-card)、[Magic Bento](https://reactbits.dev/components/magic-bento) 与 [Animated Content](https://reactbits.dev/animations/animated-content) 的设计思路，用现有 React/CSS 实现，未引入远程字体、素材或动画库。

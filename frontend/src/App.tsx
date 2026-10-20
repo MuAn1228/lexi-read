@@ -31,6 +31,8 @@ import ReadingGarden from './components/ReadingGarden';
 import StudioLanding from './components/StudioLanding';
 import StudioShelf from './components/StudioShelf';
 import StudioEffects from './components/StudioEffects';
+import StudioMotion, { MotionTitle } from './components/StudioMotion';
+import InspirationCorner from './components/InspirationCorner';
 import type { StatusFilter } from './WordList';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
@@ -517,7 +519,7 @@ export default function App() {
   }, [refreshLearning]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (view !== 'reader' || !selected || busy || uploadOpen || proofreadLock.current || readerBlockedRef.current || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (view !== 'reader' || !selected || busy || uploadOpen || proofreadLock.current || readerBlockedRef.current || window.document.querySelector('[role="dialog"][aria-modal="true"]') || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement;
       if (target.matches('input, textarea, select') || target.isContentEditable) return;
       const statuses: Record<string, WordStatus> = { '1': 'KNOWN', '2': 'UNKNOWN', '3': 'UNCERTAIN' };
@@ -536,12 +538,13 @@ export default function App() {
 
   return <div className="app-shell" data-view={view}>
     <StudioEffects />
+    <StudioMotion />
     <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span className="brand-name">词间<span className="brand-en">lexi</span></span></a><p className="brand-tagline">在阅读里，慢慢积累。</p></div>
-      <nav ref={navigationElement} aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map((item, index) => <div className="nav-entry" key={item.value}>{(index === 0 || item.value === 'dashboard') && <p className="nav-section-label">{index === 0 ? '阅读与练习' : '积累与管理'}</p>}<button disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-label={item.label} title={item.label} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><item.icon size={18} /><span className="nav-label">{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button></div>)}</nav>
+      <nav ref={navigationElement} aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map((item, index) => <div className="nav-entry" key={item.value}>{(index === 0 || item.value === 'dashboard') && <p className="nav-section-label">{index === 0 ? '阅读与练习' : '积累与管理'}</p>}<button disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-label={item.label} title={item.label} aria-current={view === item.value ? 'page' : undefined} data-motion-burst="" onClick={() => setView(item.value)}><span data-motion-magnet="" aria-hidden="true"><item.icon size={18} /></span><span className="nav-label">{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button></div>)}</nav>
       <div className="profile"><span className="avatar">L</span><div className="profile-copy"><strong>我的学习空间</strong><span><span className="local-dot" />{health?.auth_mode === 'guest' ? '学习记录已连接' : '学习记录保存在本机'}</span></div></div>
     </header>
     <main>
-      <div className="page-heading studio-heading"><div key={view} className="page-heading-copy studio-reveal"><p className="overline"><span className="heading-spark" aria-hidden="true"><Sparkles size={12} /></span>{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div><div className="heading-actions">{(view !== 'reader' || document) && <ReadingGarden compact />}<button className="button primary new-reading studio-shimmer" disabled={isLoading || saving || restorationLocked} onClick={event => { setView('reader'); setDragOver(false); openUpload(event.currentTarget); }}><Plus size={17} />添加阅读材料</button></div></div>
+      <div className="page-heading studio-heading"><div key={view} className="page-heading-copy studio-reveal"><p className="overline"><span className="heading-spark" aria-hidden="true"><Sparkles size={12} /></span>{title.eyebrow}</p><h1 ref={pageHeading} tabIndex={-1}><MotionTitle text={title.title} /></h1><p className="page-subtitle">{title.subtitle}</p></div><div className="heading-actions"><InspirationCorner disabled={initializing || isLoading || saving || restorationLocked || proofread !== null || uploadOpen || readerBlocked} />{(view !== 'reader' || document) && <ReadingGarden compact />}<button className="button primary new-reading studio-shimmer" disabled={isLoading || saving || restorationLocked} data-motion-burst="" onClick={event => { setView('reader'); setDragOver(false); openUpload(event.currentTarget); }}><span data-motion-magnet="" aria-hidden="true"><Plus size={17} /></span>添加阅读材料</button></div></div>
       {health?.auth_mode === 'guest' && <p className="page-subtitle">学习记录保存在服务器，访问凭证保存在当前浏览器。清除浏览器数据会失去访问权限；暂不支持跨设备登录。</p>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png" className="visually-hidden" aria-label="上传英文图片" onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
       {error && <div className="error-banner" role="alert"><AlertCircle size={19} /><span>{error}</span>{!document && <button className="text-button" onClick={() => void initialize()}><RefreshCw size={14} />重试连接</button>}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X size={17} /></button></div>}

@@ -17,8 +17,9 @@ export default function StudioShelf({ articleCount, vocabulary, disabled, onNavi
   return <section className="studio-shelf" aria-label="我的阅读积累">
     {cards.map(({ view, icon: Icon, label, value, unit, note, tone }) => <button type="button" key={view}
       className={`studio-shelf-card studio-spotlight studio-shelf-${tone}`} disabled={disabled}
+      data-motion-burst=""
       onClick={() => onNavigate(view)} aria-label={`${label} ${value} ${unit}，${view === 'review' ? '打开生词复习' : view === 'library' ? '打开文章库' : '打开我的词库'}`}>
-      <span className="studio-shelf-icon" aria-hidden="true"><Icon size={19} /></span>
+      <span className="studio-shelf-icon" aria-hidden="true"><span data-motion-magnet=""><Icon size={19} /></span></span>
       <span className="studio-shelf-copy"><span>{label}</span><small>{note}</small></span>
       <span className="studio-shelf-value">{value.toLocaleString('zh-CN')}<small>{unit}</small></span>
       <ArrowUpRight className="studio-shelf-arrow" size={16} aria-hidden="true" />

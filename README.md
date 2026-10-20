@@ -38,6 +38,8 @@ Linux/macOS 对应环境路径是 `.venv/bin/python`，运行同一条 uvicorn �
 
 “阅读工作室”进一步强化欢迎页的纸张层次、Bento 功能卡、柔和光晕背景与森林绿侧栏。文章库、词库统计和阅读卡片会随鼠标出现柔和追光，键盘聚焦仍有清晰反馈；手机直接点击即可操作。阅读中的积累卡显示真实的活跃文章数、已掌握词数及不认识/不确定词数，点击进入对应页面，不把待巩固总数当作今日到期数。视觉灵感来自 [React Bits Spotlight Card](https://reactbits.dev/components/spotlight-card)、[Magic Bento](https://reactbits.dev/components/magic-bento) 和 [Animated Content](https://reactbits.dev/animations/animated-content)，以现有 React/CSS 实现，不新增动画依赖、远程字体或素材请求。
 
+欢迎页新增“灵感词卡”，也可从任意页面的“灵感一下”打开：点击或用 Enter/Space 翻面，看释义和例句，用圆点及前后按钮探索 6 个精选示例。词卡会随鼠标倾斜，按钮图标轻轻吸附，点击出现短暂星芒，标题逐字进入并响应悬停；欢迎背景光波播放一次后静止。灵感示例不计入个人词库或复习，弹窗不会清空已有学习草稿。动效借鉴 [React Bits Split Text](https://reactbits.dev/text-animations/split-text)、[Tilted Card](https://reactbits.dev/components/tilted-card) 和 [Click Spark](https://reactbits.dev/animations/click-spark)，使用原生 React/CSS 实现；手机可直接点选，减少动态效果时保留功能并关闭非必要动画。
+
 宽屏左侧按“阅读与练习 / 积累与管理”分组导航，中等屏幕显示带名称提示的图标栏，手机顶部导航可横向滑动，切换后会自动露出当前入口。阅读区按屏幕宽度排列原文、词表和语境；手机导入方式使用两列按钮。已有页面刷新后即可加载新版外观，无需重新导入文章。
 
 ## 使用流程

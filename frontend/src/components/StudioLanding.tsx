@@ -2,6 +2,8 @@ import { useId } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowRight, ArrowUpRight, BookOpen, FolderOpen, Leaf, RefreshCw, Sparkles } from 'lucide-react';
 import ReadingGarden from './ReadingGarden';
+import WordPlayground from './WordPlayground';
+import { MotionTitle } from './StudioMotion';
 import './StudioLanding.css';
 
 type StudioLandingProps = {
@@ -24,13 +26,14 @@ export default function StudioLanding({ upload, onNavigate, disabled }: StudioLa
   return <div className="studio-landing">
     <div className="studio-landing__desk">
       <section className="studio-landing__hero studio-spotlight" aria-labelledby={titleId}>
+        <div className="motion-orbit-decor" aria-hidden="true" />
         <div className="studio-landing__hero-topline">
           <span className="studio-landing__edition"><Leaf size={13} aria-hidden="true" /> A SPACE FOR CURIOSITY</span>
           <span className="studio-landing__sun" aria-hidden="true">✳</span>
         </div>
         <div className="studio-landing__hero-copy">
           <p className="studio-landing__counterline">Read a little. Grow a little.</p>
-          <h2 id={titleId} className="studio-landing__title">把好奇心，<br />读成<span className="studio-landing__title-mark">自己的世界。
+          <h2 id={titleId} className="studio-landing__title"><MotionTitle text="把好奇心，" /><br /><MotionTitle text="读成" /><span className="studio-landing__title-mark"><MotionTitle text="自己的世界。" />
             <svg viewBox="0 0 300 16" preserveAspectRatio="none" aria-hidden="true"><path d="M3 11C76 0 173 1 294 8M17 14C107 5 191 5 283 11" /></svg>
           </span></h2>
           <p className="studio-landing__description">带上喜欢的文章，在真实的语境里，<br className="studio-landing__optional-break" />让每一个新词慢慢变成自己的表达。</p>
@@ -68,18 +71,21 @@ export default function StudioLanding({ upload, onNavigate, disabled }: StudioLa
       </section>
     </div>
 
+    <div className="studio-landing__word-play"><WordPlayground disabled={disabled} /></div>
+
     <nav className="studio-landing__paths" aria-label="继续探索学习空间">
       <div className="studio-landing__paths-heading"><p>把阅读，接着往下走。</p><span>YOUR LITTLE LEARNING RITUALS</span></div>
       <div className="studio-landing__tiles">
         {destinations.map(({ view, icon: Icon, label, english, description, tone }) => <button
           key={view}
           type="button"
-          className={`studio-landing__tile studio-landing__tile--${tone} studio-spotlight`}
+          className={`studio-landing__tile studio-landing__tile--${tone} studio-spotlight motion-elastic-card`}
           disabled={disabled}
+          data-motion-burst=""
           onClick={() => onNavigate(view)}
         >
-          <span className="studio-landing__tile-top"><span className="studio-landing__tile-icon"><Icon size={20} aria-hidden="true" /></span><span className="studio-landing__tile-arrow"><ArrowUpRight size={19} aria-hidden="true" /></span></span>
-          <span className="studio-landing__tile-body"><span className="studio-landing__tile-overline">{english}</span><strong>{label}</strong><span className="studio-landing__tile-description">{description}</span></span>
+          <span className="studio-landing__tile-top"><span className="studio-landing__tile-icon" data-motion-magnet="" aria-hidden="true"><Icon size={20} /></span><span className="studio-landing__tile-arrow" aria-hidden="true"><ArrowUpRight size={19} /></span></span>
+          <span className="studio-landing__tile-body motion-card-lift" data-motion-tilt=""><span className="studio-landing__tile-overline">{english}</span><strong>{label}</strong><span className="studio-landing__tile-description">{description}</span></span>
         </button>)}
       </div>
     </nav>
