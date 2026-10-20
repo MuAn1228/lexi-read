@@ -52,7 +52,7 @@ export default function DashboardView({ vocabulary }: { vocabulary: Vocabulary[]
         { label: '不认识', value: summary.unknown, style: 'unknown' },
         { label: '不确定', value: summary.uncertain, style: 'uncertain' },
         { label: '未标记', value: summary.unassessed, style: 'total' },
-      ].map(stat => <div key={stat.label} className={`stat-card ${stat.style}`}><div><span>{stat.label}</span></div><strong>{stat.value}</strong><span>个词</span></div>)}</div>
+      ].map(stat => <div key={stat.label} className={`stat-card studio-spotlight ${stat.style}`}><div><span>{stat.label}</span></div><strong>{stat.value}</strong><span>个词</span></div>)}</div>
       <section className="panel dashboard-profile" aria-labelledby="dashboard-profile-title">
         <div className="dashboard-profile-copy"><h2 id="dashboard-profile-title"><BarChart3 size={18} />你的学习画像</h2><p>已标记 {dashboard.profile.assessed_count} 个词，占词库的 {Math.round(dashboard.profile.assessment_coverage * 100)}%。</p><div className="progress-track" role="meter" aria-label="词库标记比例" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(dashboard.profile.assessment_coverage * 100)}><div style={{ width: `${dashboard.profile.assessment_coverage * 100}%` }} /></div><p>{summary.scored_count} 个词有规则掌握度，{dashboard.profile.unscored_count} 个尚未评估。分数仅供学习参考。</p></div>
         <dl className="dashboard-activity"><div><dt>阅读材料</dt><dd>{summary.document_count}<span> 篇</span></dd></div><div><dt>近 7 天新生词</dt><dd>{summary.new_unknown_7d}<span> 个</span></dd></div><div><dt>近 7 天查询</dt><dd>{summary.lookups_7d}<span> 次</span></dd></div></dl>

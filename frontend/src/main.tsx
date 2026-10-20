@@ -5,6 +5,7 @@ import './styles.css';
 import './visualPolish.css';
 import './componentPolish.css';
 import './playfulMotion.css';
+import './studioExperience.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode><App /></React.StrictMode>,
