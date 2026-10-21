@@ -1,0 +1,30 @@
+.vocabulary-panel .vocabulary-footer { flex-direction: column; align-items: stretch; gap: 14px; }
+.vocabulary-page-summary { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; line-height: 1.8; }
+.vocabulary-panel .vocabulary-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; min-width: 0; }
+.vocabulary-page-buttons { display: flex; align-items: center; gap: 5px; list-style: none; padding: 0; margin: 0; }
+.vocabulary-page-buttons li { display: flex; flex-shrink: 0; }
+.vocabulary-panel .vocabulary-page-buttons button,
+.vocabulary-panel .vocabulary-page-jump button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 36px; height: 38px; padding: 0 9px; border: 1px solid #dce4d4; border-radius: 7px; background: #fffef9; color: #496447; font: inherit; font-size: 12px; white-space: nowrap; }
+.vocabulary-panel .vocabulary-page-buttons button:hover:not(:disabled),
+.vocabulary-panel .vocabulary-page-jump button:hover { border-color: #9db58e; background: #eef4e6; }
+.vocabulary-panel .vocabulary-page-buttons button[aria-current="page"],
+.vocabulary-panel .vocabulary-page-buttons button[aria-current="page"]:hover:not(:disabled) { border-color: #285d4b; background: #285d4b; color: #fffef9; font-weight: 600; }
+.vocabulary-panel .vocabulary-page-buttons button:disabled { opacity: .45; cursor: not-allowed; }
+.vocabulary-page-gap { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 38px; color: #7b8973; }
+.vocabulary-page-jump { display: flex; align-items: center; gap: 8px; }
+.vocabulary-page-jump label { display: flex; align-items: center; gap: 7px; font-size: 12px; white-space: nowrap; }
+.vocabulary-panel .vocabulary-page-jump input { width: 68px; height: 38px; padding: 0 5px; border: 1px solid #d4dfc9; border-radius: 7px; background: #fffef9; color: #36543b; font: inherit; font-size: 12px; text-align: center; }
+.vocabulary-panel .vocabulary-pagination :is(button, input):focus-visible { outline: 3px solid #658d78; outline-offset: 2px; }
+
+@media (max-width: 620px) {
+  .vocabulary-panel .vocabulary-pagination { justify-content: center; gap: 12px; }
+  .vocabulary-page-buttons { gap: 3px; }
+  .vocabulary-panel .vocabulary-page-buttons button { min-width: 30px; height: 40px; padding: 0 5px; }
+  .vocabulary-page-buttons .vocabulary-page-direction > span { display: none; }
+  .vocabulary-page-gap { width: 12px; height: 40px; }
+}
+@media (max-width: 374px) {
+  .vocabulary-page-buttons { gap: 2px; }
+  .vocabulary-panel .vocabulary-page-buttons button { min-width: 26px; padding: 0 4px; font-size: 11px; }
+  .vocabulary-page-gap { width: 10px; }
+}

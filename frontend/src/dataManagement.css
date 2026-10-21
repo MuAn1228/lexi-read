@@ -1,5 +1,4 @@
 .data-management { margin-top: 28px; }
-.vocabulary-pagination { display: flex; align-items: center; gap: 14px; }
 .maimemo-source-label { color: var(--teal); }
 .maimemo-source-filter { padding: 0 20px 16px; color: #697d69; font-size: 12px; }
 .maimemo-source-filter label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
