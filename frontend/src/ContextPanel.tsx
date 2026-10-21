@@ -88,7 +88,7 @@ export default function ContextPanel({ word, onMark, saving, onNext, vocabulary,
       <SentencePanel word={word} disabled={saving} />
       <WordHistoryPanel lemma={word.lemma} updatedAt={vocabulary.find(entry => entry.lemma === word.lemma)?.updated_at} revision={historyRevision} />
       {syncError && <div className="learning-sync-error inline-error" role="alert"><p>词库统计刷新失败：{syncError}</p><button className="text-button" onClick={() => void onLearningChanged().then(() => { setSyncError(''); setHistoryRevision(revision => revision + 1); }).catch(e => setSyncError(errorMessage(e)))}><RefreshCw size={13} />刷新词库统计</button></div>}
-      <section className="related-section"><div className="section-label"><span><Sparkles size={14} />顺着语境，再走一步</span><span className="tiny-badge">≤ 3 个词</span></div>
+      <section className="related-section"><div className="section-label"><span><Sparkles size={14} />关联词推荐</span><span className="tiny-badge">≤ 3 个词</span></div>
         <p className="related-intro">结合这篇文章和你的掌握情况，只挑值得一起学的词。</p>
         {!recommendation && !recommending && <button className="button related-button" onClick={() => setRelatedRequest(v => v + 1)}><ArrowDownRight size={16} />发现关联词</button>}
         {recommending && <div className="loading-copy" role="status"><LoaderCircle size={16} className="spin" />正在筛选适合你的关联词…</div>}

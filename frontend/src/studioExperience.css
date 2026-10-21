@@ -1,4 +1,4 @@
-/* An editorial reading studio. All effects are decorative, finite and opt-in. */
+/* A clear reading workspace with a restrained paper and green palette. */
 :root {
   --teal: #285d4b;
   --ink: #233d35;
@@ -43,7 +43,7 @@ body { background: var(--canvas); }
   border: 1px solid #e2eebc;
   border-radius: 13px 13px 13px 4px;
   box-shadow: 3px 3px 0 #0e2f2638;
-  transform: rotate(-6deg);
+  transform: none;
 }
 .app-shell .brand-en { color: #c7d8b4; font-weight: 400; }
 .app-shell .brand-tagline { color: #adbea6; letter-spacing: .09em; }
@@ -82,10 +82,11 @@ body { background: var(--canvas); }
 /* Generous editorial hierarchy, without moving article or modal ancestors. */
 .page-heading { margin-bottom: 28px; padding-bottom: 21px; border-bottom: 1px solid #dce3d5; }
 .page-heading .overline { font-size: 9px; letter-spacing: .18em; color: #667b5b; gap: 9px; }
-.heading-spark { background: #e6edcd; color: #5b753d; border-radius: 9px; width: 27px; height: 27px; }
-.page-heading h1 { font-size: clamp(28px, 2.5vw, 38px); font-weight: 600; letter-spacing: -.035em; line-height: 1.4; margin-top: 10px; }
+.page-heading h1 { font-size: clamp(26px, 2.2vw, 32px); font-weight: 600; letter-spacing: -.035em; line-height: 1.4; margin-top: 0; }
 .page-subtitle { color: #667463; font-size: 12px; line-height: 1.9; }
-.heading-actions { gap: 22px; }
+.heading-actions { display: flex; align-items: center; flex-shrink: 0; gap: 12px; }
+.heading-actions .new-reading { margin: 0; }
+.upload-modal .import-entry-actions { grid-template-columns: minmax(0, 1fr); justify-items: center; }
 .page-heading-copy { animation: none; }
 .button { border-radius: 11px; min-height: 43px; transition: background .2s, color .2s, border-color .2s, box-shadow .2s; }
 .button.primary {
@@ -316,50 +317,6 @@ body { background: var(--canvas); }
 :is(.empty-library, .article-library-empty) h3 { color: #5f734c; letter-spacing: -.025em; }
 :is(.empty-library, .article-library-empty) p { color: #6b7757; }
 
-/* Only opt-in surfaces receive light. Their children never move or gain a new
-   containing block, so text selection, fixed dialogs, and OCR coordinates stay exact. */
-.studio-spotlight { position: relative; --spot-x: 50%; --spot-y: 35%; }
-.studio-spotlight::before,
-.studio-spotlight::after,
-.studio-shimmer::after {
-  content: '';
-  display: block;
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  border: 0;
-  width: auto;
-  height: auto;
-  opacity: 0;
-}
-.studio-spotlight::before { background: radial-gradient(340px circle at var(--spot-x) var(--spot-y), color-mix(in srgb, var(--spot-color, #dceeab) 28%, transparent), transparent 78%); transition: opacity .25s; }
-.studio-spotlight:focus-within::before { opacity: .6; }
-.studio-spotlight:has(:focus-visible) { outline: 1px solid #c8d7ad; outline-offset: 2px; }
-.studio-spotlight::after, .studio-shimmer::after { background: linear-gradient(112deg, transparent 30%, #ffffff38 47%, #ffffff55 50%, transparent 68%); background-size: 260% 100%; background-position: 130% 0; }
-.app-shell[inert] .studio-spotlight::before,
-.app-shell[inert] .studio-spotlight::after,
-.app-shell[inert] .studio-shimmer::after,
-.studio-spotlight[aria-disabled="true"]::before,
-.studio-spotlight[aria-disabled="true"]::after,
-.studio-spotlight:disabled::before,
-.studio-spotlight:disabled::after { display: none; }
-.studio-shimmer { position: relative; }
-.studio-reveal { animation: studio-reading-arrive .5s var(--studio-ease) both; }
-/* Old view-level translation could create containing blocks for fixed modals. */
-main > :is(.welcome-grid, .library-view, .history-panel, .dashboard-view, .relations-panel, .data-management),
-.document-library > :is(.article-library-heading, .article-library-filters, .document-grid, .article-library-empty),
-.practice-generation:not([hidden]), .review-panel:not([hidden]) { animation: none; }
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .studio-spotlight[data-studio-active="true"]::before { opacity: 1; }
-  .studio-spotlight:not(:disabled):not([aria-disabled="true"]):hover::after,
-  .studio-shimmer:not(:disabled):not([aria-disabled="true"]):hover::after { animation: studio-surface-sweep .8s var(--studio-ease) both; }
-  .studio-spotlight:has(:disabled:hover)::after { animation: none; opacity: 0; }
-  .app-shell .brand:hover .brand-icon { transform: rotate(3deg); }
-}
-@keyframes studio-surface-sweep { 0% { background-position: 130% 0; opacity: 0; } 20% { opacity: .65; } 75% { opacity: .4; } 100% { background-position: -40% 0; opacity: 0; } }
-@keyframes studio-reading-arrive { from { opacity: .94; } to { opacity: 1; } }
-
 @media (min-width: 800px) and (max-height: 720px) {
   .app-shell .topbar { padding-top: 23px; padding-bottom: 17px; gap: 19px; }
   .app-shell .brand-tagline { margin-top: 9px; }
@@ -423,13 +380,6 @@ main > :is(.welcome-grid, .library-view, .history-panel, .dashboard-view, .relat
   .app-footer { font-size: 9px; }
 }
 @media (hover: none), (pointer: coarse) {
-  .studio-spotlight::before, .studio-spotlight::after, .studio-shimmer::after { display: none; }
-  .app-shell .brand:hover .brand-icon { transform: rotate(-6deg); }
   .app-shell .topbar nav button:hover:not(:disabled), .stat-card:hover, .document-card:hover { transform: none; }
   .text-button:hover:not(:disabled) svg:last-child { transform: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .studio-reveal, .studio-spotlight::before, .studio-spotlight::after, .studio-shimmer::after { animation: none !important; transition: none !important; }
-  .studio-spotlight::before, .studio-spotlight::after, .studio-shimmer::after { display: none; }
-  .app-shell .brand:hover .brand-icon { transform: rotate(-6deg) !important; }
 }

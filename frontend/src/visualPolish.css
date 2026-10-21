@@ -209,19 +209,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .context-content > .word-history, .context-content > .learning-sync-error { grid-column: 1 / -1; }
   .context-content > .word-history .word-history-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+/* Keep function names visible on tablets instead of relying on icon tooltips. */
 @media (min-width: 800px) and (max-width: 1179px) {
-  :root { --sidebar-width: 88px; }
+  :root { --sidebar-width: 176px; }
   .app-shell .topbar { padding: 24px 12px 20px; gap: 21px; }
-  .brand-lockup { padding: 0; }
-  .app-shell .brand { justify-content: center; }
-  .brand-name, .brand-tagline, .nav-section-label, .app-shell .topbar nav .nav-count, .profile-copy { display: none; }
-  .nav-entry + .nav-entry:has(.nav-section-label) { margin-top: 16px; }
-  .app-shell .topbar nav { gap: 8px; }
-  .app-shell .topbar nav button { height: 55px; padding: 0; justify-content: center; gap: 0; }
-  .app-shell .topbar nav button svg { width: 22px; height: 22px; }
-  .app-shell .topbar nav .nav-label { display: none; }
-  .app-shell .profile { padding: 19px 0 0; justify-content: center; }
-  .app-shell main { padding: 30px 26px 0; }
+  .brand-lockup { padding: 0 7px; }
+  .brand-tagline { font-size: 10px; letter-spacing: 0; }
+  .app-shell .brand-en { display: none; }
+  .app-shell .topbar nav button { padding: 0 10px; gap: 9px; }
+  .app-shell .topbar nav .nav-count { display: none; }
+  .nav-section-label { padding-inline: 10px; }
+  .app-shell .profile { padding: 16px 4px 0; }
+  .app-shell .avatar { display: none; }
+  .app-shell main { padding: 30px 24px 0; }
   .today-review { grid-template-columns: minmax(150px, 1fr) minmax(275px, 1fr) auto; padding: 18px 20px 14px; gap: 10px 16px; }
   .today-review .review-stats { gap: 12px; }
   .today-review .review-stats > div { padding-left: 12px; }

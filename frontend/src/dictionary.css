@@ -69,9 +69,6 @@
 .vocabulary-meaning .text-button { margin-top: 7px; font-size: 11px; }
 .vocabulary-phonetic { display: block; color: #8b9980; font-size: 11px; margin-top: 5px; }
 .context-dictionary-button { margin-top: 12px; width: 100%; justify-content: center; }
-.word-playground .word-playground__dictionary { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; color: #dfebc6; background: #b6d48b13; border: 1px solid #b6d48b44; border-radius: 9px; padding: 9px 12px; margin: 15px 0 2px; font-size: 11px; cursor: pointer; }
-.word-playground .word-playground__dictionary:hover:not(:disabled) { background: #b6d48b25; border-color: #b6d48b99; }
-.word-playground .word-playground__dictionary:disabled { opacity: .45; cursor: not-allowed; }
 @keyframes dictionary-arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @media (max-width: 600px) {
   .dictionary-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 24px); border-radius: 19px; }
