@@ -14,10 +14,12 @@ export function backupImportProblem(file: Pick<File, 'name' | 'size'>): string {
   return '';
 }
 
-/** Attempt both keys, so a failed reading preference never prevents clearing pending reviews. */
-export function clearLearningPreferences(storage: Pick<Storage, 'removeItem' | 'getItem'>, reviewKey: string, documentKey: string): string {
+/** Attempt every key, so a failed reading preference never prevents clearing pending reviews. */
+export function clearLearningPreferences(storage: Pick<Storage, 'removeItem' | 'getItem'>, reviewKey: string, documentKey: string, browsingKey?: string): string {
   const failed: string[] = [];
-  for (const [key, label] of [[reviewKey, '未完成复习进度'], [documentKey, '上次阅读位置']]) {
+  const preferences = [[reviewKey, '未完成复习进度'], [documentKey, '上次阅读位置']];
+  if (browsingKey) preferences.push([browsingKey, '词库浏览位置']);
+  for (const [key, label] of preferences) {
     try {
       storage.removeItem(key);
       if (storage.getItem(key) !== null) throw new Error('Browser retained the old value');

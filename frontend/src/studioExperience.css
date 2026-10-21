@@ -192,8 +192,6 @@ body { background: var(--canvas); }
 .table-scroll thead { background: #f4f7e9; }
 .table-scroll th { color: #61714d; font-size: 11px; font-weight: 550; }
 .table-scroll td { border-bottom-color: #edf0e5; }
-/* Keep assessment text from resizing the whole table after a status update. */
-.vocabulary-panel :is(th, td):nth-child(4) { width: 110px; min-width: 110px; white-space: nowrap; }
 .table-scroll tbody tr:hover { background: #f9fbf1; }
 .vocab-word { color: #3c5c3b; font-size: 18px; letter-spacing: -.025em; }
 .vocab-lemma { color: #687955; }

@@ -31,3 +31,12 @@ test('blocked or silently ignored storage cleanup reports failure and still atte
   assert.equal(backupDate('invalid'), '时间不可用');
   assert.equal(backupDate('2026-10-18T02:30:00'), backupDate('2026-10-18T02:30:00Z'));
 });
+
+test('restoring a backup also clears only the current vocabulary browsing preferences', () => {
+  const values = new Map([['review', 'pending'], ['document', '1'], ['browsing', 'old-page'], ['other:browsing', 'keep']]);
+  const store = { removeItem: key => values.delete(key), getItem: key => values.get(key) ?? null };
+  assert.equal(clearLearningPreferences(store, 'review', 'document', 'browsing'), '');
+  assert.deepEqual([...values], [['other:browsing', 'keep']]);
+  const ignored = { removeItem() {}, getItem: key => key === 'browsing' ? 'retained' : null };
+  assert.match(clearLearningPreferences(ignored, 'review', 'document', 'browsing'), /词库浏览位置/);
+});

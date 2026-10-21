@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, Check, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, Leaf, LoaderCircle, Network, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react';
-import { browserStorageKey, errorMessage, request, reviewStorageKey } from './api';
+import { browserStorageKey, errorMessage, learningStorageKey, request, reviewStorageKey } from './api';
 import ContextPanel from './ContextPanel';
 import { DictionaryProvider } from './DictionaryPanel';
 import ArticleQuestionPanel from './ArticleQuestionPanel';
@@ -28,6 +28,8 @@ import type { UrlImportPayload } from './urlArticle';
 import { normalizeArticle, textImportProblem } from './textArticle';
 import type { TextDraft, TextImportPayload } from './textArticle';
 import { HistoryView, VocabularyView } from './LibraryViews';
+import { emptyBrowsingPreferences, readBrowsingPreferences, writeBrowsingPreferences } from './vocabularyBrowsing';
+import type { VocabularyBrowsing } from './vocabularyBrowsing';
 import WordList from './WordList';
 import StudioLanding from './components/StudioLanding';
 import type { StatusFilter } from './WordList';
@@ -57,6 +59,19 @@ export default function App() {
   const [citationFocus, setCitationFocus] = useState<ArticleFocus | null>(null);
   const citationToken = useRef(0);
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
+  const [vocabularyReady, setVocabularyReady] = useState(false);
+  const browsingPreferences = useRef(emptyBrowsingPreferences());
+  const browsingKey = useRef<string | null>(null);
+  const browsingLoaded = useRef(false);
+  const [browsingStorageWarning, setBrowsingStorageWarning] = useState(false);
+  const saveBrowsing = useCallback(() => {
+    const key = browsingKey.current;
+    setBrowsingStorageWarning(!key || !writeBrowsingPreferences(key, browsingPreferences.current));
+  }, []);
+  const rememberVocabularyBrowsing = useCallback((value: VocabularyBrowsing) => {
+    browsingPreferences.current = { ...browsingPreferences.current, vocabulary: value };
+    saveBrowsing();
+  }, [saveBrowsing]);
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [maimemoBusy, setMaimemoBusy] = useState(false);
@@ -129,7 +144,7 @@ export default function App() {
     const generation = ++libraryGeneration.current;
     const [words, history] = await Promise.all([request<Vocabulary[]>('/vocabulary'), request<LearningEvent[]>('/events')]);
     if (generation === libraryGeneration.current) {
-      setVocabulary(words); setEvents(history);
+      setVocabulary(words); setVocabularyReady(true); setEvents(history);
       const statuses = new Map(words.map(word => [word.lemma, word.status]));
       setDocument(value => value ? { ...value, words: value.words.map(word => statuses.has(word.lemma) ? { ...word, status: statuses.get(word.lemma) ?? null } : word) } : null);
     }
@@ -147,18 +162,34 @@ export default function App() {
     initializingRef.current = true;
     const epoch = documentEpoch.current;
     setInitializing(true); setError('');
-    const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), request<Health>('/health'), refreshLearning()]);
+    const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), request<Health>('/health'), refreshLearning(), learningStorageKey('browsing:v1')]);
+    const restoreBrowsing = !browsingLoaded.current;
+    if (restoreBrowsing) {
+      if (results[3].status === 'fulfilled') {
+        browsingLoaded.current = true;
+        browsingKey.current = results[3].value;
+        const saved = readBrowsingPreferences(results[3].value);
+        browsingPreferences.current = saved.preferences;
+        setBrowsingStorageWarning(!saved.available);
+      } else setBrowsingStorageWarning(true);
+    }
     if (results[0].status === 'fulfilled' && epoch === documentEpoch.current) {
       const list = results[0].value; setDocuments(list);
       if (list.length) await openDocument(list.find(item => item.id === rememberedDocument())?.id ?? list[0].id);
     } else if (results[0].status === 'rejected') setError(errorMessage(results[0].reason));
     if (results[1].status === 'fulfilled') setHealth(results[1].value);
     if (results[2].status === 'rejected') setError(errorMessage(results[2].reason));
+    if (restoreBrowsing && browsingPreferences.current.resumeVocabulary) setView('vocabulary');
     initializingRef.current = false; setInitializing(false);
   }, [openDocument, refreshLearning]);
   // Avoid duplicate initialization in React development StrictMode.
   const initialized = useRef(false);
   useEffect(() => { if (!initialized.current) { initialized.current = true; void initialize(); } }, [initialize]);
+  useEffect(() => {
+    if (initializing || !browsingLoaded.current) return;
+    browsingPreferences.current.resumeVocabulary = view === 'vocabulary';
+    saveBrowsing();
+  }, [view, initializing, saveBrowsing]);
   useEffect(() => { if (view !== 'reader') void refreshLearning().catch(e => setError(errorMessage(e))); }, [view, refreshLearning]);
   useEffect(() => {
     const revealActiveNavigation = () => {
@@ -447,9 +478,11 @@ export default function App() {
   };
   const clearRestoredBrowserState = useCallback(async (): Promise<string> => {
     try {
-      return clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'));
+      const warning = clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'), await learningStorageKey('browsing:v1'));
+      browsingPreferences.current = emptyBrowsingPreferences();
+      return warning;
     } catch {
-      return '学习数据已恢复，但当前浏览器的复习进度与阅读位置未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
+      return '学习数据已恢复，但当前浏览器的复习进度、阅读位置与词库浏览位置未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
     }
   }, []);
   const restoreBackup = useCallback(async (token: string): Promise<RestoreOutcome> => {
@@ -465,7 +498,7 @@ export default function App() {
       const result = await request<BackupRestore>('/backups/restore', { method: 'POST', body: JSON.stringify({ token, confirm: true }) });
       if (!result.restored) throw new Error('恢复结果尚未确认，请用当前预览重试。');
       ++documentEpoch.current; ++requestGeneration.current; ++libraryGeneration.current;
-      setDocument(null); setSelectedId(null); setDocuments([]); setVocabulary([]); setEvents([]);
+      setDocument(null); setSelectedId(null); setDocuments([]); setVocabulary([]); setVocabularyReady(false); setEvents([]);
       textImportRequest.current = null; setTextDraft({ title: '', text: '' }); setPdfDraft(null); setPdfMode('auto'); setPdfProcessing(false);
       urlImportRequest.current = null; setUrlDraft('');
       ++proofreadSyncGeneration.current; proofreadUncertain.current = null; setProofreadSync(null);
@@ -539,7 +572,7 @@ export default function App() {
 
   return <DictionaryProvider onGenerated={result => setVocabulary(current => current.map(entry => entry.lemma === result.lemma ? { ...entry, meaning_summary: entry.meaning_summary || result.detail?.summary || null, phonetic: entry.phonetic || result.dictionary?.phonetic || null } : entry))}><div className="app-shell" data-view={view}>
     <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><Leaf size={21} /></span><span className="brand-name">词间<span className="brand-en">lexi</span></span></a><p className="brand-tagline">英语阅读与词汇学习</p></div>
-      <nav ref={navigationElement} aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map((item, index) => <div className="nav-entry" key={item.value}>{(index === 0 || item.value === 'dashboard') && <p className="nav-section-label">{index === 0 ? '阅读与练习' : '积累与管理'}</p>}<button disabled={restorationLocked} className={view === item.value ? 'active' : ''} aria-label={item.label} title={item.label} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><span aria-hidden="true"><item.icon size={18} /></span><span className="nav-label">{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button></div>)}</nav>
+      <nav ref={navigationElement} aria-label="主要导航">{navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local').map((item, index) => <div className="nav-entry" key={item.value}>{(index === 0 || item.value === 'dashboard') && <p className="nav-section-label">{index === 0 ? '阅读与练习' : '积累与管理'}</p>}<button disabled={restorationLocked || initializing} className={view === item.value ? 'active' : ''} aria-label={item.label} title={item.label} aria-current={view === item.value ? 'page' : undefined} onClick={() => setView(item.value)}><span aria-hidden="true"><item.icon size={18} /></span><span className="nav-label">{item.label}</span>{item.value === 'vocabulary' && vocabulary.filter(word => word.status !== null).length > 0 && <span className="nav-count">{vocabulary.filter(word => word.status !== null).length}</span>}</button></div>)}</nav>
       <div className="profile"><div className="profile-copy"><strong>我的学习空间</strong><span><span className="local-dot" />{health?.auth_mode === 'guest' ? '学习记录已连接' : '学习记录保存在本机'}</span></div></div>
     </header>
     <main>
@@ -561,7 +594,7 @@ export default function App() {
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <StudioLanding upload={uploadZone(true)} disabled={isLoading || saving || restorationLocked} onNavigate={setView} />}
       </>}
-      {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => setView('data')} onMark={(word, status) => void mark(word, status)} />}
+      {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} loading={initializing || !vocabularyReady} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => setView('data')} onMark={(word, status) => void mark(word, status)} initialBrowsing={browsingPreferences.current.vocabulary} onBrowsingChange={rememberVocabularyBrowsing} storageWarning={browsingStorageWarning} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
       {view === 'data' && health?.auth_mode === 'local' && <><MaimemoPanel disabled={saving || isLoading || restorationLocked} onImported={refreshLearning} onBusyChange={setMaimemoBusy} /><DataManagementView disabled={saving || isLoading || maimemoBusy} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} /></>}
       {view === 'history' && <HistoryView events={events} />}

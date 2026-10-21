@@ -169,23 +169,31 @@ test('storage keys are isolated by backend origin and Pages project', async () =
   assert.notEqual(first.browserStorageKey('guest-token'), otherBackend.browserStorageKey('guest-token'));
 });
 
-test('review progress is scoped to backend, Pages project, and the current local or guest identity', async () => {
+test('review and vocabulary browsing are scoped to backend, Pages project, and the current local or guest identity', async () => {
   globalThis.localStorage = storage();
   globalThis.fetch = async () => health('local');
   const local = await api();
   const localKey = await local.reviewStorageKey();
+  const localBrowsing = await local.learningStorageKey('browsing:v1');
   assert.match(localKey, /review-session:v1:local$/);
+  assert.match(localBrowsing, /browsing:v1:local$/);
+  assert.notEqual(localBrowsing, localKey);
   globalThis.fetch = async () => health('guest');
   const guest = await api();
   globalThis.localStorage.setItem(guest.browserStorageKey('guest-token'), 'identity-one');
   const firstKey = await guest.reviewStorageKey();
+  const firstBrowsing = await guest.learningStorageKey('browsing:v1');
   const next = await api();
   globalThis.localStorage.setItem(next.browserStorageKey('guest-token'), 'identity-two');
   assert.notEqual(await next.reviewStorageKey(), firstKey);
+  assert.notEqual(await next.learningStorageKey('browsing:v1'), firstBrowsing);
+  assert.notEqual(firstBrowsing, localBrowsing);
   assert.notEqual(firstKey, localKey);
   globalThis.fetch = async () => health('local');
   assert.notEqual(await (await api('https://other-backend.example.com')).reviewStorageKey(), localKey);
   assert.notEqual(await (await api('https://api.example.com', '/another-project/')).reviewStorageKey(), localKey);
+  assert.notEqual(await (await api('https://other-backend.example.com')).learningStorageKey('browsing:v1'), localBrowsing);
+  assert.notEqual(await (await api('https://api.example.com', '/another-project/')).learningStorageKey('browsing:v1'), localBrowsing);
 });
 
 test('invalid API origins fail clearly without making any network requests', async () => {

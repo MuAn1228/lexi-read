@@ -68,10 +68,14 @@ function guestToken(): Promise<string> {
 }
 
 /** Internal persistence scope; never render this value or put it in a URL. */
-export async function reviewStorageKey(): Promise<string> {
+export async function learningStorageKey(name: string): Promise<string> {
   const mode = (await getHealth()).auth_mode;
   const identity = mode === 'guest' ? `guest:${await guestToken()}` : 'local';
-  return browserStorageKey(`review-session:v1:${identity}`);
+  return browserStorageKey(`${name}:${identity}`);
+}
+
+export async function reviewStorageKey(): Promise<string> {
+  return learningStorageKey('review-session:v1');
 }
 
 async function fetchBackend(path: string, init: RequestInit = {}, authenticated = true): Promise<Response> {
