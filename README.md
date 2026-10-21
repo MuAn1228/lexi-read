@@ -38,7 +38,7 @@ Linux/macOS 对应环境路径是 `.venv/bin/python`，运行同一条 uvicorn �
 
 “阅读工作室”进一步强化欢迎页的纸张层次、Bento 功能卡、柔和光晕背景与森林绿侧栏。文章库、词库统计和阅读卡片会随鼠标出现柔和追光，键盘聚焦仍有清晰反馈；手机直接点击即可操作。阅读中的积累卡显示真实的活跃文章数、已掌握词数及不认识/不确定词数，点击进入对应页面，不把待巩固总数当作今日到期数。视觉灵感来自 [React Bits Spotlight Card](https://reactbits.dev/components/spotlight-card)、[Magic Bento](https://reactbits.dev/components/magic-bento) 和 [Animated Content](https://reactbits.dev/animations/animated-content)，以现有 React/CSS 实现，不新增动画依赖、远程字体或素材请求。
 
-欢迎页的“灵感词卡”，也可从任意页面的“灵感一下”打开：点击或用 Enter/Space 翻面，用圆点及前后按钮探索当前一组。“精选词汇”从 42 个离线词条随机抽取最多 6 张，点击“换一组”优先避开上一组；“我的词库”使用实际词库中的单词，优先不认识和不确定的词，并展示当前文章中匹配的真实原句。个人词没有现成释义时明确提示，不把精选示例当作个人解释；空词库不补示例。翻面与换词分开过渡，连续点击不会打断当前动画。鼠标倾斜、按钮磁吸、点击星芒与标题动效借鉴 [React Bits Split Text](https://reactbits.dev/text-animations/split-text)、[Tilted Card](https://reactbits.dev/components/tilted-card) 和 [Click Spark](https://reactbits.dev/animations/click-spark)，以原生 React/CSS 实现。翻卡、换组不调用模型、不改变词库状态或复习进度，弹窗保留已有学习草稿；手机直接点选，减少动态效果时立即切换。
+欢迎页的“灵感词卡”，也可从任意页面的“灵感一下”打开：点击或用 Enter/Space 翻面，用圆点及前后按钮探索当前一组。“精选词汇”含 442 个离线词条，覆盖日常、旅行、自然、情绪、阅读写作、学习和工作表达。每组随机抽取最多 6 张，本轮抽完前不重复，末组按实际剩余数量展示；当前浏览器记住已抽过的精选词，刷新、关闭再打开灵感弹窗可接着本轮抽取。浏览器存储受限时保留本次打开期间的内存轮换；“我的词库”使用实际词库中的单词，优先不认识和不确定的词，并展示当前文章中匹配的真实原句。个人词没有现成释义时明确提示，不把精选示例当作个人解释；空词库不补示例。翻面与换词分开过渡，连续点击不会打断当前动画。鼠标倾斜、按钮磁吸、点击星芒与标题动效借鉴 [React Bits Split Text](https://reactbits.dev/text-animations/split-text)、[Tilted Card](https://reactbits.dev/components/tilted-card) 和 [Click Spark](https://reactbits.dev/animations/click-spark)，以原生 React/CSS 实现。翻卡、换组不调用模型、不改变词库状态或复习进度，弹窗保留已有学习草稿；手机直接点选，减少动态效果时立即切换。
 
 宽屏左侧按“阅读与练习 / 积累与管理”分组导航，中等屏幕显示带名称提示的图标栏，手机顶部导航可横向滑动，切换后会自动露出当前入口。阅读区按屏幕宽度排列原文、词表和语境；手机导入方式使用两列按钮。已有页面刷新后即可加载新版外观，无需重新导入文章。
 

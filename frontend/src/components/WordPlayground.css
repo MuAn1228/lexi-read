@@ -8,7 +8,9 @@
   min-width: 0;
   width: 100%;
   padding: 20px 24px 15px;
-  overflow: hidden;
+  /* Decorative overflow must not become a scroll container when a card gains
+     focus mid-flip; only the back's text area should be scrollable. */
+  overflow: clip;
   border: 1px solid #42634b;
   border-radius: 25px;
   background: radial-gradient(ellipse at 3% 1%, #4e715854, transparent 54%), linear-gradient(125deg, #21473b, #14372f 65%, #18382f);

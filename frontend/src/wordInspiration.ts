@@ -1,4 +1,6 @@
 import type { ReadingDocument, Vocabulary } from './types';
+import { inspirationEveryday } from './data/inspirationEveryday';
+import { inspirationReading } from './data/inspirationReading';
 
 export type InspirationCard = {
   id: string;
@@ -68,7 +70,7 @@ const editorialWords: readonly [string, string, string, string][] = [
   ['possibility', 'noun', '可能性 · 可能发生的事', 'Every blank page holds the possibility of a new story.'],
 ];
 
-export const curatedCards: readonly InspirationCard[] = Object.freeze(editorialWords.map(([word, kind, meaning, sentence], index) => Object.freeze({
+export const curatedCards: readonly InspirationCard[] = Object.freeze([...editorialWords, ...inspirationEveryday, ...inspirationReading].map(([word, kind, meaning, sentence], index) => Object.freeze({
   id: `curated:${word}`,
   word,
   kind,
@@ -171,4 +173,64 @@ export function pickInspirationBatch(pool: readonly InspirationCard[], previousI
     batch.push(batch.shift()!);
   }
   return batch;
+}
+
+export type InspirationHistory = { version: 1; seenIds: string[]; lastBatchIds: string[] };
+export type InspirationDraw = { cards: InspirationCard[]; history: InspirationHistory };
+const emptyHistory = (): InspirationHistory => ({ version: 1, seenIds: [], lastBatchIds: [] });
+
+/** Only public curated IDs are persisted; this is unrelated to learning progress. */
+export function parseInspirationHistory(raw: string | null, pool: readonly InspirationCard[]): InspirationHistory {
+  if (!raw || raw.length > 100_000) return emptyHistory();
+  try {
+    const value = JSON.parse(raw);
+    if (!value || value.version !== 1 || !Array.isArray(value.seenIds) || !Array.isArray(value.lastBatchIds)) return emptyHistory();
+    const allowed = new Set(pool.map(card => card.id));
+    const ids = (items: unknown[]): string[] => [...new Set(items.filter((id): id is string => typeof id === 'string' && allowed.has(id)))];
+    return { version: 1, seenIds: ids(value.seenIds), lastBatchIds: ids(value.lastBatchIds).slice(0, 6) };
+  } catch { return emptyHistory(); }
+}
+
+/** Exhaust one round before repeating; the final group may contain fewer cards. */
+export function nextInspirationDraw(pool: readonly InspirationCard[], history: InspirationHistory, random: () => number = Math.random): InspirationDraw {
+  const current = parseInspirationHistory(JSON.stringify(history), pool);
+  const seen = new Set(current.seenIds);
+  let remaining = pool.filter(card => !seen.has(card.id));
+  if (!remaining.length) { seen.clear(); remaining = [...pool]; }
+  const cards = pickInspirationBatch(remaining, current.lastBatchIds, 6, random);
+  return { cards, history: { version: 1, seenIds: [...new Set([...seen, ...cards.map(card => card.id)])], lastBatchIds: cards.map(card => card.id) } };
+}
+
+type HistoryStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+/** Draws are pure. Commit only the group that actually reaches the UI, so React
+ * StrictMode and a cancelled card transition cannot consume extra groups. */
+export function createInspirationExplorer(pool: readonly InspirationCard[], storage: () => HistoryStorage | null, key: () => string) {
+  let memory = emptyHistory();
+  let persistence = true;
+  const read = () => {
+    if (persistence) {
+      try {
+        const target = storage();
+        if (!target) persistence = false;
+        else memory = parseInspirationHistory(target.getItem(key()), pool);
+      } catch { persistence = false; }
+    }
+    return memory;
+  };
+  return {
+    draw(random: () => number = Math.random): InspirationDraw { return nextInspirationDraw(pool, read(), random); },
+    commit(draw: InspirationDraw) {
+      memory = parseInspirationHistory(JSON.stringify(draw.history), pool);
+      if (!persistence) return;
+      try {
+        const target = storage();
+        if (!target) { persistence = false; return; }
+        const storageKey = key();
+        const raw = JSON.stringify(memory);
+        target.setItem(storageKey, raw);
+        if (target.getItem(storageKey) !== raw) persistence = false;
+      } catch { persistence = false; }
+    },
+  };
 }

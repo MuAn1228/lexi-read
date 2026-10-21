@@ -3,9 +3,14 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = await readFile(new URL('../src/wordInspiration.ts', import.meta.url), 'utf8');
+let source = await readFile(new URL('../src/wordInspiration.ts', import.meta.url), 'utf8');
+for (const name of ['inspirationEveryday', 'inspirationReading']) {
+  const data = await readFile(new URL(`../src/data/${name}.ts`, import.meta.url), 'utf8');
+  const dataJs = ts.transpileModule(data, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+  source = source.replace(`'./data/${name}'`, JSON.stringify(`data:text/javascript;base64,${Buffer.from(dataJs).toString('base64')}`));
+}
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { curatedCards, personalInspirationCards, pickInspirationBatch } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { curatedCards, personalInspirationCards, pickInspirationBatch, parseInspirationHistory, nextInspirationDraw, createInspirationExplorer } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 const word = (id, lemma, status, overrides = {}) => ({
   id, user_id: 1, word: lemma, lemma, status, mastery_score: null, seen_count: 1, lookup_count: 0,
@@ -20,13 +25,16 @@ function seededRandom(seed) {
   return () => { state = (state * 1664525 + 1013904223) >>> 0; return state / 2 ** 32; };
 }
 
-test('offline selection contains many distinct, complete editorial cards rather than the old fixed six', () => {
-  assert.ok(curatedCards.length >= 36);
+test('offline selection contains over four hundred distinct complete editorial cards', () => {
+  assert.ok(curatedCards.length >= 400);
   assert.equal(new Set(ids(curatedCards)).size, curatedCards.length);
   assert.equal(new Set(curatedCards.map(card => card.word)).size, curatedCards.length);
   for (const card of curatedCards) {
     assert.match(card.id, /^curated:/);
-    assert.ok(card.word && card.kind && card.meaning && card.sentence);
+    assert.match(card.word, /^[a-z]+$/);
+    assert.ok(['noun', 'verb', 'adjective', 'adverb'].includes(card.kind));
+    assert.match(card.meaning, /[\u4e00-\u9fff]/);
+    assert.ok(card.sentence.split(/\s+/).length >= 5 && /[.!?]$/.test(card.sentence));
     assert.equal(card.sourceLabel, '离线精选');
     assert.equal(card.contextLabel, '原创示例句');
   }
@@ -164,4 +172,116 @@ test('batch picking tolerates malformed input, duplicate ids and invalid random 
   }
   assert.equal(pickInspirationBatch(pool, [], 6, () => { throw new Error('bad random source'); }).length, 2);
   assert.deepEqual(personalInspirationCards(null, null), []);
+});
+
+const blankHistory = () => ({ version: 1, seenIds: [], lastBatchIds: [] });
+function memoryStorage() {
+  const values = new Map();
+  let writes = 0;
+  return { values, get writes() { return writes; }, getItem: key => values.get(key) ?? null,
+    setItem(key, value) { writes++; values.set(key, value); } };
+}
+
+test('a whole curated round contains every real word exactly once before starting another round', () => {
+  let history = blankHistory();
+  const random = seededRandom(8);
+  const all = [];
+  let last;
+  while (all.length < curatedCards.length) {
+    const before = structuredClone(history);
+    const draw = nextInspirationDraw(curatedCards, history, random);
+    assert.ok(draw.cards.length > 0 && draw.cards.length <= 6);
+    assert.ok(draw.cards.every(card => !all.includes(card.id)));
+    assert.deepEqual(history, before);
+    all.push(...ids(draw.cards)); history = draw.history; last = draw;
+  }
+  assert.equal(new Set(all).size, curatedCards.length);
+  assert.equal(last.cards.length, curatedCards.length % 6 || 6);
+  const restarted = nextInspirationDraw(curatedCards, history, random);
+  assert.equal(restarted.cards.length, 6);
+  assert.ok(restarted.cards.every(card => !ids(last.cards).includes(card.id)));
+  assert.equal(restarted.history.seenIds.length, 6);
+});
+
+test('pool upgrades retain seen words and prioritize newly available content', () => {
+  const old = curatedCards.slice(0, 42);
+  const draw = nextInspirationDraw(curatedCards, { version: 1, seenIds: ids(old), lastBatchIds: ids(old.slice(-6)) }, () => .4);
+  assert.ok(draw.cards.every(card => !ids(old).includes(card.id)));
+  assert.equal(draw.history.seenIds.length, 48);
+  for (const size of [0, 1, 2, 7]) {
+    const pool = curatedCards.slice(0, size);
+    let history = blankHistory(); const round = [];
+    while (round.length < size) { const draw = nextInspirationDraw(pool, history); round.push(...ids(draw.cards)); history = draw.history; }
+    assert.equal(new Set(round).size, size);
+    assert.equal(nextInspirationDraw(pool, history).cards.length, Math.min(6, size));
+  }
+});
+
+test('saved history accepts only current curated IDs and tolerates corrupt or obsolete values', () => {
+  for (const raw of [null, '', '{', 'null', '[]', 'x'.repeat(100_001), '{"version":2,"seenIds":[],"lastBatchIds":[]}']) {
+    assert.deepEqual(parseInspirationHistory(raw, curatedCards), blankHistory());
+  }
+  const raw = JSON.stringify({ version: 1, seenIds: [curatedCards[0].id, curatedCards[0].id, 'personal:secret', 'curated:removed', null], lastBatchIds: ids(curatedCards.slice(0, 8)), other: 'must not be persisted' });
+  const history = parseInspirationHistory(raw, curatedCards);
+  assert.deepEqual(history.seenIds, [curatedCards[0].id]);
+  assert.equal(history.lastBatchIds.length, 6);
+  assert.deepEqual(Object.keys(history), ['version', 'seenIds', 'lastBatchIds']);
+});
+
+test('drawing has no persistence side effects and committing the same render twice is idempotent', () => {
+  const storage = memoryStorage();
+  const explorer = createInspirationExplorer(curatedCards, () => storage, () => 'curated');
+  const firstRender = explorer.draw(() => .5);
+  const strictRender = explorer.draw(() => .5);
+  assert.deepEqual(ids(firstRender.cards), ids(strictRender.cards));
+  assert.equal(storage.writes, 0);
+  explorer.commit(firstRender); explorer.commit(firstRender);
+  assert.equal(JSON.parse(storage.getItem('curated')).seenIds.length, 6);
+  const discarded = explorer.draw(() => .5);
+  const next = explorer.draw(() => .5);
+  assert.deepEqual(ids(discarded.cards), ids(next.cards));
+  assert.equal(JSON.parse(storage.getItem('curated')).seenIds.length, 6);
+  explorer.commit(next);
+  assert.equal(JSON.parse(storage.getItem('curated')).seenIds.length, 12);
+});
+
+test('a recreated page or another mounted explorer continues the saved round without forgetting other preferences', () => {
+  const storage = memoryStorage(); storage.values.set('review-progress', 'unchanged');
+  const first = createInspirationExplorer(curatedCards, () => storage, () => 'curated');
+  const a = first.draw(); first.commit(a);
+  const second = createInspirationExplorer(curatedCards, () => storage, () => 'curated');
+  const b = second.draw(); second.commit(b);
+  const c = first.draw(); first.commit(c);
+  assert.equal(new Set([...ids(a.cards), ...ids(b.cards), ...ids(c.cards)]).size, 18);
+  assert.equal(JSON.parse(storage.getItem('curated')).seenIds.length, 18);
+  assert.equal(storage.getItem('review-progress'), 'unchanged');
+});
+
+test('blocked getters, read failures, write failures and silently ignored writes preserve in-memory rotation', () => {
+  const storageCases = [
+    () => { throw new Error('blocked property'); },
+    () => null,
+    () => ({ getItem() { throw new Error('blocked read'); }, setItem() {} }),
+    () => ({ getItem() { return null; }, setItem() { throw new Error('quota'); } }),
+    () => ({ getItem() { return null; }, setItem() {} }),
+  ];
+  for (const storage of storageCases) {
+    const explorer = createInspirationExplorer(curatedCards, storage, () => 'curated');
+    const all = [];
+    for (let i = 0; i < 5; i++) { const draw = explorer.draw(() => .5); all.push(...ids(draw.cards)); explorer.commit(draw); }
+    assert.equal(new Set(all).size, 30);
+  }
+});
+
+test('storage scopes are isolated and malformed saved state recovers without touching learning keys', () => {
+  const storage = memoryStorage(); storage.values.set('one', '{broken');
+  storage.values.set('learning-state', '{"keep":true}');
+  const one = createInspirationExplorer(curatedCards, () => storage, () => 'one');
+  const a = one.draw(() => .5); one.commit(a);
+  const two = createInspirationExplorer(curatedCards, () => storage, () => 'two');
+  const b = two.draw(() => .5); two.commit(b);
+  assert.deepEqual(ids(a.cards), ids(b.cards));
+  assert.equal(JSON.parse(storage.getItem('one')).seenIds.length, 6);
+  assert.equal(JSON.parse(storage.getItem('two')).seenIds.length, 6);
+  assert.equal(storage.getItem('learning-state'), '{"keep":true}');
 });

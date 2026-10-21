@@ -2,15 +2,21 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, RotateCw, Shuffle, Sparkles } from 'lucide-react';
 import type { ReadingDocument, Vocabulary } from '../types';
-import { curatedCards, personalInspirationCards, pickInspirationBatch } from '../wordInspiration';
-import type { InspirationCard } from '../wordInspiration';
+import { browserStorageKey } from '../api';
+import { createInspirationExplorer, curatedCards, personalInspirationCards, pickInspirationBatch } from '../wordInspiration';
+import type { InspirationCard, InspirationDraw } from '../wordInspiration';
 import './WordPlayground.css';
 
 type WordPlaygroundProps = { disabled?: boolean; vocabulary?: Vocabulary[]; document?: ReadingDocument | null };
 type Source = 'curated' | 'personal';
 type Phase = 'idle' | 'flipping' | 'leaving' | 'entering';
-type Deck = { source: Source; cards: InspirationCard[]; index: number; flipped: boolean };
+type Deck = { source: Source; cards: InspirationCard[]; index: number; flipped: boolean; curatedDraw: InspirationDraw | null };
 const emptyVocabulary: Vocabulary[] = [];
+const curatedExplorer = createInspirationExplorer(curatedCards, () => window.localStorage, () => browserStorageKey('inspiration-curated:v1'));
+function nextCuratedDeck(): Deck {
+  const draw = curatedExplorer.draw();
+  return { source: 'curated', cards: draw.cards, index: 0, flipped: false, curatedDraw: draw };
+}
 
 /** An optional, read-only deck: personal cards keep their real reading context. */
 export default function WordPlayground({ disabled = false, vocabulary = emptyVocabulary, document: readingDocument = null }: WordPlaygroundProps) {
@@ -19,7 +25,7 @@ export default function WordPlayground({ disabled = false, vocabulary = emptyVoc
   const personalPool = useMemo(() => personalInspirationCards(vocabulary, readingDocument), [vocabulary, readingDocument]);
   const personalPoolRef = useRef(personalPool);
   personalPoolRef.current = personalPool;
-  const [deck, setDeck] = useState<Deck>(() => ({ source: 'curated', cards: pickInspirationBatch(curatedCards), index: 0, flipped: false }));
+  const [deck, setDeck] = useState<Deck>(nextCuratedDeck);
   const deckRef = useRef(deck);
   const [phase, setPhase] = useState<Phase>('idle');
   const phaseRef = useRef<Phase>('idle');
@@ -119,6 +125,7 @@ export default function WordPlayground({ disabled = false, vocabulary = emptyVoc
   }, []);
   useEffect(() => { if (disabled) settleRef.current(); }, [disabled]);
   useEffect(() => { if (phaseRef.current === 'idle') reconcilePersonal(); }, [personalPool]);
+  useEffect(() => { if (deck.curatedDraw) curatedExplorer.commit(deck.curatedDraw); }, [deck.curatedDraw]);
 
   const changeDeck = (next: Deck, message: string) => {
     if (disabled || phaseRef.current !== 'idle') return;
@@ -138,15 +145,22 @@ export default function WordPlayground({ disabled = false, vocabulary = emptyVoc
   };
   const chooseSource = (source: Source) => {
     const current = deckRef.current;
-    if (source === current.source) return;
-    const cards = pickInspirationBatch(source === 'curated' ? curatedCards : personalPoolRef.current);
-    changeDeck({ source, cards, index: 0, flipped: false }, cards.length
-      ? `已切换到${source === 'curated' ? '精选词汇' : '我的词库'}，本组 ${cards.length} 张。`
+    if (disabled || phaseRef.current !== 'idle' || source === current.source) return;
+    const next: Deck = source === 'curated' ? nextCuratedDeck()
+      : { source, cards: pickInspirationBatch(personalPoolRef.current), index: 0, flipped: false, curatedDraw: null };
+    changeDeck(next, next.cards.length
+      ? `已切换到${source === 'curated' ? '精选词汇' : '我的词库'}，本组 ${next.cards.length} 张。`
       : '我的词库还没有可探索的词，回到阅读页标记后就会出现在这里。');
   };
   const refresh = () => {
     const current = deckRef.current;
-    const pool = current.source === 'curated' ? curatedCards : personalPoolRef.current;
+    if (disabled || phaseRef.current !== 'idle') return;
+    if (current.source === 'curated') {
+      const next = nextCuratedDeck();
+      changeDeck(next, `已换一组，本组 ${next.cards.length} 张。第一张是 ${next.cards[0].word}。`);
+      return;
+    }
+    const pool = personalPoolRef.current;
     if (!pool.length) return;
     const cards = pickInspirationBatch(pool, current.cards.map(card => card.id));
     changeDeck({ ...current, cards, index: 0, flipped: false }, `已换一组，本组 ${cards.length} 张。第一张是 ${cards[0].word}。`);
@@ -207,7 +221,7 @@ export default function WordPlayground({ disabled = false, vocabulary = emptyVoc
         aria-disabled={unavailable || undefined} aria-label="换一组词卡"><Shuffle size={13} aria-hidden="true" />换一组</button>
     </div>
     <p id={helpId} className="word-playground__source-note">{deck.source === 'curated'
-      ? '每组随机 6 张，换一组遇见更多词。'
+      ? '每组最多 6 张，优先抽未见词，一轮抽完再循环。'
       : '优先不认识和不确定的词；有当前文章原句时一同呈现。'}</p>
 
     <div className="word-playground__stage">
