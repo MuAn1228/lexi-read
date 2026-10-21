@@ -1,4 +1,4 @@
-/* A small, tactile sample deck. No autoplay, remote assets or endless animation. */
+/* A read-only, shuffled deck. One perspective owner; rotor identity stays stable. */
 .word-playground {
   --word-accent: #d8eaa1;
   --word-glow: #b7dc76;
@@ -45,8 +45,24 @@
 .word-playground .word-playground__heading h2 > span { color: #c3d2ba; font-size: 11px; font-weight: 400; letter-spacing: .015em; }
 .word-playground .word-playground__sample-label { flex-shrink: 0; padding: 5px 9px; border: 1px solid #adc69645; border-radius: 20px; background: #e2f2b30a; color: #d5e1c2; font-size: 9px; line-height: 1.4; letter-spacing: .08em; }
 
-.word-playground .word-playground__stage { position: relative; display: grid; place-items: center; height: 216px; margin: 4px 0 2px; padding: 15px 25px 14px; perspective: 1000px; }
-.word-playground .word-playground__tilt { position: relative; width: min(100%, 440px); height: 184px; perspective: 1000px; transform-style: preserve-3d; }
+.word-playground .word-playground__toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+.word-playground .word-playground__sources { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #c4d3af28; border-radius: 10px; background: #102f286b; }
+.word-playground .word-playground__sources button { min-height: 30px; padding: 5px 10px; border: 0; border-radius: 7px; background: transparent; color: #c4d4bb; font: inherit; font-size: 10px; cursor: pointer; transition: color 180ms ease, background-color 180ms ease; }
+.word-playground .word-playground__sources button[aria-pressed="true"] { background: #d9e9b7; color: #254936; box-shadow: 0 1px 5px #0a241e18; }
+.word-playground .word-playground__refresh { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 5px 8px; border: 1px solid #adc69645; border-radius: 9px; background: #e2f2b30a; color: #d5e1c2; font: inherit; font-size: 10px; cursor: pointer; }
+.word-playground .word-playground__source-note { min-height: 18px; margin: 9px 0 0; color: #c0d0b5; font-size: 10px; line-height: 1.65; }
+.word-playground .word-playground__stage { position: relative; display: grid; place-items: center; height: 266px; margin: 3px 0 2px; padding: 15px 25px 19px; }
+.word-playground .word-playground__tilt { position: relative; width: min(100%, 440px); height: 232px; transform: rotateX(var(--word-tilt-x, 0deg)) rotateY(var(--word-tilt-y, 0deg)); transition: transform 180ms ease; }
+.word-playground[data-phase]:not([data-phase="idle"]) .word-playground__tilt { transform: none; transition: none; }
+/* Perspective belongs to this scene only: nesting it on both the stage and
+   button made the back face project far beyond the card while rotating. */
+.word-playground .word-playground__scene { position: relative; height: 100%; perspective: 1000px; opacity: 1; transition: opacity 150ms ease, translate 170ms ease; }
+.word-playground[data-phase="leaving"] .word-playground__scene { opacity: 0; translate: -8px 0; }
+.word-playground[data-phase="entering"] .word-playground__scene { opacity: 1; translate: 0; }
+.word-playground .word-playground__empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; width: 100%; max-width: 440px; height: 232px; padding: 20px; border: 1px dashed #c1d4ab60; border-radius: 16px; background: #e3f0bd07; text-align: center; }
+.word-playground .word-playground__empty > svg { color: #d1e5a7; }
+.word-playground .word-playground__empty > strong { color: #edf3dd; font-size: 14px; font-weight: 500; }
+.word-playground .word-playground__empty > span { color: #c0d2b6; font-size: 11px; line-height: 1.9; }
 .word-playground .word-playground__star { position: absolute; color: var(--word-accent); pointer-events: none; user-select: none; }
 .word-playground .word-playground__star--one { top: 37px; left: 1%; font: 28px/1 Georgia, serif; transform: rotate(13deg); opacity: .83; }
 .word-playground .word-playground__star--two { right: 1%; bottom: 39px; font: 29px/1 Georgia, serif; opacity: .8; }
@@ -71,25 +87,32 @@
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  perspective: 1000px;
   transform-style: preserve-3d;
 }
-.word-playground .word-playground__rotor { position: relative; display: block; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 620ms cubic-bezier(.2, .75, .2, 1); }
+.word-playground .word-playground__rotor { position: relative; display: block; width: 100%; height: 100%; transform: rotateY(0deg); transform-style: preserve-3d; transition: transform 460ms cubic-bezier(.4, 0, .2, 1); }
 .word-playground .word-playground__rotor[data-flipped="true"] { transform: rotateY(180deg); }
+.word-playground[data-phase="leaving"] .word-playground__rotor,
+.word-playground[data-phase="entering"] .word-playground__rotor,
+.word-playground[data-disabled="true"] .word-playground__rotor { transition: none; }
 .word-playground .word-playground__face { position: absolute; display: flex; flex-direction: column; inset: 0; min-width: 0; padding: 22px 25px 18px; overflow: hidden; border: 1px solid #fcfff1b3; border-radius: 15px; background: #fffdf1; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-.word-playground .word-playground__front { background: radial-gradient(ellipse at 100% 95%, #dfe7c6a6, transparent 70%), linear-gradient(135deg, #fffef5, #f6f4e6); }
+.word-playground .word-playground__front { transform: rotateY(0deg) translateZ(.5px); background: radial-gradient(ellipse at 100% 95%, #dfe7c6a6, transparent 70%), linear-gradient(135deg, #fffef5, #f6f4e6); }
 .word-playground .word-playground__card-kicker { position: relative; z-index: 1; color: #58684d; font-size: 7px; font-weight: 600; letter-spacing: .16em; line-height: 1.5; }
-.word-playground .word-playground__word { position: relative; z-index: 1; display: block; width: fit-content; max-width: 100%; margin-top: 13px; color: #2d5140; font: italic 43px/1.18 Georgia, 'Times New Roman', serif; letter-spacing: -.05em; animation: word-playground-arrive 400ms ease both; }
+.word-playground .word-playground__word { position: relative; z-index: 1; display: block; width: fit-content; max-width: 100%; margin-top: 22px; color: #2d5140; font: italic 43px/1.18 Georgia, 'Times New Roman', serif; letter-spacing: -.05em; overflow-wrap: anywhere; }
+.word-playground .word-playground__word[data-long="true"] { font-size: 27px; letter-spacing: -.025em; }
 .word-playground .word-playground__kind { position: relative; z-index: 1; margin-top: 3px; color: #58684d; font: italic 11px/1.5 Georgia, 'Times New Roman', serif; }
 .word-playground .word-playground__hint { display: inline-flex; align-items: center; gap: 6px; position: relative; z-index: 1; margin-top: auto; color: #58684d; font-size: 9px; line-height: 1.5; }
 .word-playground .word-playground__hint svg { color: #758b5e; }
 .word-playground .word-playground__sprout { position: absolute; width: 73px; height: 88px; right: 20px; top: 34px; color: #90a579; opacity: .5; transform: rotate(10deg); }
 .word-playground .word-playground__card-number { position: absolute; right: 20px; bottom: 16px; color: #c1c7ae; font: italic 21px/1 Georgia, serif; }
-.word-playground .word-playground__back { transform: rotateY(180deg); background: radial-gradient(ellipse at 90% 0, #e1e8ce9e, transparent 66%), #fbf8ee; }
-.word-playground .word-playground__back-word { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; color: #3e604c; font: italic 16px/1.3 Georgia, 'Times New Roman', serif; }
+.word-playground .word-playground__back { transform: rotateY(180deg) translateZ(.5px); background: radial-gradient(ellipse at 90% 0, #e1e8ce9e, transparent 66%), #fbf8ee; }
+.word-playground .word-playground__back-content { position: relative; z-index: 1; display: block; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #a5b58e transparent; padding-right: 4px; overflow-wrap: anywhere; touch-action: pan-y; }
+.word-playground .word-playground__back-word { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; color: #3e604c; font: italic 16px/1.3 Georgia, 'Times New Roman', serif; }
 .word-playground .word-playground__back-word > span { color: #58684d; font-size: 10px; }
+.word-playground .word-playground__context { display: block; margin-top: 5px; color: #69785d; font-size: 9px; line-height: 1.5; }
 .word-playground .word-playground__meaning { position: relative; z-index: 1; display: block; margin-top: 11px; color: #36523f; font-size: 21px; font-weight: 550; letter-spacing: .015em; line-height: 1.4; }
+.word-playground .word-playground__meaning[data-missing="true"] { font-size: 17px; }
 .word-playground .word-playground__sentence { position: relative; z-index: 1; display: block; max-width: 350px; margin-top: 10px; padding-left: 11px; border-left: 2px solid #a3b782; color: #62725c; font: italic 13px/1.55 Georgia, 'Times New Roman', serif; }
+.word-playground .word-playground__sentence[data-missing="true"] { font-family: inherit; font-style: normal; font-size: 11px; line-height: 1.8; }
 .word-playground .word-playground__back-hint { display: inline-flex; align-items: center; gap: 5px; position: relative; z-index: 1; margin-top: auto; padding-top: 8px; color: #58684d; font-size: 9px; line-height: 1.5; }
 .word-playground .word-playground__back-mark { position: absolute; top: 13px; right: 18px; color: #a3b782; font: 36px/1 Georgia, serif; opacity: .6; }
 
@@ -108,6 +131,7 @@
 .app-shell .word-playground button:focus-visible,
 .inspiration-dialog .word-playground button:focus-visible { outline-color: #e6f3bf; }
 .word-playground button:disabled { opacity: .58; cursor: not-allowed; }
+.word-playground button[aria-disabled="true"]:not(:disabled) { cursor: wait; }
 .word-playground[data-disabled="true"] .word-playground__stack { opacity: .45; }
 
 @media (hover: hover) and (pointer: fine) {
@@ -121,10 +145,11 @@
   .word-playground .word-playground__heading h2 { gap: 5px 9px; }
   .word-playground .word-playground__heading h2 > span { font-size: 10px; }
   .word-playground .word-playground__eyebrow { font-size: 7px; letter-spacing: .1em; }
-  .word-playground .word-playground__stage { height: 220px; padding: 16px 7px; }
-  .word-playground .word-playground__tilt { height: 188px; }
+  .word-playground .word-playground__stage { height: 282px; padding: 16px 7px 20px; }
+  .word-playground .word-playground__tilt { height: 246px; }
   .word-playground .word-playground__face { padding: 19px 18px 15px; }
   .word-playground .word-playground__word { font-size: 36px; }
+  .word-playground .word-playground__word[data-long="true"] { font-size: 25px; }
   .word-playground .word-playground__meaning { font-size: 19px; margin-top: 10px; }
   .word-playground .word-playground__sentence { margin-top: 9px; font-size: 12px; line-height: 1.55; }
   .word-playground .word-playground__sprout { width: 62px; right: 12px; top: 40px; opacity: .35; }
@@ -132,6 +157,8 @@
   .word-playground .word-playground__pagination { gap: 5px; }
   .word-playground .word-playground__dot { width: 19px; }
   .word-playground .word-playground__step { min-width: 31px; padding: 7px; }
+  .word-playground .word-playground__sources button { padding-inline: 8px; }
+  .word-playground .word-playground__refresh { padding-inline: 6px; }
 }
 
 @container (max-width: 280px) {
@@ -141,11 +168,6 @@
 
 @media (max-width: 420px) {
   .word-playground { padding: 17px 16px 13px; border-radius: 20px; }
-}
-
-@keyframes word-playground-arrive {
-  from { opacity: .1; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {

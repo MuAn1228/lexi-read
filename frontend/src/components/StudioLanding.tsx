@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import type { ReactNode } from 'react';
+import type { ReadingDocument, Vocabulary } from '../types';
 import { ArrowRight, ArrowUpRight, BookOpen, FolderOpen, Leaf, RefreshCw, Sparkles } from 'lucide-react';
 import ReadingGarden from './ReadingGarden';
 import WordPlayground from './WordPlayground';
@@ -10,6 +11,8 @@ type StudioLandingProps = {
   upload: ReactNode;
   onNavigate: (view: 'library' | 'review' | 'practice') => void;
   disabled: boolean;
+  vocabulary?: Vocabulary[];
+  document?: ReadingDocument | null;
 };
 
 const destinations = [
@@ -19,7 +22,7 @@ const destinations = [
 ] as const;
 
 /** The first reading desk. All import behavior stays in the supplied upload slot. */
-export default function StudioLanding({ upload, onNavigate, disabled }: StudioLandingProps) {
+export default function StudioLanding({ upload, onNavigate, disabled, vocabulary, document }: StudioLandingProps) {
   const titleId = useId();
   const importId = useId();
 
@@ -71,7 +74,7 @@ export default function StudioLanding({ upload, onNavigate, disabled }: StudioLa
       </section>
     </div>
 
-    <div className="studio-landing__word-play"><WordPlayground disabled={disabled} /></div>
+    <div className="studio-landing__word-play"><WordPlayground disabled={disabled} vocabulary={vocabulary} document={document} /></div>
 
     <nav className="studio-landing__paths" aria-label="继续探索学习空间">
       <div className="studio-landing__paths-heading"><p>把阅读，接着往下走。</p><span>YOUR LITTLE LEARNING RITUALS</span></div>
