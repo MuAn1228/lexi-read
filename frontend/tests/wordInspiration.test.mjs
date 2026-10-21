@@ -61,6 +61,18 @@ test('personal cards retain real mastered and unmarked statuses when there are n
   assert.deepEqual(personalInspirationCards([], null), []);
 });
 
+test('personal cards display supplied dictionary summary with a label, preserving actual context', () => {
+  const vocabulary = [word(1, 'bank', 'UNKNOWN', { meaning_summary: ' n. 银行；河岸 ' }), word(2, 'wander', 'UNCERTAIN', { meaning_summary: '  ' })];
+  const reading = document([occurrence(1, 'bank', 'We sat on the bank.')]);
+  const before = structuredClone(vocabulary);
+  const cards = personalInspirationCards(vocabulary, reading);
+  assert.equal(cards[0].meaning, '词典释义 · n. 银行；河岸');
+  assert.equal(cards[0].sentence, 'We sat on the bank.');
+  assert.equal(cards[0].contextLabel, '原句 · An actual reading');
+  assert.equal(cards[1].meaning, null);
+  assert.deepEqual(vocabulary, before);
+});
+
 test('original sentences match normalized lemmas, not similar spelling or unrelated document words', () => {
   const reading = document([
     occurrence(1, 'riverbank', 'The riverbank was quiet.'),

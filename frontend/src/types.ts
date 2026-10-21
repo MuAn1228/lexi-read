@@ -21,6 +21,7 @@ export interface DocumentSummary {
 }
 export interface Vocabulary {
   id: number; user_id: number; word: string; lemma: string; status: WordStatus | null;
+  meaning_summary?: string | null; phonetic?: string | null;
   mastery_score: number | null; seen_count: number; lookup_count: number;
   created_at: string; updated_at: string; first_seen_at: string | null; last_seen_at: string | null;
 }

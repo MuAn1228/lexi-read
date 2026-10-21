@@ -23,6 +23,8 @@ function InspirationDialog({ opener, onClose, vocabulary, document: readingDocum
     closeButton.current?.focus();
     const focusable = () => Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]')).filter(element => element.getClientRects().length > 0);
     const key = (event: KeyboardEvent) => {
+      // A dictionary opens in the native top layer; only the top dialog owns keys.
+      if (document.querySelector('dialog[data-dictionary-dialog][open]')) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
       if (event.key !== 'Tab') return;
       const elements = focusable(); const first = elements[0]; const last = elements[elements.length - 1];
@@ -30,7 +32,7 @@ function InspirationDialog({ opener, onClose, vocabulary, document: readingDocum
       else if (event.shiftKey && (document.activeElement === first || document.activeElement === modal)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && (document.activeElement === last || document.activeElement === modal)) { event.preventDefault(); first.focus(); }
     };
-    const focus = (event: FocusEvent) => { if (!modal.contains(event.target as Node)) (focusable()[0] ?? modal).focus(); };
+    const focus = (event: FocusEvent) => { if (!document.querySelector('dialog[data-dictionary-dialog][open]') && !modal.contains(event.target as Node)) (focusable()[0] ?? modal).focus(); };
     document.addEventListener('keydown', key, true);
     document.addEventListener('focusin', focus);
     return () => {

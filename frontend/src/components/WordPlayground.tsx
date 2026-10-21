@@ -3,6 +3,7 @@ import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, RotateCw, Shuffle, Sparkles } from 'lucide-react';
 import type { ReadingDocument, Vocabulary } from '../types';
 import { browserStorageKey } from '../api';
+import { useDictionary } from '../DictionaryPanel';
 import { createInspirationExplorer, curatedCards, personalInspirationCards, pickInspirationBatch } from '../wordInspiration';
 import type { InspirationCard, InspirationDraw } from '../wordInspiration';
 import './WordPlayground.css';
@@ -20,6 +21,7 @@ function nextCuratedDeck(): Deck {
 
 /** An optional, read-only deck: personal cards keep their real reading context. */
 export default function WordPlayground({ disabled = false, vocabulary = emptyVocabulary, document: readingDocument = null }: WordPlaygroundProps) {
+  const openDictionary = useDictionary();
   const titleId = useId();
   const helpId = useId();
   const personalPool = useMemo(() => personalInspirationCards(vocabulary, readingDocument), [vocabulary, readingDocument]);
@@ -281,6 +283,7 @@ export default function WordPlayground({ disabled = false, vocabulary = emptyVoc
       <button className="word-playground__step word-playground__step--next" type="button" onClick={() => chooseWord(deckRef.current.index + 1)} disabled={disabled || deck.cards.length < 2}
         aria-disabled={unavailable || undefined} aria-label="下一张词卡"><span>换一张</span><ArrowRight size={15} aria-hidden="true" /></button>
     </div>
+    {sample && <button type="button" className="word-playground__dictionary" disabled={unavailable} onClick={event => openDictionary(sample.word, event.currentTarget)}><BookOpen size={14} />查看 {sample.word} 的详细释义</button>}
     <span className="word-playground__announcement" role="status" aria-live="polite" aria-atomic="true">{announcement}</span>
   </section>;
 }

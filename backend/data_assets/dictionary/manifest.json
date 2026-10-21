@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "source": "ECDICT",
+  "source_repository": "https://github.com/skywind3000/ECDICT",
+  "source_commit": "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b",
+  "source_url": "https://raw.githubusercontent.com/skywind3000/ECDICT/bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b/ecdict.csv",
+  "source_sha256": "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf",
+  "license": "MIT",
+  "source_records": 770611,
+  "entries": 757041,
+  "merged_case_duplicates": 0,
+  "omitted_records": 13570,
+  "asset": "ecdict.sqlite3.gz",
+  "asset_sha256": "0c2ecace491b70d7359a3c80a596c363a809606896a203c2d9d0c6da2162ea84",
+  "asset_bytes": 28571521,
+  "database_sha256": "b6119a766ced81419e2b0f5b6aa277fb41bdcc2dd531a79d6e80fe72a9df69af",
+  "database_bytes": 70901760,
+  "sqlite_version": "3.53.1"
+}

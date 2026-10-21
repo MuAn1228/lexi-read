@@ -8,10 +8,10 @@ function cell(value: string | number | null): string {
 }
 
 export function vocabularyCsv(words: Vocabulary[]): string {
-  const headers = ['单词', '词元', '掌握状态', '规则掌握度（0–1）', '阅读遇见次数', '累计查询次数',
+  const headers = ['单词', '词元', '中文释义', '音标', '掌握状态', '规则掌握度（0–1）', '阅读遇见次数', '累计查询次数',
     '首次遇见（UTC）', '最近遇见（UTC）'];
   const statuses = { KNOWN: '已掌握', UNKNOWN: '不认识', UNCERTAIN: '不确定' };
-  const rows = words.map(word => [word.word, word.lemma, word.status ? statuses[word.status] : '未标记',
+  const rows = words.map(word => [word.word, word.lemma, word.meaning_summary ?? '', word.phonetic ?? '', word.status ? statuses[word.status] : '未标记',
     word.mastery_score, word.seen_count, word.lookup_count, word.first_seen_at, word.last_seen_at]);
   // BOM makes Chinese headers readable in common Windows spreadsheet programs.
   return '\uFEFF' + [headers, ...rows].map(row => row.map(cell).join(',')).join('\r\n') + '\r\n';

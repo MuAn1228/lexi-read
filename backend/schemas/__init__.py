@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer, field_validator, model_validator
 
 
 class Schema(BaseModel):
@@ -37,6 +37,29 @@ class VocabularyOut(Schema):
     updated_at: datetime
     first_seen_at: datetime | None
     last_seen_at: datetime | None
+
+    @computed_field
+    @property
+    def meaning_summary(self) -> str | None:
+        from backend.services.offline_dictionary import summary, OfflineDictionaryUnavailable
+        try:
+            value = summary(self.word, self.lemma)
+            if value:
+                return value
+        except OfflineDictionaryUnavailable:
+            pass
+        from backend.services.dictionary import cached_summary
+        return cached_summary(self.word, self.user_id)
+
+    @computed_field
+    @property
+    def phonetic(self) -> str | None:
+        from backend.services.offline_dictionary import lookup, OfflineDictionaryUnavailable
+        try:
+            entry = lookup(self.word, self.lemma)
+            return entry["phonetic"] or None if entry else None
+        except OfflineDictionaryUnavailable:
+            return None
 
 
 class MarkRequest(Schema):

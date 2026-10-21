@@ -96,7 +96,7 @@ function personalTone(key: string) {
   return tones[hash % tones.length];
 }
 
-/** A read-only view of actual vocabulary, not a generated dictionary entry. */
+/** Read-only vocabulary cards; dictionary meanings never stand in for context. */
 export function personalInspirationCards(vocabulary: Vocabulary[], document: ReadingDocument | null): InspirationCard[] {
   const byLemma = new Map<string, Vocabulary>();
   for (const entry of Array.isArray(vocabulary) ? vocabulary : []) {
@@ -125,7 +125,7 @@ export function personalInspirationCards(vocabulary: Vocabulary[], document: Rea
       id: `personal:${key}`,
       word: entry.word.trim(),
       kind: entry.status === 'KNOWN' ? '已掌握' : entry.status === 'UNKNOWN' ? '不认识' : entry.status === 'UNCERTAIN' ? '不确定' : '未标记',
-      meaning: null,
+      meaning: typeof entry.meaning_summary === 'string' && entry.meaning_summary.trim() ? `词典释义 · ${entry.meaning_summary.trim()}` : null,
       sentence,
       sourceLabel: '我的词库',
       contextLabel: sentence ? (title ? `原句 · ${title}` : '当前文章原句') : '当前文章中暂无原句',

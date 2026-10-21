@@ -12,7 +12,7 @@ const word = { word: 'model', lemma: 'model', status: 'UNKNOWN', mastery_score: 
 test('Chinese CSV has BOM, CRLF, actual counts and empty unassessed values', () => {
   const output = vocabularyCsv([word]);
   assert.ok(output.startsWith('\uFEFF"单词","词元"'));
-  assert.ok(output.endsWith('"model","model","不认识","","0","2","","2026-10-17T00:00:00Z"\r\n'));
+  assert.ok(output.endsWith('"model","model","","","不认识","","0","2","","2026-10-17T00:00:00Z"\r\n'));
   assert.ok(vocabularyCsv([{ ...word, status: null, mastery_score: 0 }]).includes('"未标记","0","0"'));
 });
 
@@ -26,4 +26,13 @@ test('spreadsheet formula prefixes are exported as text', () => {
   for (const value of ['=SUM(1,1)', '+1', '-1', '@test', '\t=1', '  =1', '\nword']) {
     assert.ok(vocabularyCsv([{ ...word, word: value }]).split('\r\n')[1].startsWith('"\''));
   }
+});
+
+test('CSV includes actual Chinese dictionary summary and phonetic, safely quoted', () => {
+  const entry = { ...word, meaning_summary: 'n. 模型，模范\nv. 塑造', phonetic: 'ˈmɒdl' };
+  const csv = vocabularyCsv([entry]);
+  assert.ok(csv.includes('"中文释义","音标"'));
+  assert.ok(csv.includes('"n. 模型，模范\nv. 塑造","ˈmɒdl"'));
+  assert.ok(vocabularyCsv([{ ...entry, meaning_summary: '=unsafe', phonetic: '@unsafe' }]).includes('"\'=unsafe","\'@unsafe"'));
+  assert.equal(entry.meaning_summary, 'n. 模型，模范\nv. 塑造');
 });

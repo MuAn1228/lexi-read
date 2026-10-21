@@ -6,12 +6,14 @@ import { StatusBadge, WordControls } from './WordControls';
 import WordHistoryPanel from './WordHistoryPanel';
 import RelatedWordCard from './RelatedWordCard';
 import SentencePanel from './SentencePanel';
+import { useDictionary } from './DictionaryPanel';
 
 export default function ContextPanel({ word, onMark, saving, onNext, vocabulary, onLearningChanged }: {
   word: Occurrence | null; onMark: (status: WordStatus) => void; saving: boolean;
   onNext: () => void; vocabulary: Vocabulary[];
   onLearningChanged: () => Promise<void>;
 }) {
+  const openDictionary = useDictionary();
   const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,6 +76,7 @@ export default function ContextPanel({ word, onMark, saving, onNext, vocabulary,
     <div className="context-content">
       <div className="context-word-heading"><span className="overline">IN THIS CONTEXT</span><StatusBadge status={word.status} /></div>
       <h2 className="current-word">{word.word}</h2><p className="lemma-line">{explanation?.part_of_speech || '英文词汇'}<span>·</span>词元 {explanation?.lemma || word.lemma}</p>
+      <button type="button" className="button secondary context-dictionary-button" onClick={event => openDictionary(word.word, event.currentTarget)}><BookOpen size={15} />中文词典与详细讲解</button>
       <WordControls word={word.word} status={word.status} disabled={saving} onMark={onMark} />
       <div className="context-sentence"><span className="quote-mark">“</span><p>{word.sentence}</p></div>
       <section className="meaning-section"><div className="section-label"><span>在这里，它的意思是</span>{explanation && <span className={`source-badge ${explanation.source}`}>{explanation.source === 'llm' ? 'AI 语境释义' : '离线基础释义'}</span>}</div>
