@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = ""
     llm_api_key: str = ""
+    maimemo_api_token: SecretStr = SecretStr("")
     llm_timeout_seconds: float = 30
     llm_json_mode: bool = True
     llm_max_tokens: int = Field(default=4096, gt=0)

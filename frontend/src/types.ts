@@ -46,6 +46,7 @@ export interface LearningEvent {
 }
 export interface WordHistory {
   vocabulary: Vocabulary; last_mark: LearningEvent | null; events: LearningEvent[];
+  maimemo_source?: LearningEvent | null;
 }
 export interface DashboardItem {
   vocabulary: Vocabulary; recent_seen_count: number; first_unfamiliar_at: string | null;

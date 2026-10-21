@@ -1,4 +1,11 @@
 .data-management { margin-top: 28px; }
+.vocabulary-pagination { display: flex; align-items: center; gap: 14px; }
+.maimemo-source-label { color: var(--teal); }
+.maimemo-source-filter { padding: 0 20px 16px; color: #697d69; font-size: 12px; }
+.maimemo-source-filter label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.maimemo-source-filter select { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--teal); background: #fafbf5; font: inherit; }
+.maimemo-source-filter p { margin-top: 9px; font-size: 11px; line-height: 1.8; }
+.maimemo-word-context { margin: 14px 0; padding: 13px; border-radius: 10px; background: #f1f5e9; font-size: 12px; color: #53765c; line-height: 1.8; }
 .backup-intro { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 24px; color: var(--teal); }
 .backup-intro h2 { font-size: 20px; font-weight: 500; color: var(--ink); margin-bottom: 9px; }
 .backup-intro p { font-size: 13px; line-height: 1.9; color: var(--muted); max-width: 790px; }

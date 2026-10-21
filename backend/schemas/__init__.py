@@ -257,6 +257,7 @@ class WordHistoryOut(Schema):
     vocabulary: VocabularyOut
     last_mark: EventOut | None
     events: list[EventOut]
+    maimemo_source: EventOut | None = None
 
 
 class DashboardSummary(Schema):

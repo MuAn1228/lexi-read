@@ -195,7 +195,7 @@ def word_history(word: str, session: Session = Depends(get_session), user_id: in
     if entry is None:
         raise HTTPException(404, "该单词尚无词库记录。")
     return WordHistoryOut(vocabulary=entry, last_mark=repository.last_mark(lemma),
-                          events=repository.word_history(lemma))
+                          events=repository.word_history(lemma), maimemo_source=repository.last_maimemo_import(lemma))
 
 
 @router.put("/vocabulary/{word}", response_model=VocabularyOut)

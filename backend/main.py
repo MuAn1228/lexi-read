@@ -17,6 +17,7 @@ from backend.api.sentence_routes import router as sentence_router
 from backend.api.review_routes import router as review_router
 from backend.api.question_routes import router as question_router
 from backend.api.practice_routes import router as practice_router
+from backend.api.maimemo_routes import router as maimemo_router
 from backend.services.maintenance import MaintenanceMiddleware
 from backend.ocr.service import OCRUnavailable
 
@@ -79,6 +80,7 @@ app.include_router(sentence_router)
 app.include_router(review_router)
 app.include_router(question_router)
 app.include_router(practice_router)
+app.include_router(maimemo_router)
 frontend_dist = PROJECT_ROOT / "frontend" / "dist"
 if frontend_dist.is_dir():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

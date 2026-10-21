@@ -4,6 +4,8 @@ import { errorMessage, formatDate, request } from './api';
 import type { WordHistory } from './types';
 import { StatusBadge } from './WordControls';
 import { learningEventLabel } from './eventLabels';
+import { maimemoResponse, representativeRecord } from './maimemoSources';
+import type { MaimemoRecord } from './maimemoSources';
 
 export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
   lemma: string; updatedAt?: string; revision: number;
@@ -27,6 +29,9 @@ export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
   }, [lemma, updatedAt, revision, retry]);
 
   const entry = history?.vocabulary;
+  const sourceEvent = history?.maimemo_source ?? history?.events.find(event => event.event_type === 'IMPORT_MAIMEMO');
+  const sourceRecord = Array.isArray(sourceEvent?.details.records)
+    ? representativeRecord({ records: sourceEvent.details.records as MaimemoRecord[], synced_at: sourceEvent.created_at }) : undefined;
   const visibleEvents = history?.events.slice(0, expanded ? 20 : 3) ?? [];
   return <section className="word-history" aria-labelledby="word-history-title">
     <div className="section-label"><h3 id="word-history-title"><Clock3 size={14} />这个词的学习记录</h3>{history?.last_mark && <span className="tiny-badge">之前标记过</span>}</div>
@@ -43,6 +48,7 @@ export default function WordHistoryPanel({ lemma, updatedAt, revision }: {
         <div><dt>规则掌握度</dt><dd>{entry.mastery_score === null ? '尚未评估' : `${Math.round(entry.mastery_score * 100)}%`}</dd></div>
       </dl>
       <p className="mastery-note">掌握度按你的标记和主动查词简单调整，仅供学习参考。</p>
+      {sourceRecord && <div className="maimemo-word-context"><strong>墨墨学习记录 · {sourceRecord.voc_spelling}</strong><p>学习 {sourceRecord.study_count} 次 · 上次反馈：{maimemoResponse(sourceRecord.last_response)}<br />下次复习：{sourceRecord.next_study_date ? formatDate(sourceRecord.next_study_date) : '暂无复习时间'}</p><p className="mastery-note">来自最近导入的墨墨记录，词间自评独立保存。</p></div>}
       {history.events.length > 0 ? <>
         <ol className="word-event-list">{visibleEvents.map(event => <li key={event.id}><span>{learningEventLabel(event)}</span><time dateTime={event.created_at}>{formatDate(event.created_at)}</time></li>)}</ol>
         {history.events.length > 3 && <button className="text-button history-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起记录' : `查看最近 ${history.events.length} 条记录`}</button>}

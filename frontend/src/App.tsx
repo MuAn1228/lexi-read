@@ -7,6 +7,7 @@ import type { ArticleFocus } from './articleQuestions';
 import DocumentPanel from './DocumentPanel';
 import DocumentLibraryView from './DocumentLibraryView';
 import DataManagementView from './DataManagementView';
+import MaimemoPanel from './MaimemoPanel';
 import { clearLearningPreferences } from './backupData';
 import type { BackupRestore, RestoreOutcome } from './backupData';
 import { activeArticleList, initialArticleSelection } from './documentLibrary';
@@ -62,6 +63,7 @@ export default function App() {
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
+  const [maimemoBusy, setMaimemoBusy] = useState(false);
   const [busy, setBusy] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -563,9 +565,9 @@ export default function App() {
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <StudioLanding vocabulary={vocabulary} document={document} upload={uploadZone} disabled={isLoading || saving || restorationLocked} onNavigate={setView} />}
       </>}
-      {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving} onMark={(word, status) => void mark(word, status)} />}
+      {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => setView('data')} onMark={(word, status) => void mark(word, status)} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
-      {view === 'data' && health?.auth_mode === 'local' && <DataManagementView disabled={saving || isLoading} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} />}
+      {view === 'data' && health?.auth_mode === 'local' && <><MaimemoPanel disabled={saving || isLoading || restorationLocked} onImported={refreshLearning} onBusyChange={setMaimemoBusy} /><DataManagementView disabled={saving || isLoading || maimemoBusy} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} /></>}
       {view === 'history' && <HistoryView events={events} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}

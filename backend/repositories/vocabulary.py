@@ -35,12 +35,14 @@ class VocabularyRepository:
 
     def history(self, limit: int = 100) -> list[LearningEvent]:
         return list(self.session.scalars(select(LearningEvent).where(
-            LearningEvent.user_id == self.user_id).order_by(
+            LearningEvent.user_id == self.user_id,
+            LearningEvent.event_type != "IMPORT_MAIMEMO").order_by(
                 LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(limit)))
 
     def word_history(self, lemma: str, limit: int = 20) -> list[LearningEvent]:
         return list(self.session.scalars(select(LearningEvent).where(
-            LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma).order_by(
+            LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma,
+            LearningEvent.event_type != "IMPORT_MAIMEMO").order_by(
                 LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(limit)))
 
     def utility_history(self, source_lemma: str) -> list[LearningEvent]:
@@ -58,3 +60,9 @@ class VocabularyRepository:
             LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma,
             LearningEvent.event_type.in_(("MARK_KNOWN", "MARK_UNKNOWN", "MARK_UNCERTAIN")),
         ).order_by(LearningEvent.created_at.desc(), LearningEvent.id.desc()).limit(1))
+
+    def last_maimemo_import(self, lemma: str) -> LearningEvent | None:
+        return self.session.scalar(select(LearningEvent).where(
+            LearningEvent.user_id == self.user_id, LearningEvent.lemma == lemma,
+            LearningEvent.event_type == "IMPORT_MAIMEMO",
+        ).order_by(LearningEvent.id.desc()).limit(1))
