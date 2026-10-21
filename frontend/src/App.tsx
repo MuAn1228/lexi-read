@@ -492,7 +492,10 @@ export default function App() {
     try {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(word)}`, { method: 'PUT', body: JSON.stringify({ status, ...(occurrence && document ? { document_id: document.id } : {}) }) });
       ++libraryGeneration.current; // Invalidate a library load started before this write.
-      setVocabulary(values => [updated, ...values.filter(item => item.id !== updated.id)]);
+      // Updating a status must not move the focused table row or shift other pages.
+      setVocabulary(values => values.some(item => item.id === updated.id)
+        ? values.map(item => item.id === updated.id ? updated : item)
+        : [updated, ...values]);
       setDocument(value => value ? { ...value, words: value.words.map(item => item.lemma === updated.lemma ? { ...item, status: updated.status } : item) } : null);
       if (occurrence && next && next.lemma !== occurrence.lemma) setSelectedId(current => current === occurrence.id ? next.id : current);
       setNotice(`${word} · ${status === 'KNOWN' ? '已掌握' : status === 'UNKNOWN' ? '不认识' : '不确定'}，已保存`);
