@@ -8,6 +8,8 @@ export interface VocabularyBrowsing {
   page: number;
   scrollY: number;
   expanded: number[];
+  anchorId?: number;
+  anchorOffset?: number;
 }
 
 export interface BrowsingPreferences {
@@ -32,6 +34,9 @@ export function readBrowsingPreferences(key: string, storage?: StorageLike): { p
     const saved = JSON.parse(raw);
     if (saved?.version !== 1 || !saved.vocabulary || typeof saved.vocabulary !== 'object') return fallback;
     const value = saved.vocabulary;
+    const anchor = counter(value.anchorId, Number.MAX_SAFE_INTEGER) && value.anchorId > 0
+      && typeof value.anchorOffset === 'number' && Number.isFinite(value.anchorOffset) && Math.abs(value.anchorOffset) <= 10_000_000
+      ? { anchorId: value.anchorId, anchorOffset: value.anchorOffset } : {};
     return { available: true, preferences: {
       version: 1, resumeVocabulary: saved.resumeVocabulary === true,
       vocabulary: {
@@ -41,6 +46,7 @@ export function readBrowsingPreferences(key: string, storage?: StorageLike): { p
         page: counter(value.page, 1_000_000) ? value.page : 0,
         scrollY: counter(value.scrollY, 10_000_000) ? value.scrollY : 0,
         expanded: Array.isArray(value.expanded) ? [...new Set<number>(value.expanded.filter((id: unknown) => counter(id, Number.MAX_SAFE_INTEGER) && id > 0))].slice(0, 50) : [],
+        ...anchor,
       },
     } };
   } catch { return fallback; }

@@ -26,13 +26,31 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
   const [sourceError, setSourceError] = useState('');
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [retrySources, setRetrySources] = useState(0);
+  const [sortGroups, setSortGroups] = useState<Map<number, boolean> | null>(null);
   const list = useRef<HTMLUListElement>(null);
   const scrollY = useRef(initialBrowsing.scrollY);
+  const anchor = useRef(initialBrowsing.anchorId !== undefined && initialBrowsing.anchorOffset !== undefined
+    ? { id: initialBrowsing.anchorId, offset: initialBrowsing.anchorOffset } : null);
   const restoring = useRef(true);
   const scrollToList = useRef(false);
   const latest = useRef(browsing);
   latest.current = browsing;
-  const persist = useCallback(() => onBrowsingChange({ ...latest.current, scrollY: Math.round(scrollY.current) }), [onBrowsingChange]);
+  const captureAnchor = useCallback(() => {
+    if (restoring.current || !list.current) return;
+    anchor.current = null;
+    for (const entry of list.current.children) {
+      const bounds = entry.getBoundingClientRect();
+      if (bounds.bottom > 0 && bounds.top < window.innerHeight) {
+        anchor.current = { id: Number((entry as HTMLElement).dataset.wordId), offset: bounds.top };
+        break;
+      }
+    }
+  }, []);
+  const persist = useCallback(() => {
+    captureAnchor();
+    onBrowsingChange({ ...latest.current, scrollY: Math.round(scrollY.current),
+      anchorId: anchor.current?.id, anchorOffset: anchor.current?.offset });
+  }, [captureAnchor, onBrowsingChange]);
 
   useEffect(() => {
     if (!localMode) return;
@@ -44,10 +62,12 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
     return () => controller.abort();
   }, [localMode, retrySources]);
 
-  // A status update must not change the order, including after navigation or reload.
+  // Group globally before pagination. Freeze groups on the first edit until this view closes.
   const results = useMemo(() => vocabulary.filter(word => matchesVocabularyQuery(word, query)
     && (filter === 'ALL' || (filter === 'UNMARKED' ? word.status === null : word.status === filter))
-    && matchesMaimemoSource(sources[word.lemma], sourceFilter)).sort((a, b) => b.id - a.id), [vocabulary, query, filter, sources, sourceFilter]);
+    && matchesMaimemoSource(sources[word.lemma], sourceFilter)).sort((a, b) =>
+      Number(sortGroups?.get(b.id) ?? (b.status === 'KNOWN')) - Number(sortGroups?.get(a.id) ?? (a.status === 'KNOWN'))
+      || b.id - a.id), [vocabulary, query, filter, sources, sourceFilter, sortGroups]);
   // Expanded source records affect the height above a saved position, even with no source filter.
   const awaitingSavedRecords = restoring.current && localMode && expanded.length > 0 && !sourcesLoaded && !sourceError;
   const ready = !loading && (!localMode || sourceFilter === 'ALL' || sourcesLoaded) && !awaitingSavedRecords;
@@ -60,6 +80,16 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
   useLayoutEffect(() => {
     // Wait for real vocabulary and, if selected, Maimemo sources before clamping a saved page.
     if (!ready) return;
+    if (restoring.current && anchor.current) {
+      const index = results.findIndex(word => word.id === anchor.current?.id);
+      if (index >= 0) {
+        const anchorPage = Math.floor(index / 50);
+        if (page !== anchorPage) {
+          setBrowsing(value => ({ ...value, page: anchorPage }));
+          return;
+        }
+      } else anchor.current = null;
+    }
     if (page !== currentPage) {
       scrollY.current = 0;
       setBrowsing(value => ({ ...value, page: currentPage, expanded: [] }));
@@ -71,12 +101,14 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
       scrollY.current = window.scrollY;
       scrollToList.current = false;
     } else if (restoring.current) {
-      window.scrollTo({ top: scrollY.current, behavior: 'instant' });
+      const entry = anchor.current && list.current?.querySelector<HTMLElement>(`[data-word-id="${anchor.current.id}"]`);
+      const top = entry && anchor.current ? window.scrollY + entry.getBoundingClientRect().top - anchor.current.offset : scrollY.current;
+      window.scrollTo({ top, behavior: 'instant' });
       scrollY.current = window.scrollY;
     }
     restoring.current = false;
     persist();
-  }, [ready, page, currentPage, persist]);
+  }, [ready, page, currentPage, results, persist]);
 
   useEffect(() => { if (!restoring.current) persist(); }, [browsing, persist]);
   useEffect(() => {
@@ -84,6 +116,7 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
     const onScroll = () => {
       if (restoring.current) return;
       scrollY.current = window.scrollY;
+      captureAnchor();
       clearTimeout(timer);
       timer = setTimeout(persist, 150);
     };
@@ -96,26 +129,38 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
       window.removeEventListener('pagehide', onPageHide);
       if (!restoring.current) persist();
     };
-  }, [persist]);
+  }, [captureAnchor, persist]);
 
   const changeFilter = (values: Partial<VocabularyBrowsing>) => {
-    setBrowsing(value => ({ ...value, ...values, page: 0, expanded: [] }));
+    anchor.current = null;
+    restoring.current = false;
+    setBrowsing(value => ({ ...value, ...values, page: 0, expanded: [], anchorId: undefined, anchorOffset: undefined }));
   };
   const changePage = (next: number) => {
+    anchor.current = null;
+    restoring.current = false;
     scrollToList.current = true;
-    setBrowsing(value => ({ ...value, page: next, expanded: [] }));
+    setBrowsing(value => ({ ...value, page: next, expanded: [], anchorId: undefined, anchorOffset: undefined }));
+  };
+  const markWord = (word: Vocabulary, status: WordStatus) => {
+    setSortGroups(current => {
+      if (current?.has(word.id)) return current;
+      return new Map(current ?? vocabulary.map(item => [item.id, item.status === 'KNOWN'] as const))
+        .set(word.id, word.status === 'KNOWN');
+    });
+    onMark(word.word, status);
   };
 
   return <div className="library-view">
     <dl className="vocabulary-summary">{stats.map(stat => <div className={stat.style} key={stat.label}><dt>{stat.label}</dt><dd>{stat.count}</dd></div>)}</dl>
     <section className="panel vocabulary-panel">
-      <div className="library-heading"><div><h2>词汇清单</h2><p>点击单词查看详细释义，直接标记掌握程度。</p></div><label className="word-search"><Search size={16} /><input aria-label="搜索个人词库" placeholder="搜索英文或中文释义…" maxLength={1000} value={query} onChange={event => changeFilter({ query: event.target.value })} /></label></div>
+      <div className="library-heading"><div><h2>词汇清单</h2><p>点击单词查看释义。标注时保持原位，重新进入后更新排序。</p></div><label className="word-search"><Search size={16} /><input aria-label="搜索个人词库" placeholder="搜索英文或中文释义…" maxLength={1000} value={query} onChange={event => changeFilter({ query: event.target.value })} /></label></div>
       <div className="filter-tabs" aria-label="筛选掌握状态">{filters.map(item => <button key={item.value} className={filter === item.value ? 'active' : ''} aria-pressed={filter === item.value} onClick={() => changeFilter({ filter: item.value })}>{item.label}</button>)}{(query || filter !== 'ALL' || sourceFilter !== 'ALL') && <button className="vocabulary-clear-filters" onClick={() => changeFilter({ query: '', filter: 'ALL', sourceFilter: 'ALL' })}>清除筛选</button>}</div>
       {localMode && <div className="maimemo-source-filter"><label>来源<select aria-label="筛选墨墨来源" value={sourceFilter} onChange={event => changeFilter({ sourceFilter: event.target.value as MaimemoFilter })}><option value="ALL">全部来源</option><option value="MAIMEMO">墨墨已导入</option><option value="MAIMEMO_WEAK">墨墨待巩固</option></select></label>{sourceFilter === 'MAIMEMO_WEAK' && <p>依据最近导入的忘记 / 模糊反馈或反复遗忘标签筛选，不改变词间自评。</p>}</div>}
       <details className="vocabulary-tools"><summary><Download size={14} aria-hidden="true" />导入与导出<ChevronDown size={14} aria-hidden="true" /></summary><div className="vocabulary-tool-actions"><button className="button secondary" disabled={!ready || !results.length} onClick={() => { setExportError(''); try { downloadVocabulary(results); } catch { setExportError('导出暂时失败，请重试。'); } }}><Download size={15} />导出当前筛选 CSV（{results.length}）</button><button className="button secondary" disabled={!ready || !difficultCount} onClick={() => { setExportError(''); try { downloadMaimemoWords(results); } catch (error) { setExportError(errorMessage(error)); } }}><Download size={15} />导出巩固词给墨墨（{difficultCount}）</button>{localMode && <button className="text-button" onClick={onOpenMaimemo}>从墨墨导入</button>}<p className="mastery-note">TXT 包含当前筛选中的“不认识 / 不确定”词，可粘贴到墨墨云词本。</p>{exportError && <p className="modal-error" role="alert">{exportError}</p>}</div></details>
       {storageWarning && <p className="vocabulary-storage-note" role="status">浏览器存储不可用，本次打开期间仍会保留筛选和页码；刷新后无法恢复浏览位置。</p>}
       {sourceError && <p className="inline-error vocabulary-source-error" role="status">墨墨来源暂未加载：{sourceError}<button className="text-button" onClick={() => setRetrySources(value => value + 1)}>重试读取来源</button></p>}
-      <div className="vocabulary-list-heading"><span>单词与释义</span><span>按收录顺序 · 最新在前</span></div>
+      <div className="vocabulary-list-heading"><span>单词与释义</span><span>已掌握优先 · 同组最新在前</span></div>
       <ul className="vocabulary-list" aria-label="词库单词列表" tabIndex={-1} ref={list} aria-busy={!ready}>
         {ready && visible.map(word => {
           const source = sources[word.lemma];
@@ -125,7 +170,7 @@ export default function VocabularyView({ vocabulary, onMark, saving, loading, lo
             <div className="vocabulary-entry-main">
               <div className="vocabulary-word-block"><div className="vocabulary-word-heading"><h3><button type="button" className="dictionary-word-button" onClick={event => openDictionary(word.word, event.currentTarget)} aria-label={`查看 ${word.word} 的中文释义`}>{word.word}</button></h3><StatusBadge status={word.status} /></div>{word.phonetic && <span className="vocabulary-phonetic">/{word.phonetic.replace(/^\/+|\/+$/g, '')}/</span>}{word.lemma !== word.word.toLowerCase() && <span className="vocab-lemma">词元 · {word.lemma}</span>}</div>
               <div className="vocabulary-entry-meaning"><p>{word.meaning_summary || '暂无本地释义，可打开详细讲解'}</p><button type="button" className="text-button" onClick={event => openDictionary(word.word, event.currentTarget)} aria-label={`查看 ${word.word} 的详细释义`}>详细释义 ↗</button></div>
-              <div className="vocabulary-entry-actions"><span>调整状态</span><WordControls word={word.word} status={word.status} onMark={status => onMark(word.word, status)} disabled={saving || loading} compact showLabels /></div>
+              <div className="vocabulary-entry-actions"><span>调整状态</span><WordControls word={word.word} status={word.status} onMark={status => markWord(word, status)} disabled={saving || loading} compact showLabels /></div>
             </div>
             <button type="button" className="vocabulary-records-toggle" aria-label={`${word.word} 的学习记录`} aria-expanded={isExpanded} aria-controls={`vocabulary-records-${word.id}`} onClick={() => setBrowsing(value => ({ ...value, expanded: isExpanded ? value.expanded.filter(id => id !== word.id) : [...value.expanded, word.id] }))}>学习记录<ChevronDown size={14} aria-hidden="true" /></button>
             {isExpanded && <div className="vocabulary-records" id={`vocabulary-records-${word.id}`}>
