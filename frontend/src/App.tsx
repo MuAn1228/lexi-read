@@ -122,11 +122,23 @@ export default function App() {
   const uploadOpener = useRef<HTMLElement | null>(null);
   const pageHeading = useRef<HTMLHeadingElement>(null);
   const navigationElement = useRef<HTMLElement>(null);
+  const focusHeadingOnNavigation = useRef(false);
   const requestGeneration = useRef(0);
   const libraryGeneration = useRef(0);
   const savingRef = useRef(false);
   const busyRef = useRef(false);
   const initializingRef = useRef(false);
+
+  const navigateFromMenu = (next: View) => {
+    if (next === view) return;
+    focusHeadingOnNavigation.current = window.matchMedia('(max-width: 799px)').matches;
+    setView(next);
+  };
+  useEffect(() => {
+    if (!focusHeadingOnNavigation.current) return;
+    focusHeadingOnNavigation.current = false;
+    pageHeading.current?.focus({ preventScroll: true });
+  }, [view]);
 
   const openUpload = (opener: HTMLElement | null, mode?: typeof importMode) => {
     if (proofreadLock.current) return;
@@ -193,19 +205,6 @@ export default function App() {
     saveBrowsing();
   }, [view, initializing, saveBrowsing]);
   useEffect(() => { if (view !== 'reader') void refreshLearning().catch(e => setError(errorMessage(e))); }, [view, refreshLearning]);
-  useEffect(() => {
-    const revealActiveNavigation = () => {
-      const nav = navigationElement.current;
-      const button = nav?.querySelector<HTMLButtonElement>('[aria-current="page"]');
-      if (!nav || !button || nav.scrollWidth <= nav.clientWidth) return;
-      const container = nav.getBoundingClientRect(); const item = button.getBoundingClientRect();
-      if (item.left < container.left + 8) nav.scrollLeft += item.left - container.left - 8;
-      else if (item.right > container.right - 8) nav.scrollLeft += item.right - container.right + 8;
-    };
-    revealActiveNavigation();
-    window.addEventListener('resize', revealActiveNavigation);
-    return () => window.removeEventListener('resize', revealActiveNavigation);
-  }, [view, health?.auth_mode]);
   useEffect(() => { setCitationFocus(null); }, [view, document?.id, document?.ocr_text, selectedId, revealBookmark, restorationLocked]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 3600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => {
@@ -557,7 +556,7 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       if (view !== 'reader' || !selected || busy || uploadOpen || proofreadLock.current || readerBlockedRef.current || window.document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]') || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement;
-      if (target.closest('nav') || target.matches('input, textarea, select') || target.isContentEditable) return;
+      if (target.closest('nav, .study-menu-trigger') || target.matches('input, textarea, select') || target.isContentEditable) return;
       const statuses: Record<string, WordStatus> = { '1': 'KNOWN', '2': 'UNKNOWN', '3': 'UNCERTAIN' };
       if (statuses[event.key]) { event.preventDefault(); void mark(selected.word, statuses[event.key], selected); }
       if (event.key === 'ArrowDown') { event.preventDefault(); nextWord(); }
@@ -569,7 +568,7 @@ export default function App() {
   const title = titles[view];
   const isLoading = Boolean(busy) || initializing;
   const uploadZone = (showImportOptions: boolean) => <div className={`upload-zone ${dragOver ? 'drag-over' : ''}`} onDragOver={event => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={event => { event.preventDefault(); setDragOver(false); void upload(event.dataTransfer.files[0]); }}>
-    <div className="upload-icon"><Upload size={25} /></div><h3>上传英文图片</h3><p>拖入试卷或文章截图，识别后可校对正文<br /><span>JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button>{showImportOptions && <><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'text'); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'pdf'); setError(''); }}><FileText size={16} />导入 PDF 文档</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'url'); setError(''); }}><Globe size={16} />导入网页链接</button></>}</div>{showImportOptions && <div className="demo-link"><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>}
+    <div className="upload-icon"><Upload size={25} /></div><h3>{showImportOptions ? '导入阅读材料' : '上传英文图片'}</h3><p>{showImportOptions ? '拖入英文图片，或选择下方导入方式。' : '拖入试卷或文章截图，识别后可校对正文'}<br /><span>JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button>{showImportOptions && <><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'text'); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'pdf'); setError(''); }}><FileText size={16} />导入 PDF 文档</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'url'); setError(''); }}><Globe size={16} />导入网页链接</button></>}</div>{showImportOptions && <div className="demo-link"><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>}
   </div>;
 
   return <DictionaryProvider onGenerated={result => setVocabulary(current => current.map(entry => entry.lemma === result.lemma ? { ...entry, meaning_summary: entry.meaning_summary || result.detail?.summary || null, phonetic: entry.phonetic || result.dictionary?.phonetic || null } : entry))}><div className="app-shell" data-view={view}>
@@ -601,7 +600,7 @@ export default function App() {
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
       <footer className="app-footer"><span><LexiMark className="footer-mark" />词间 · 英语阅读与词汇学习</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
-    <StudyDock items={navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local')} view={view} disabled={restorationLocked || initializing} onNavigate={setView} vocabularyCount={vocabulary.filter(word => word.status !== null).length} navigationRef={navigationElement} />
+    <StudyDock items={navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local')} view={view} disabled={restorationLocked || initializing} onNavigate={navigateFromMenu} vocabularyCount={vocabulary.filter(word => word.status !== null).length} navigationRef={navigationElement} />
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
     {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'image' ? <FileImage size={17} /> : importMode === 'url' ? <Globe size={17} /> : <FileText size={17} />}<h2 id="upload-title">导入阅读材料</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => { setImportMode('image'); setError(''); }}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => { setImportMode('text'); setError(''); }}><FileText size={15} />粘贴文章</button><button className={importMode === 'pdf' ? 'active' : ''} aria-pressed={importMode === 'pdf'} disabled={isLoading} onClick={() => { setImportMode('pdf'); setError(''); }}><FileText size={15} />上传 PDF</button><button className={importMode === 'url' ? 'active' : ''} aria-pressed={importMode === 'url'} disabled={isLoading} onClick={() => { setImportMode('url'); setError(''); }}><Globe size={15} />网页链接</button></div>{importMode === 'image' ? uploadZone(false) : importMode === 'pdf' ? <PdfImportForm file={pdfDraft?.file ?? null} mode={pdfMode} onModeChange={changePdfMode} processing={pdfProcessing} onChoose={choosePdf} onSubmit={() => void importPdf()} disabled={isLoading || saving} /> : importMode === 'url' ? <UrlImportForm url={urlDraft} onChange={changeUrlDraft} onSubmit={() => void importUrl()} disabled={isLoading || saving} /> : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
     {proofread && <PdfProofreadWorkbench key={proofread.documentId} {...proofread} onClose={() => { proofreadLock.current = false; setProofread(null); }} onSaved={proofreadSaved} onUncertainClose={closeUncertainProofread} />}

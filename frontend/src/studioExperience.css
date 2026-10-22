@@ -1,17 +1,17 @@
-/* Lexi study desk: forest green, open reading space and a floating tool dock. */
+/* Lexi study desk: forest green, left navigation and practical reading tools. */
 :root {
   --ink: #213e31; --teal: #28644f; --accent: #28644f; --muted: #61705b;
   --line: #dce4d4; --canvas: #f5f7ef; --paper: #fffef9; --surface: #fffef9;
   --font-editorial: 'Segoe UI', 'Microsoft YaHei', sans-serif;
   --font-mono: 'Consolas', 'SFMono-Regular', monospace;
-  --sidebar-width: 0px; --studio-shadow: none;
+  --sidebar-width: 222px; --studio-shadow: none;
   color: var(--ink); background: var(--canvas);
 }
 body { background: var(--canvas); }
 ::selection { background: #d7e6bb; color: #234e36; }
-.app-shell { background: var(--canvas); background-image: none; padding-left: 0; padding-bottom: calc(130px + env(safe-area-inset-bottom,0px)); }
+.app-shell { background: var(--canvas); background-image: none; padding-left: var(--sidebar-width); padding-bottom: calc(24px + env(safe-area-inset-bottom,0px)); }
 .app-shell main { width: 100%; min-width: 0; max-width: 1480px; margin: 0 auto; padding: 32px 48px 0; }
-.app-shell .topbar { position: relative; inset: auto; width: 100%; height: 78px; padding: 0 max(32px,calc((100vw - 1384px)/2)); display: flex; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 24px; border: 0; border-bottom: 1px solid #dce4d4; background: #f5f7ef; color: var(--ink); box-shadow: none; z-index: 10; }
+.app-shell .topbar { position: relative; inset: auto; width: calc(100% + var(--sidebar-width)); margin-left: calc(-1 * var(--sidebar-width)); height: 78px; padding: 0 32px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 24px; border: 0; border-bottom: 1px solid #dce4d4; background: #f5f7ef; color: var(--ink); box-shadow: none; z-index: 10; }
 .brand-lockup { min-width: 0; padding: 0; border: 0; display: flex; align-items: center; gap: 25px; }
 .app-shell .brand { gap: 9px; color: #234f3d; font: 600 24px/1.3 'Microsoft YaHei',sans-serif; letter-spacing: -.03em; }
 .app-shell .brand-icon { width: 32px; height: 36px; color: #2f6748; background: transparent; border: 0; border-radius: 0; box-shadow: none; transform: none; }
@@ -55,7 +55,7 @@ input,textarea,select { accent-color: #507d3f; }
 .error-banner { background: #fbf0df; color: #8c6139; border-color: #e6d2b4; }
 .processing-banner { background: #edf3df; color: #526d3d; border-color: #d6e1bd; }
 .error-banner,.processing-banner,.toast { border-radius: 8px; }
-.toast { bottom: calc(138px + env(safe-area-inset-bottom,0px)); background: #244f38; box-shadow: 0 8px 24px #28492d22; }
+.toast { bottom: calc(24px + env(safe-area-inset-bottom,0px)); background: #244f38; box-shadow: 0 8px 24px #28492d22; }
 .app-footer { margin-top: 32px; padding-block: 24px; color: #6a775e; border-top-color: #d9e1cd; font-size: 10px; }
 .footer-mark { width: 16px; height: 16px; margin-right: 4px; color: #457340; }
 /* The text is the focal point. Assistance reads like marginal notes. */
@@ -290,7 +290,8 @@ input,textarea,select { accent-color: #507d3f; }
  .article-card-side { padding-left: 15px; }
 }
 @media(max-width:799px) {
- .app-shell .topbar { height: 68px; padding: 0 24px; gap: 16px; }
+ .app-shell { --sidebar-width: 0px; }
+ .app-shell .topbar { height: 68px; padding: 0 24px 0 62px; gap: 16px; }
  .app-shell main { padding: 26px 24px 0; }
  .app-shell .brand { font-size: 22px; }
  .app-shell .brand-en { font-size: 21px; }
@@ -301,7 +302,7 @@ input,textarea,select { accent-color: #507d3f; }
  .vocabulary-summary dd { font-size: 27px; }
 }
 @media(max-width:620px) {
- .app-shell .topbar { padding-inline: 18px; }
+ .app-shell .topbar { padding-inline: 62px 18px; }
  .app-shell .profile { font-size: 10px; }
  .app-shell main { padding: 24px 16px 0; }
  .page-heading { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0; margin-bottom: 22px; gap: 14px; }

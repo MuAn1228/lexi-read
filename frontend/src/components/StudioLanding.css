@@ -1,37 +1,22 @@
-.studio-landing { margin: 24px 0 36px; min-width: 0; }
-.scroll-spread { --spread-inset: 5%; --spread-radius: 32px; min-width: 0; padding-block: 6px 20px; }
-.scroll-spread__sheet { margin-inline: var(--spread-inset); border-radius: var(--spread-radius); overflow: hidden; border: 1px solid #cddac5; background: #fffef9; }
-.studio-landing__import { display: grid; grid-template-columns: 1fr 1.15fr; min-height: 480px; }
-.studio-landing__intro { position: relative; overflow: hidden; padding: 44px 48px; color: #f8f9ea; background: #234f3e; }
-.studio-landing__intro::after { content: ''; position: absolute; right: -80px; bottom: -140px; width: 340px; height: 340px; border: 1px solid #b4ce8244; border-radius: 50%; pointer-events: none; }
-.studio-landing__eyebrow { position: relative; color: #c5d99b; font: 10px/1.8 var(--font-mono); letter-spacing: .16em; margin: 0 0 27px; }
-.studio-landing__intro h2 { font: 500 clamp(38px, 4.2vw, 64px)/1.35 'Microsoft YaHei', sans-serif; letter-spacing: -.05em; margin: 0; }
-.studio-landing__intro h2 > span { color: #d3e8a3; }
-.studio-landing__description { color: #d3dfcb; font-size: 13px; line-height: 2; margin-top: 24px; }
-.studio-landing__steps { position: relative; list-style: none; display: flex; gap: 23px; margin: 40px 0 0; padding: 0; }
-.studio-landing__steps li { display: flex; flex-direction: column; gap: 9px; }
-.studio-landing__steps li > span { color: #adc987; font: 10px var(--font-mono); }
-.studio-landing__steps strong { font-size: 11px; font-weight: 500; color: #e8efde; }
-.studio-landing__steps li > div > span { display: none; }
-.studio-landing__upload { min-width: 0; padding: 0 38px; align-self: stretch; }
-.studio-landing__upload-caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 24px 0 20px; border-bottom: 1px solid #e0e6d7; color: #64765d; font-size: 12px; }
-.studio-landing__upload-caption > span:last-child { font: 9px var(--font-mono); color: #6a7d5d; }
-.studio-landing .studio-landing__upload > .upload-zone { width: 100%; min-width: 0; margin: 0; padding: 30px 0 12px; background: transparent; border: 0; border-radius: 8px; }
+.studio-landing { margin: 24px 0 30px; min-width: 0; }
+.scroll-spread { --spread-inset: 9%; --spread-radius: 30px; --spread-shadow: .09; min-width: 0; padding-block: 6px 24px; }
+.scroll-spread__sheet { margin-inline: var(--spread-inset); border-radius: var(--spread-radius); overflow: hidden; border: 1px solid #bdd1ac; background: #fffef9; box-shadow: 0 14px 32px rgb(34 73 45 / var(--spread-shadow)); }
+.studio-landing__upload { min-width: 0; padding-inline: 30px; }
+.studio-landing .studio-landing__upload > .upload-zone { width: 100%; min-width: 0; margin: 0; padding: 38px 0 32px; background: transparent; border: 0; border-radius: 8px; }
 .studio-landing .studio-landing__upload .upload-icon { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 16px; color: #315b42; background: #eaf0db; border: 1px solid #d9e3c2; box-shadow: 0 4px 0 #d0dcb8; }
-.studio-landing .studio-landing__upload .upload-zone h3 { font: 600 20px/1.6 'Microsoft YaHei', sans-serif; color: #2a4937; }
-.studio-landing .studio-landing__upload .upload-zone > p { color: #63745a; font-size: 12px; line-height: 1.9; margin-top: 10px; }
+.studio-landing .studio-landing__upload .upload-zone h3 { font: 600 22px/1.6 'Microsoft YaHei', sans-serif; color: #2a4937; }
+.studio-landing .studio-landing__upload .upload-zone > p { color: #63745a; font-size: 12px; line-height: 1.9; min-height: 70px; margin-top: 10px; }
 .studio-landing .studio-landing__upload .upload-zone > p > span { display: inline-block; margin-top: 4px; color: #6d7c62; font: 10px/1.9 var(--font-mono); }
-.studio-landing .studio-landing__upload .import-entry-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 25px auto 0; max-width: 420px; }
-.studio-landing .studio-landing__upload .import-entry-actions .button { width: 100%; min-width: 0; min-height: 44px; padding: 11px 8px; margin: 0; font-size: 12px; gap: 6px; }
+.studio-landing .studio-landing__upload .import-entry-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 16px auto 0; max-width: 480px; }
+.studio-landing .studio-landing__upload .import-entry-actions .button { width: 100%; min-width: 0; min-height: 44px; padding: 11px 8px; margin: 0; font-size: 12px; gap: 6px; white-space: nowrap; }
 .studio-landing .studio-landing__upload .import-entry-actions svg { width: 15px; height: 15px; flex-shrink: 0; }
 .studio-landing .studio-landing__upload .demo-link { margin-top: 17px; padding: 0; border: 0; }
 .studio-landing .studio-landing__upload .demo-link .text-button { color: #617953; font-size: 11px; min-height: 34px; }
-.studio-landing__upload-note { border-top: 1px solid #e0e6d7; padding: 17px 0 22px; margin-top: 8px; color: #68765d; font-size: 11px; line-height: 1.8; text-align: center; }
 .studio-landing .studio-landing__upload .upload-zone.drag-over { background: #edf4dc; outline: 2px dashed #557b3e; outline-offset: 5px; }
 .studio-landing__paths { margin-top: 16px; }
 .studio-landing__paths > h2 { color: #63745a; font-size: 12px; font-weight: 400; margin-bottom: 15px; }
 .studio-landing__tiles { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border-block: 1px solid #d8e1ce; }
-.studio-landing__tile { display: flex; align-items: center; gap: 18px; width: 100%; min-width: 0; padding: 25px 24px; text-align: left; border: 0; background: transparent; border-radius: 0; transition: background-color .2s; }
+.studio-landing__tile { display: flex; align-items: center; gap: 18px; width: 100%; min-width: 0; padding: 25px 20px; text-align: left; border: 0; background: transparent; border-radius: 0; transition: background-color .2s; }
 .studio-landing__tile + .studio-landing__tile { border-left: 1px solid #d8e1ce; }
 .studio-landing__tile-number { color: #6a7d5a; font: 11px var(--font-mono); }
 .studio-landing__tile-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 8px; }
@@ -41,31 +26,23 @@
 .studio-landing__tile:hover:not(:disabled) { background: #eaf0de; }
 .studio-landing__tile:hover:not(:disabled) .studio-landing__tile-arrow { transform: translateX(4px); }
 .studio-landing__tile:disabled { opacity: .5; cursor: not-allowed; }
-@media(max-width:1000px) {
-  .studio-landing__intro { padding: 38px 30px; }
-  .studio-landing__upload { padding-inline: 26px; }
-  .studio-landing__tile { padding-inline: 16px; gap: 12px; }
+@media(max-width:1100px) {
+  .studio-landing__tile { padding-inline: 12px; gap: 10px; }
+  .studio-landing__tile-copy strong { font-size: 15px; }
 }
 @media(max-width:700px) {
-  .studio-landing__import { grid-template-columns: 1fr; }
-  .studio-landing__intro { padding: 30px 25px; }
-  .studio-landing__eyebrow { margin-bottom: 18px; }
-  .studio-landing__intro h2 { font-size: 39px; }
-  .studio-landing__description { margin-top: 18px; font-size: 12px; }
-  .studio-landing__steps { margin-top: 24px; flex-direction: row; gap: 23px; }
-  .studio-landing__steps li { flex-direction: row; align-items: center; gap: 8px; }
-  .studio-landing__upload { padding-inline: 23px; }
-  .studio-landing__upload-note { font-size: 10px; }
+  .scroll-spread { --spread-inset: 6%; }
+  .studio-landing__upload { padding-inline: 20px; }
+  .studio-landing .studio-landing__upload .upload-zone h3 { font-size: 20px; }
   .studio-landing__tiles { grid-template-columns: 1fr; }
   .studio-landing__tile, .studio-landing__tile + .studio-landing__tile { border-left: 0; border-bottom: 1px solid #d8e1ce; padding: 22px 12px; }
   .studio-landing__tile:last-child { border-bottom: 0; }
 }
 @media(max-width:380px) {
-  .studio-landing__intro h2 { font-size: 32px; }
-  .studio-landing__upload { padding-inline: 18px; }
-  .studio-landing .studio-landing__upload .import-entry-actions .button { font-size: 11px; }
+  .studio-landing__upload { padding-inline: 16px; }
+  .studio-landing .studio-landing__upload .import-entry-actions .button { font-size: 11px; gap: 4px; padding-inline: 6px; }
 }
 @media(prefers-reduced-motion:reduce) {
-  .scroll-spread { --spread-inset: 0% !important; --spread-radius: 14px !important; }
+  .scroll-spread { --spread-inset: 0% !important; --spread-radius: 12px !important; --spread-shadow: 0 !important; }
   .studio-landing__tile:hover:not(:disabled) .studio-landing__tile-arrow { transform: none; }
 }

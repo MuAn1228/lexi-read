@@ -18,22 +18,11 @@ const destinations = [
 
 /** Import remains in the supplied slot; other actions open existing learning views. */
 export default function StudioLanding({ upload, onNavigate, disabled }: StudioLandingProps) {
-  const importId = useId();
   const pathsId = useId();
 
   return <div className="studio-landing">
-    <ScrollSpread><section className="studio-landing__import" aria-labelledby={importId}>
-      <div className="studio-landing__intro">
-        <p className="studio-landing__eyebrow">A SPACE BETWEEN WORDS</p>
-        <h2 id={importId}>读进去。<br /><span>记下来。</span></h2>
-        <p className="studio-landing__description">读你感兴趣的英文，<br />把陌生的单词，变成自己的表达。</p>
-        <ol className="studio-landing__steps" aria-label="学习流程">
-          <li><span aria-hidden="true">01</span><div><strong>导入文章</strong><span>图片、PDF、文本或网页</span></div></li>
-          <li><span aria-hidden="true">02</span><div><strong>阅读查词</strong><span>结合原文理解中文释义</span></div></li>
-          <li><span aria-hidden="true">03</span><div><strong>复习生词</strong><span>按学习节奏，再见一面</span></div></li>
-        </ol>
-      </div>
-      <div className="studio-landing__upload"><div className="studio-landing__upload-caption"><span>从一份英文材料开始</span><span aria-hidden="true">01 / READ</span></div>{upload}<p className="studio-landing__upload-note">图片、PDF、文本、网页，都可以成为下一篇阅读。</p></div>
+    <ScrollSpread><section className="studio-landing__import" aria-label="导入阅读材料">
+      <div className="studio-landing__upload">{upload}</div>
     </section></ScrollSpread>
 
     <nav className="studio-landing__paths" aria-labelledby={pathsId}>
