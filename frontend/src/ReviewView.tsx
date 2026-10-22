@@ -4,6 +4,7 @@ import { ApiError, errorMessage, formatDate, request, reviewStorageKey } from '.
 import { finishReviewCard, intervalLabel, newReviewSession, readReviewSession, reconcileReviewSession, reviewQuery, writeReviewSession } from './reviewStorage';
 import type { ReviewSession } from './reviewStorage';
 import { StatusBadge } from './WordControls';
+import { PulseHeart } from './components/StudyInteractions';
 import ReviewPractice from './ReviewPractice';
 import { reviewCloze, reviewPracticeKey } from './reviewExercise';
 import type { ReviewMode } from './reviewExercise';
@@ -34,6 +35,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
   const [canDismiss, setCanDismiss] = useState(false);
   const [mode, setMode] = useState<ReviewMode>('recall');
   const [revealedCard, setRevealedCard] = useState('');
+  const [confirmedAssessments, setConfirmedAssessments] = useState(0);
   const sessionRef = useRef<ReviewSession | null>(null);
   const storageKey = useRef('');
   const restoreAttempted = useRef(false);
@@ -139,6 +141,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
       await onAssess(attempt.item, attempt.status, attempt.requestId);
       confirmed = true;
       commit(finishReviewCard(sessionRef.current!, 'assessed'), false, true);
+      setConfirmedAssessments(value => value + 1);
       setFailedStatus(null);
     } catch (error) {
       setSaveError(`${errorMessage(error)} 当前单词仍保留，请重试确认本次自评。`);
@@ -177,7 +180,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
       {loadError && <div className="review-load-error" role="alert"><AlertCircle size={17} /><span>{loadError}</span><button className="text-button" disabled={blocked} onClick={() => void refresh()}><RefreshCw size={14} />重新检查</button></div>}
       {loading && !session && <div className="review-message" role="status"><LoaderCircle size={23} className="spin" /><p>正在准备今日到期的单词…</p></div>}
       {session && <>
-        {session.size > 0 && <div className="review-progress"><div><span aria-live="polite">已处理 {processed} / {session.size}</span><span>已自评 {session.assessed} · 已跳过 {session.skipped}{session.removed > 0 && ` · 已移出 ${session.removed}`}</span></div><div className="progress-track" role="progressbar" aria-label="本组复习进度" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={processed}><div style={{ width: `${processed / session.size * 100}%` }} /></div></div>}
+        {session.size > 0 && <div className="review-progress"><div><span aria-live="polite">已处理 {processed} / {session.size}<PulseHeart run={confirmedAssessments} active={active} /></span><span>已自评 {session.assessed} · 已跳过 {session.skipped}{session.removed > 0 && ` · 已移出 ${session.removed}`}</span></div><div className="progress-track" role="progressbar" aria-label="本组复习进度" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={processed}><div style={{ width: `${processed / session.size * 100}%` }} /></div></div>}
         {item && <div className="review-card" aria-busy={saving}>
           <ReviewPractice key={practiceKey} item={item} mode={mode} onModeChange={value => { if (value !== mode) { setRevealedCard(''); setMode(value); } }} active={active} disabled={blocked || Boolean(pending) || !sessionVerified} onReveal={() => setRevealedCard(practiceKey)} onOpenDocument={onOpenDocument} headingRef={wordHeading} meta={<div className="review-meta"><StatusBadge status={latestWord?.status ?? item.vocabulary.status} /><span>{item.last_reviewed_at ? <>最近复习 · <time dateTime={item.last_reviewed_at}>{formatDate(item.last_reviewed_at)}</time></> : '尚未在这里复习'}</span><span>{item.due_at ? <>已到期 · {formatDate(item.due_at)}</> : '首次复习'}</span></div>} />
           {needsReveal && !pending && <p className="review-rating-hint">先检查或揭晓原句答案，再按自己的掌握程度自评。</p>}

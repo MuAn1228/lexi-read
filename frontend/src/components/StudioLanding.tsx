@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowRight } from 'lucide-react';
+import ScrollSpread from './ScrollSpread';
 import './StudioLanding.css';
 
 type StudioLandingProps = {
@@ -21,19 +22,19 @@ export default function StudioLanding({ upload, onNavigate, disabled }: StudioLa
   const pathsId = useId();
 
   return <div className="studio-landing">
-    <section className="studio-landing__import" aria-labelledby={importId}>
+    <ScrollSpread><section className="studio-landing__import" aria-labelledby={importId}>
       <div className="studio-landing__intro">
-        <p className="studio-landing__eyebrow">READ. COLLECT. REMEMBER.</p>
-        <h2 id={importId}>读进文章，<br />留在<span>词间。</span></h2>
-        <p className="studio-landing__description">从你想读的英文开始。查清一个词，读懂一句话，<br className="studio-landing__desktop-break" />让词汇在自己的阅读里慢慢积累。</p>
+        <p className="studio-landing__eyebrow">A SPACE BETWEEN WORDS</p>
+        <h2 id={importId}>读进去。<br /><span>记下来。</span></h2>
+        <p className="studio-landing__description">读你感兴趣的英文，<br />把陌生的单词，变成自己的表达。</p>
         <ol className="studio-landing__steps" aria-label="学习流程">
           <li><span aria-hidden="true">01</span><div><strong>导入文章</strong><span>图片、PDF、文本或网页</span></div></li>
           <li><span aria-hidden="true">02</span><div><strong>阅读查词</strong><span>结合原文理解中文释义</span></div></li>
           <li><span aria-hidden="true">03</span><div><strong>复习生词</strong><span>按学习节奏，再见一面</span></div></li>
         </ol>
       </div>
-      <div className="studio-landing__upload"><div className="studio-landing__upload-caption"><span>新的阅读</span><span aria-hidden="true">＋</span></div>{upload}<p className="studio-landing__upload-note">材料保存到你的学习空间，随时回来接着读。</p></div>
-    </section>
+      <div className="studio-landing__upload"><div className="studio-landing__upload-caption"><span>从一份英文材料开始</span><span aria-hidden="true">01 / READ</span></div>{upload}<p className="studio-landing__upload-note">图片、PDF、文本、网页，都可以成为下一篇阅读。</p></div>
+    </section></ScrollSpread>
 
     <nav className="studio-landing__paths" aria-labelledby={pathsId}>
       <h2 id={pathsId}>继续学习</h2>

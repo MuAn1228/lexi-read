@@ -1,0 +1,15 @@
+.study-glyph { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; vertical-align: middle; transform-origin: 50% 50%; pointer-events: none; }
+.study-send-glyph { width: 17px; height: 17px; }
+.study-paper-glyph { width: 16px; height: 17px; }
+.study-review-heart { width: 18px; height: 16px; margin-left: 4px; color: #55896a; opacity: 0; }
+.study-review-heart.is-confirmed { opacity: 1; }
+.study-thought-line { display: flex; align-items: center; gap: 9px; min-height: 22px; color: #557c62; }
+.study-thought-line__glyph { display: inline-flex; flex: 0 0 auto; }
+.study-thought-line__label { line-height: 1.8; }
+.study-thought-line__elapsed { min-width: 3ch; margin-left: auto; color: #829084; font: 10px/1.8 Consolas, monospace; }
+.study-thought-line[data-motion="on"] .study-thought-line__glyph { animation: study-thought-breathe 1.6s ease-in-out infinite; }
+.study-thought-line[data-motion="on"] .study-thought-line__label { background: linear-gradient(105deg, #557c62 25%, #365d42 48%, #557c62 70%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: study-thought-sheen 2s linear infinite; }
+@keyframes study-thought-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes study-thought-sheen { from { background-position: 130% 0; } to { background-position: -110% 0; } }
+@media (max-width: 600px) { .study-thought-line { gap: 7px; }.study-thought-line__elapsed { align-self: flex-start; margin-top: 3px; } }
+@media (prefers-reduced-motion: reduce) { .study-thought-line[data-motion] .study-thought-line__glyph, .study-thought-line[data-motion] .study-thought-line__label { animation: none; }.study-thought-line[data-motion] .study-thought-line__label { color: #557c62; background: none; } }
