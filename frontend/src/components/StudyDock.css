@@ -1,4 +1,4 @@
-/* A steady left rail. Only icons react to vertical pointer proximity. */
+/* Left navigation follows the document; the mobile drawer scrolls independently. */
 .study-dock { position: fixed; z-index: 35; top: 98px; bottom: 20px; left: 16px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 190px; min-width: 0; padding: 17px 12px; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #648266 transparent; scroll-behavior: auto; border: 1px solid #a7c4a732; border-radius: 21px; background: #183e32; color: #e1ead8; box-shadow: 0 7px 24px #14362814; -webkit-tap-highlight-color: transparent; }
 .study-dock__caption { display: flex; flex-shrink: 0; justify-content: space-between; padding: 5px 10px 20px; color: #b8cda8; font-size: 10px; letter-spacing: .08em; }
 .study-dock__caption > span:last-child { font: 10px/1.4 Consolas, monospace; }
@@ -26,6 +26,11 @@ dialog.study-drawer::backdrop { background: #102c26a3; backdrop-filter: blur(2px
 .study-drawer .study-dock { position: static; flex: 1; width: 100%; min-height: 0; padding: 4px 5px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .study-drawer .study-dock__caption { display: none; }
 .study-drawer .study-dock__item { flex-basis: 49px; height: 49px; font-size: 13px; gap: 15px; padding-inline: 13px; }
+
+@media (min-width: 800px) {
+  .app-shell { position: relative; }
+  .app-shell > .study-dock { position: absolute; bottom: auto; min-height: calc(100dvh - 118px); overflow: visible; overscroll-behavior: auto; }
+}
 
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .study-dock__icon { transform: translateY(calc(var(--dock-proximity, 0) * -1.5px)) scale(calc(1 + var(--dock-proximity, 0) * .14)); transition: transform .18s cubic-bezier(.2, .7, .3, 1); }

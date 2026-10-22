@@ -93,11 +93,13 @@ export default function StudyDock({ items, view, disabled, onNavigate, vocabular
     media.addEventListener('change', clearProximity);
     window.addEventListener('blur', clearProximity);
     window.addEventListener('resize', clearProximity);
+    window.addEventListener('scroll', clearProximity, { passive: true });
     return () => {
       clearProximity();
       media.removeEventListener('change', clearProximity);
       window.removeEventListener('blur', clearProximity);
       window.removeEventListener('resize', clearProximity);
+      window.removeEventListener('scroll', clearProximity);
     };
   }, [clearProximity, disabled, items]);
 
