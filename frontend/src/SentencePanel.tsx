@@ -5,6 +5,7 @@ import { rememberSentenceAnalysis, sentenceCacheKey, sentenceProblem } from './s
 import type { SentenceAnalysis, SentenceAnalysisCache } from './sentenceAnalysis';
 import type { Occurrence } from './types';
 import { ThoughtLine } from './components/StudyInteractions';
+import PronunciationButton from './PronunciationButton';
 import './sentencePanel.css';
 
 export default function SentencePanel({ word, disabled, analysisCache, pageStart = 0, analysisKey }: { word: Occurrence; disabled: boolean; analysisCache?: SentenceAnalysisCache; pageStart?: number; analysisKey?: string }) {
@@ -40,6 +41,7 @@ export default function SentencePanel({ word, disabled, analysisCache, pageStart
   return <section className="sentence-analysis" aria-label="整句翻译与长难句解析">
     <div className="section-label"><span><Languages size={14} />读懂这一整句</span>{value?.source === 'llm' && <span className="source-badge llm">AI 句子解析</span>}</div>
     <p className="sentence-analysis-intro">从句子结构和语法，理解当前单词所在的原句。</p>
+    <PronunciationButton text={word.sentence} label="朗读原句" speechKey={`context-sentence:${word.id}`} className="sentence-pronunciation" />
     {problem ? <p className="service-note" role="status">{problem}</p> : <>
       {!value && !loading && !error && <button className="button related-button" disabled={disabled} onClick={() => void analyze()}><Languages size={16} />翻译与解析本句</button>}
       {loading && <ThoughtLine label="正在翻译并拆解这句话…" />}

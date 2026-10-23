@@ -1,0 +1,17 @@
+.pronunciation-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 6px 11px; border: 1px solid #d9e5d4; border-radius: 8px; background: #f3f7ef; color: #486c46; font: inherit; font-size: 12px; line-height: 1.4; cursor: pointer; transition: background .18s, border-color .18s; }
+.pronunciation-button:hover:not(:disabled) { background: #e6efdf; border-color: #a9c39b; }
+.pronunciation-button:focus-visible, .speech-settings select:focus-visible { outline: 2px solid #618a51; outline-offset: 3px; }
+.pronunciation-button.is-speaking { background: #e1edd9; border-color: #9fbd8e; color: #31572f; }
+.pronunciation-button:disabled { cursor: not-allowed; opacity: .55; }
+.pronunciation-button--compact { width: 34px; flex-shrink: 0; padding: 5px; }
+.pronunciation-word-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pronunciation-word-heading .current-word { min-width: 0; overflow-wrap: anywhere; }
+.speech-settings { margin: 10px 0 16px; }
+.speech-settings-controls { display: flex; flex-wrap: wrap; gap: 9px 16px; }
+.speech-settings-controls label { display: inline-flex; align-items: center; gap: 7px; color: #6b7e65; font-size: 11px; }
+.speech-settings-controls select { appearance: auto; min-height: 30px; max-width: 140px; padding: 4px 6px; border: 1px solid #dfe7da; border-radius: 5px; background: #fffef9; color: #4f6549; font: inherit; cursor: pointer; }
+.speech-status { margin: 8px 0 0; color: #8a7050; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.sentence-pronunciation { margin: 0 0 14px; }
+.dictionary-speech { margin: -6px 0 18px; }
+.dictionary-speech .speech-settings { margin-bottom: 0; }
+@media (prefers-reduced-motion: reduce) { .pronunciation-button { transition: none; }.pronunciation-button .spin { animation: none; } }
