@@ -74,6 +74,8 @@ test('accent and rate changes stop current speech and apply to the next utteranc
   assert.equal(utterance.voice, gb);
   assert.equal(utterance.lang, 'en-GB');
   assert.equal(utterance.rate, 0.8);
+  assert.equal(utterance.pitch, 1);
+  assert.equal(utterance.volume, 1);
   utterance.onend();
   assert.equal(controller.getSnapshot().status, 'idle');
 });
@@ -159,4 +161,219 @@ test('a silently unresponsive engine times out and cannot revive after a retry',
   assert.equal(controller.getSnapshot().activeKey, null);
   assert.match(controller.getSnapshot().error, /中断/);
   controller.stop();
+});
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+const wav = () => new Blob(['public-example-wave'], { type: 'audio/wav' });
+
+function naturalEngine(context, { voices = [us, gb], load, play, system = true, create } = {}) {
+  const { synth } = engine(voices);
+  const requests = [], players = [], urls = [], revoked = [];
+  const controller = createSpeechController({
+    synthesis: system ? synth : null, createUtterance: system ? text => ({ text }) : null,
+    neuralAvailable: true,
+    loadAudio: (text, accent, signal) => {
+      const request = { text, accent, signal }; requests.push(request);
+      return load ? load(request) : Promise.resolve(wav());
+    },
+    createAudio: url => {
+      if (create) return create(url);
+      const player = { src: url, playbackRate: 1, preservesPitch: false, pauses: 0, plays: 0,
+        onplaying: null, onended: null, onerror: null,
+        pause() { this.pauses++; },
+        play() { this.plays++; return play ? play(player) : Promise.resolve(); },
+      };
+      players.push(player); return player;
+    },
+    createObjectURL: blob => { assert.ok(blob.size); const url = `blob:public-test-${urls.length}`; urls.push(url); return url; },
+    revokeObjectURL: url => { revoked.push(url); },
+  });
+  context.after(() => controller.stop());
+  return { synth, controller, requests, players, urls, revoked };
+}
+
+test('system voice selection prefers natural voices and Zira over a first-listed Mark', () => {
+  const mark = { ...us, name: 'Microsoft Mark - English (United States)' };
+  const zira = { ...us, name: 'Microsoft Zira - English (United States)' };
+  const natural = { ...us, localService: false, name: 'English Natural Voice' };
+  assert.equal(selectSpeechVoice([mark, zira], 'en-US'), zira);
+  assert.equal(selectSpeechVoice([mark, zira, natural], 'en-US'), natural);
+  assert.equal(selectSpeechVoice([natural, gb], 'en-GB'), gb);
+});
+
+test('natural audio supports British English even without Web Speech or an installed British voice', async context => {
+  const { controller, requests, players } = naturalEngine(context, { voices: [], system: false });
+  assert.equal(controller.getSnapshot().isSupported, true);
+  controller.setAccent('en-GB');
+  assert.equal(controller.getSnapshot().voiceAvailable, true);
+  controller.speak('curious', { key: 'word' }); await flush();
+  assert.equal(requests[0].accent, 'en-GB');
+  assert.equal(players[0].plays, 1);
+  assert.equal(controller.getSnapshot().engine, 'neural');
+  assert.equal(controller.getSnapshot().voiceName, '英式英语');
+});
+
+test('natural audio uses one normal-speed recording and adjusts playback without changing pitch', async context => {
+  const { controller, requests, players, revoked } = naturalEngine(context);
+  for (const rate of [0.8, 1, 1.2]) {
+    controller.setRate(rate); controller.speak('A public example.', { key: 'sentence' }); await flush();
+    assert.equal(players.at(-1).playbackRate, rate);
+    assert.equal(players.at(-1).preservesPitch, true);
+    assert.deepEqual(Object.keys(requests.at(-1)).sort(), ['accent', 'signal', 'text']);
+    assert.equal(controller.getSnapshot().status, 'speaking');
+  }
+  controller.stop();
+  assert.equal(revoked.length, 3);
+  assert.ok(players.every(player => player.pauses >= 1 && player.src === ''));
+});
+
+test('late old audio responses cannot create players or replace a newer word', async context => {
+  const first = deferred(), second = deferred();
+  let count = 0;
+  const { controller, requests, players, urls } = naturalEngine(context, { load: () => (++count === 1 ? first : second).promise });
+  controller.speak('first', { key: 'old' });
+  controller.speak('second', { key: 'new' });
+  assert.equal(requests[0].signal.aborted, true);
+  second.resolve(wav()); await flush();
+  first.resolve(wav()); await flush();
+  assert.equal(players.length, 1); assert.equal(urls.length, 1);
+  assert.equal(controller.getSnapshot().activeKey, 'new');
+  assert.equal(controller.getSnapshot().status, 'speaking');
+});
+
+test('stopping pending audio aborts the request and its eventual result remains silent', async context => {
+  const reply = deferred();
+  const { controller, requests, players, urls } = naturalEngine(context, { load: () => reply.promise });
+  controller.speak('public example', { key: 'word' });
+  controller.stop('unrelated'); assert.equal(requests[0].signal.aborted, false);
+  controller.stop('word'); assert.equal(requests[0].signal.aborted, true);
+  reply.resolve(wav()); await flush();
+  assert.equal(players.length, 0); assert.equal(urls.length, 0);
+  assert.equal(controller.getSnapshot().activeKey, null);
+});
+
+test('a late old play promise and callbacks cannot revive canceled audio or stop its replacement', async context => {
+  const oldPlay = deferred(); let count = 0;
+  const { controller, players, revoked } = naturalEngine(context, { play: () => (++count === 1 ? oldPlay.promise : Promise.resolve()) });
+  controller.speak('first', { key: 'old' }); await flush();
+  const first = players[0], oldPlaying = first.onplaying, oldEnd = first.onended, oldError = first.onerror;
+  controller.speak('second', { key: 'new' }); await flush();
+  assert.equal(first.onplaying, null); assert.equal(first.src, '');
+  oldPlaying(); oldEnd(); oldError(); oldPlay.resolve(); await flush();
+  assert.ok(first.pauses >= 2); assert.deepEqual(revoked, ['blob:public-test-0']);
+  assert.equal(controller.getSnapshot().activeKey, 'new');
+  assert.equal(controller.getSnapshot().engine, 'neural');
+});
+
+test('a failed natural request clearly falls back to the same accent and the next click retries natural', async context => {
+  let count = 0;
+  const { controller, synth, requests } = naturalEngine(context, { load: () => ++count === 1 ? Promise.reject(new Error('private server failure')) : Promise.resolve(wav()) });
+  controller.speak('curious'); await flush();
+  assert.equal(synth.utterances.length, 1);
+  assert.equal(controller.getSnapshot().engine, 'system');
+  assert.equal(controller.getSnapshot().voiceName, us.name);
+  assert.match(controller.getSnapshot().notice, /已回退.*再次点击/);
+  assert.equal(controller.getSnapshot().notice.includes('private'), false);
+  synth.utterances[0].onend();
+  controller.speak('curious'); await flush();
+  assert.equal(requests.length, 2);
+  assert.equal(controller.getSnapshot().engine, 'neural');
+  assert.equal(controller.getSnapshot().notice, '');
+});
+
+test('natural failure with no matching British voice never substitutes an American voice', async context => {
+  const { controller, synth, players } = naturalEngine(context, { voices: [us], load: () => Promise.reject(new Error('offline')) });
+  controller.setAccent('en-GB'); controller.speak('hello'); await flush();
+  assert.equal(synth.utterances.length, 0); assert.equal(players.length, 0);
+  assert.equal(controller.getSnapshot().status, 'error');
+  assert.match(controller.getSnapshot().error, /没有所选口音/);
+});
+
+test('autoplay denial reports the click requirement and never bypasses it through system speech', async context => {
+  let count = 0;
+  const { controller, synth, players, revoked } = naturalEngine(context, { play: () => ++count === 1 ? Promise.reject(new DOMException('gesture required', 'NotAllowedError')) : Promise.resolve() });
+  controller.speak('hello'); await flush();
+  assert.match(controller.getSnapshot().error, /点击/);
+  assert.equal(controller.getSnapshot().status, 'error');
+  assert.equal(synth.utterances.length, 0);
+  assert.equal(players[0].src, ''); assert.equal(revoked.length, 1);
+  controller.speak('hello'); await flush();
+  assert.equal(controller.getSnapshot().status, 'speaking');
+  assert.equal(controller.getSnapshot().error, '');
+});
+
+test('audio decoding failure revokes its URL and leaves the system fallback in control', async context => {
+  const play = deferred();
+  const { controller, synth, players, revoked } = naturalEngine(context, { play: () => play.promise });
+  controller.speak('hello', { key: 'word' }); await flush();
+  const player = players[0], latePlaying = player.onplaying;
+  player.onerror();
+  assert.equal(synth.utterances.length, 1); assert.equal(revoked.length, 1);
+  synth.utterances[0].onstart();
+  latePlaying(); play.resolve(); await flush();
+  assert.equal(controller.getSnapshot().engine, 'system');
+  assert.equal(controller.getSnapshot().status, 'speaking');
+});
+
+test('disconnect, accent changes, and restoring normal speed cancel natural playback completely', async context => {
+  const { controller, players, requests, revoked } = naturalEngine(context);
+  const disconnect = controller.connect();
+  controller.speak('first'); await flush(); controller.setAccent('en-GB');
+  assert.equal(players[0].src, ''); assert.equal(requests[0].signal.aborted, true);
+  controller.setRate(0.8); controller.speak('second'); await flush(); controller.setRate(1);
+  assert.equal(players[1].src, ''); assert.equal(controller.getSnapshot().rate, 1);
+  controller.speak('third'); await flush(); disconnect();
+  assert.equal(players[2].src, ''); assert.equal(revoked.length, 3);
+  assert.equal(controller.getSnapshot().activeKey, null);
+});
+
+test('removing system voices does not interrupt a playing natural recording', async context => {
+  const { controller, synth, players } = naturalEngine(context);
+  const disconnect = controller.connect();
+  controller.speak('hello'); await flush();
+  synth.voices = []; synth.dispatchEvent(new Event('voiceschanged'));
+  assert.equal(controller.getSnapshot().status, 'speaking');
+  assert.equal(controller.getSnapshot().voiceAvailable, true);
+  assert.equal(players[0].pauses, 0);
+  disconnect();
+});
+
+test('a late service status does not relabel already playing system speech as natural audio', async context => {
+  const { controller, synth } = naturalEngine(context);
+  controller.setNeuralAvailable(false, '本机自然语音尚未安装。');
+  controller.speak('hello'); synth.utterances.at(-1).onstart();
+  controller.setNeuralAvailable(true);
+  assert.equal(controller.getSnapshot().engine, 'system');
+  assert.equal(controller.getSnapshot().voiceName, us.name);
+  assert.equal(controller.getSnapshot().status, 'speaking');
+  controller.stop();
+  assert.equal(controller.getSnapshot().engine, 'neural');
+  assert.equal(controller.getSnapshot().notice, '');
+});
+
+test('natural preparation timeout aborts the request and ignores a very late response', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const reply = deferred();
+  const { controller, requests, players } = naturalEngine(context, { load: () => reply.promise });
+  controller.speak('hello'); context.mock.timers.tick(180_000);
+  assert.equal(requests[0].signal.aborted, true);
+  assert.match(controller.getSnapshot().error, /准备超时/);
+  reply.resolve(wav()); await flush();
+  assert.equal(players.length, 0);
+  assert.equal(controller.getSnapshot().status, 'error');
+});
+
+test('empty audio and player construction errors release resources before a safe fallback', async context => {
+  const empty = naturalEngine(context, { load: () => Promise.resolve(new Blob()) });
+  empty.controller.speak('hello'); await flush();
+  assert.equal(empty.players.length, 0); assert.equal(empty.synth.utterances.length, 1);
+  const broken = naturalEngine(context, { create: () => { throw new Error('private device data'); } });
+  broken.controller.speak('hello'); await flush();
+  assert.equal(broken.revoked.length, 1); assert.equal(broken.synth.utterances.length, 1);
+  assert.equal(broken.controller.getSnapshot().notice.includes('private'), false);
 });

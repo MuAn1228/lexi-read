@@ -90,7 +90,7 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
     onKeyDown={event => {
       if (event.key !== 'Tab') return;
       const modal = event.currentTarget;
-      const elements = Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], summary, [tabindex="0"]')).filter(element => element.getClientRects().length > 0);
+      const elements = Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex="0"]')).filter(element => element.getClientRects().length > 0);
       const first = elements[0], last = elements[elements.length - 1];
       if (!first) { event.preventDefault(); modal.focus(); }
       else if (event.shiftKey && (document.activeElement === first || document.activeElement === modal)) { event.preventDefault(); last.focus(); }

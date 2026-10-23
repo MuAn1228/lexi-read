@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { browserStorageKey } from './api';
+import { browserStorageKey, request, requestFile } from './api';
 import { createSpeechController, readSpeechPreferences } from './speech';
 import type { SpeechController } from './speech';
 
@@ -16,8 +16,19 @@ export function SpeechProvider({ children }: { children: ReactNode }) {
       createUtterance: supported ? text => new SpeechSynthesisUtterance(text) : null,
       preferences,
       onPreferences: value => { localStorage.setItem(browserStorageKey('speech:v1'), JSON.stringify(value)); },
+      loadAudio: (text, accent, signal) => requestFile('/api/pronunciation', { method: 'POST', body: JSON.stringify({ text, accent }), signal }),
+      createAudio: typeof Audio === 'undefined' ? undefined : url => new Audio(url),
+      createObjectURL: typeof URL.createObjectURL === 'function' ? blob => URL.createObjectURL(blob) : undefined,
+      revokeObjectURL: typeof URL.revokeObjectURL === 'function' ? url => URL.revokeObjectURL(url) : undefined,
     });
   });
+  useEffect(() => {
+    const abort = new AbortController();
+    request<{ available: boolean; reason: string | null }>('/pronunciation/status', { signal: abort.signal })
+      .then(status => { if (!abort.signal.aborted) controller.setNeuralAvailable(status.available === true, status.reason); })
+      .catch(() => { if (!abort.signal.aborted) controller.setNeuralAvailable(false, '暂时无法连接本机自然语音服务。'); });
+    return () => abort.abort();
+  }, [controller]);
   useEffect(() => {
     const disconnect = controller.connect();
     const onVisibility = () => { if (document.hidden) controller.stop(); };

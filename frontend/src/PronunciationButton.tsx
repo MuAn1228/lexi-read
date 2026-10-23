@@ -33,8 +33,10 @@ export function SpeechSettings() {
   return <div className="speech-settings">
     <div className="speech-settings-controls">
       <label htmlFor={accentId}>发音<select id={accentId} aria-label="发音口音" disabled={!speech.isSupported} value={speech.accent} onChange={event => speech.setAccent(event.target.value as SpeechAccent)}><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></label>
-      <label htmlFor={rateId}>语速<select id={rateId} aria-label="朗读语速" disabled={!speech.isSupported} value={speech.rate} onChange={event => speech.setRate(Number(event.target.value) as SpeechRate)}><option value={0.8}>0.8× 慢速</option><option value={1}>1× 正常</option><option value={1.2}>1.2× 加速</option></select></label>
+      <label htmlFor={rateId}>语速<select id={rateId} aria-label="朗读语速" disabled={!speech.isSupported} value={speech.rate} onChange={event => speech.setRate(Number(event.target.value) as SpeechRate)}><option value={0.8}>慢速 · 0.8×</option><option value={1}>正常 · 1×</option><option value={1.2}>快速 · 1.2×</option></select></label>
+      {speech.rate !== 1 && <button type="button" className="speech-rate-reset" onClick={() => speech.setRate(1)}>恢复正常语速</button>}
     </div>
+    {speech.voiceName && <p className="speech-source">{speech.engine === 'neural' ? '本机自然发音' : '系统语音'}<span>·</span>{speech.voiceName}</p>}
     <SpeechStatus />
   </div>;
 }
@@ -43,5 +45,5 @@ export function SpeechStatus() {
   const speech = useSpeech();
   const unavailable = !speech.isSupported ? '当前浏览器不支持发音，请使用新版 Edge 或 Chrome。'
     : !speech.voiceAvailable ? `设备尚未提供${speech.accent === 'en-US' ? '美式' : '英式'}英语语音。可切换口音，或在系统设置中安装对应英语语音。` : '';
-  return speech.error || unavailable ? <p className="speech-status" role="status">{speech.error || unavailable}</p> : null;
+  return speech.error || unavailable || speech.notice ? <p className="speech-status" role="status">{speech.error || unavailable || speech.notice}</p> : null;
 }
