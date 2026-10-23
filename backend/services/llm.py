@@ -262,24 +262,50 @@ class LLMService:
 
     def recommend_related_words(self, word: str, sentence: str, article: str,
                                 vocabulary: list[dict], history: list[dict],
-                                learner_context: dict | None = None) -> GeneratedCandidates:
+                                learner_context: dict | None = None,
+                                relation: Relation | None = None) -> GeneratedCandidates:
         warning = "离线推荐：基于有限的机器学习词汇关系，并结合你的标记与历史排序。"
         if self.settings.llm_provider != "offline":
             try:
+                focus = {
+                    Relation.WORD_FAMILY: "Recommend real derivations in the same word family. Explain the real "
+                        "prefix/suffix or part-of-speech relationship in Chinese, without inventing etymology. "
+                        "Ordinary plurals, tense changes, and other inflections are NOT derivations.",
+                    Relation.SYNONYM: "Recommend words with a genuinely close meaning. Explain a concrete "
+                        "difference in usage, register, collocation or nuance in Chinese; do not claim "
+                        "that all synonyms can be substituted in every sentence.",
+                    Relation.DOMAIN_RELATED: "Recommend words in a specific shared category or semantic field. "
+                        "Name the concrete shared category in Chinese; generic vague association is insufficient.",
+                    Relation.ANTONYM: "Recommend genuine antonyms for the relevant sense. Explain the "
+                        "contrast and any sense restriction in Chinese.",
+                    Relation.COLLOCATION: "Recommend natural conventional English collocations containing "
+                        "the selected word or its lemma. Explain the usage in Chinese.",
+                    Relation.CONCEPT: "Recommend concrete conceptual connections and explain the connection in Chinese.",
+                }
+                instruction = (focus[relation] + " Every candidate must have relation exactly equal to "
+                               "requested_relation. When no article is supplied, use the word's common current "
+                               "sense and state sense distinctions when relevant. " if relation is not None else
+                               "Prefer conceptual connections over synonyms or morphological word families. ")
+                data = learner_data(word, normalize_word(word), sentence, article, vocabulary, history,
+                                    learner_context)
+                if relation is not None:
+                    data["requested_relation"] = relation.value
                 result = self._complete(
                     "Generate up to 8 useful related English learning candidates for this reader. "
                     "Use the article context, known/unknown vocabulary and learning history. "
-                    "Prefer conceptual connections over synonyms or morphological word families. "
+                    + instruction +
                     "Exclude the selected word, already-known words and duplicates. "
                     "Use concise Chinese meanings and reasons. Scores are numbers between 0 and 1. "
                     "Give a precise relation: word_family, synonym, antonym, concept, collocation or domain_related. "
-                    "Do not claim that an unassessed word is known. Return an empty list when nothing is useful.",
-                    learner_data(word, normalize_word(word), sentence, article, vocabulary, history,
-                                 learner_context), CandidateBatch)
+                    "Do not claim that an unassessed word is known. Never invent words, linguistic relations "
+                    "or etymologies. Return an empty list when uncertain or nothing is useful.",
+                    data, CandidateBatch)
                 return GeneratedCandidates(result.candidates, "llm")
             except (httpx.HTTPError, ValidationError, ValueError, KeyError, IndexError, TypeError):
                 logger.warning("LLM recommendations unavailable or invalid; using offline fallback")
                 warning = "AI 服务暂时不可用或返回格式无效，已切换为有限的离线推荐。"
+        if relation is not None and relation != Relation.CONCEPT:
+            return GeneratedCandidates([], "offline", "当前无法提供可靠的所选关系拓展，请稍后重试 AI 服务。")
         relations = RELATIONS.get(normalize_word(word), []) if is_ml_context(sentence + " " + article) else []
         candidates = [Candidate(word=term, meaning=ML_GLOSSARY[term][0], reason=reason,
                                 semantic_relevance=max(.65, .96 - i * .035), context_relevance=.88,

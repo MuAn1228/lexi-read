@@ -343,6 +343,14 @@ class Relation(str, Enum):
     DOMAIN_RELATED = "domain_related"
 
 
+class RecommendationRequest(OccurrenceRequest):
+    relation: Relation | None = None
+
+
+class VocabularyRecommendationRequest(Schema):
+    relation: Relation
+
+
 class Recommendation(Schema):
     word: str
     meaning: str

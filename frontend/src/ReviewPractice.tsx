@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode, Ref } from 'react';
 import { errorMessage, request } from './api';
 import { matchesReviewAnswer, reviewCloze } from './reviewExercise';
+import { useDictionary } from './DictionaryPanel';
 import type { ReviewMode } from './reviewExercise';
 import type { ReviewItem, ReviewMeaning } from './types';
 import './reviewPractice.css';
@@ -13,6 +14,7 @@ export default function ReviewPractice({ item, mode, onModeChange, disabled, act
   onOpenDocument: (documentId: number, occurrenceId: number) => void;
   headingRef: Ref<HTMLHeadingElement>; meta: ReactNode;
 }) {
+  const openDictionary = useDictionary();
   const [revealed, setRevealed] = useState(false);
   const [input, setInput] = useState('');
   const [correct, setCorrect] = useState<boolean | null>(null);
@@ -82,6 +84,7 @@ export default function ReviewPractice({ item, mode, onModeChange, disabled, act
     </div>}
     {!revealed && !isCloze && <div className="review-context-actions"><button className="button secondary" disabled={disabled} onClick={() => reveal()}><Eye size={15} />揭晓释义</button></div>}
     {revealed && <section className="review-revealed" aria-label="本词释义与原句">
+      <button type="button" className="text-button" disabled={disabled} onClick={event => openDictionary(item.vocabulary.word, event.currentTarget)}><BookOpen size={15} />释义与词汇拓展<ArrowRight size={14} /></button>
       <div className="review-meaning">
         <div className="section-label"><span>释义</span>{meaning && meaning.source !== 'unavailable' && <span className={`source-badge ${meaning.source}`}>{meaning.source === 'llm' ? 'AI 语境释义' : '离线基础释义'}</span>}</div>
         {loading && <p className="loading-copy" role="status"><LoaderCircle size={16} className="spin" />正在获取本词释义…</p>}

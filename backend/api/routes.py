@@ -13,7 +13,7 @@ from backend.config import get_settings
 from backend.models import WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, DocumentUpdateRequest, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, DocumentUpdateRequest, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, VocabularyRecommendationRequest, WordHistoryOut
 from backend.services.feedback import FeedbackService
 from backend.services.relations import RelationService
 from backend.services.dashboard import DashboardService
@@ -254,10 +254,20 @@ def analyze_word(payload: OccurrenceRequest, session: Session = Depends(get_sess
 
 
 @router.post("/words/recommend", response_model=RecommendationsOut, dependencies=[Depends(require_llm_budget)])
-def recommend_words(payload: OccurrenceRequest, session: Session = Depends(get_session),
+def recommend_words(payload: RecommendationRequest, session: Session = Depends(get_session),
                     user_id: int = Depends(get_current_user_id)):
     occurrence, doc = require_occurrence(session, payload.occurrence_id, user_id)
-    return VocabularyAgent(VocabularyRepository(session, user_id)).recommend(occurrence, doc)
+    return VocabularyAgent(VocabularyRepository(session, user_id)).recommend(occurrence, doc, payload.relation)
+
+
+@router.post("/vocabulary/{word}/recommend", response_model=RecommendationsOut,
+             dependencies=[Depends(require_llm_budget)])
+def expand_vocabulary(word: str, payload: VocabularyRecommendationRequest,
+                      session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
+    try:
+        return VocabularyAgent(VocabularyRepository(session, user_id)).recommend_vocabulary(word, payload.relation)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/recommendations/{batch_id}/feedback", response_model=FeedbackOut)

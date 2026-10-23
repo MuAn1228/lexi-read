@@ -1,10 +1,11 @@
 """Deterministic personalized selection; replaceable independently of generation."""
 import re
+from fastapi import HTTPException
 from sqlalchemy import text
 
 from backend.models import Document, WordOccurrence
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import EventOut, Recommendation, RecommendationsOut, VocabularyOut
+from backend.schemas import EventOut, Recommendation, RecommendationsOut, Relation, VocabularyOut
 from backend.services.llm import Candidate, LLMService, learner_data
 from backend.services.vocabulary import normalize_word
 from backend.services.documents import require_document, require_current_occurrence
@@ -15,7 +16,8 @@ class VocabularyAgent:
         self.repo, self.llm = repository, llm or LLMService()
 
     def rank(self, candidates: list[Candidate], current: str, article: str,
-             vocabulary: list[dict], history: list[dict]) -> tuple[Recommendation, ...]:
+             vocabulary: list[dict], history: list[dict],
+             relation: Relation | None = None) -> tuple[Recommendation, ...]:
         knowledge = {row["lemma"]: row for row in vocabulary}
         current = normalize_word(current)
         viewed = set()
@@ -37,8 +39,13 @@ class VocabularyAgent:
                 except ValueError:
                     continue
         seen, ranked = {current}, []
-        families = ({"general", "generally", "generalize", "generalization"},)
+        families = () if relation == Relation.WORD_FAMILY else (
+            {"general", "generally", "generalize", "generalization"},)
         for candidate in candidates:
+            if relation is not None and (candidate.relation != relation or not all(
+                re.search(r"[\u3400-\u9fff]", value) for value in (candidate.meaning, candidate.reason)
+            )):
+                continue
             try:
                 lemma = normalize_word(candidate.word)
             except ValueError:
@@ -66,10 +73,12 @@ class VocabularyAgent:
                 score -= .06
             if lemma in utility:
                 score += .08 if utility[lemma] else -.12
-            personal_reason = {"UNKNOWN": "你已标为不认识，适合在当前语境中补齐。",
-                               "UNCERTAIN": "你对这个词还不确定，可以结合本文巩固。"}.get(row.get("status"), "")
+            personal_reason = ({"UNKNOWN": "你已标为不认识，适合在当前语境中补齐。",
+                                "UNCERTAIN": "你对这个词还不确定，可以结合本文巩固。"} if article.strip() else
+                               {"UNKNOWN": "你已标为不认识，可以结合词义与用法补齐。",
+                                "UNCERTAIN": "你对这个词还不确定，可以比较词义与用法巩固。"}).get(row.get("status"), "")
             if lemma in viewed:
-                personal_reason += "此前推荐过，本次结合阅读再次回顾。"
+                personal_reason += "此前推荐过，本次结合阅读再次回顾。" if article.strip() else "此前推荐过，可以再次回顾。"
             if lemma in utility:
                 personal_reason += ("你认为这组关联有帮助，已提高优先级。" if utility[lemma]
                                     else "你曾认为这组关联没有帮助，已降低优先级。")
@@ -97,23 +106,61 @@ class VocabularyAgent:
         }
         return context
 
-    def recommend(self, occurrence: WordOccurrence, document: Document) -> RecommendationsOut:
+    def recommend(self, occurrence: WordOccurrence, document: Document,
+                  relation: Relation | None = None) -> RecommendationsOut:
         vocabulary = [VocabularyOut.model_validate(row).model_dump(mode="json") for row in self.repo.all()]
         history = [EventOut.model_validate(row).model_dump(mode="json") for row in self.repo.history(100)]
         context = self.build_context(occurrence, document, vocabulary, history)
-        generated = self.llm.recommend_related_words(occurrence.word, occurrence.sentence,
-                                                     document.ocr_text, vocabulary, history,
-                                                     learner_context=context)
+        return self._recommend(occurrence.word, occurrence.sentence, document.ocr_text,
+                               vocabulary, history, context, relation, occurrence=occurrence, document=document)
+
+    def recommend_vocabulary(self, word: str, relation: Relation) -> RecommendationsOut:
+        lemma = normalize_word(word)
+        entry = self.repo.get(lemma)
+        if entry is None:
+            raise HTTPException(404, "词库中未找到这个单词。")
+        vocabulary = [VocabularyOut.model_validate(row).model_dump(mode="json") for row in self.repo.all()]
+        history = [EventOut.model_validate(row).model_dump(mode="json") for row in self.repo.history(100)]
+        last_mark = self.repo.last_mark(lemma)
+        context = {"current_word_history": {
+            "vocabulary": next((row for row in vocabulary if row["lemma"] == lemma), None),
+            "last_mark": EventOut.model_validate(last_mark).model_dump(mode="json") if last_mark else None,
+            "events": [EventOut.model_validate(row).model_dump(mode="json")
+                       for row in self.repo.word_history(lemma)],
+        }}
+        # Imported/saved words need not have an article occurrence. Do not
+        # invent a sentence or associate the request with an unrelated document.
+        return self._recommend(entry.word, "", "", vocabulary, history, context, relation)
+
+    def _recommend(self, word: str, sentence: str, article: str, vocabulary: list[dict],
+                   history: list[dict], context: dict, relation: Relation | None,
+                   *, occurrence: WordOccurrence | None = None,
+                   document: Document | None = None) -> RecommendationsOut:
+        options = {"learner_context": context}
+        if relation is not None:
+            options["relation"] = relation
+        generated = self.llm.recommend_related_words(word, sentence, article, vocabulary, history, **options)
+        lemma = normalize_word(word)
         utility_history = [EventOut.model_validate(row).model_dump(mode="json")
-                           for row in self.repo.utility_history(occurrence.lemma)]
-        selected = self.rank(generated.candidates, occurrence.lemma, document.ocr_text,
-                             vocabulary, utility_history + history)
+                           for row in self.repo.utility_history(lemma)]
         try:
             self.repo.session.execute(text("BEGIN IMMEDIATE"))
-            require_current_occurrence(self.repo.session, occurrence.id, document.id, self.repo.user_id)
-            batch = self.repo.event(occurrence.word, "RECOMMENDATION_GENERATED", document.id,
-                            {"recommended_words": [item.word for item in selected], "source": generated.source,
-                             "items": [item.model_dump(mode="json") for item in selected]})
+            if occurrence is not None and document is not None:
+                require_current_occurrence(self.repo.session, occurrence.id, document.id, self.repo.user_id)
+            elif self.repo.get(lemma) is None:
+                raise HTTPException(404, "词库中未找到这个单词。")
+            # A word can be marked known in another tab while the model runs.
+            # Rank against committed knowledge before issuing the snapshot.
+            self.repo.session.expire_all()
+            current_vocabulary = [{"lemma": row.lemma, "status": row.status, "mastery_score": row.mastery_score}
+                                  for row in self.repo.all()]
+            selected = self.rank(generated.candidates, lemma, article, current_vocabulary,
+                                 utility_history + history, relation)
+            details = {"recommended_words": [item.word for item in selected], "source": generated.source,
+                       "items": [item.model_dump(mode="json") for item in selected]}
+            if relation is not None:
+                details["requested_relation"] = relation.value
+            batch = self.repo.event(word, "RECOMMENDATION_GENERATED", document.id if document else None, details)
             self.repo.session.commit()
         except Exception:
             self.repo.session.rollback()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Eye, LoaderCircle, RefreshCw, ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { errorMessage, request } from './api';
 import type { RecommendationAction, RecommendationFeedback, RelatedWord, RelationType, WordStatus } from './types';
+import PronunciationButton from './PronunciationButton';
 
 const relationLabels: Record<RelationType, string> = {
   word_family: '同词族', synonym: '近义词', antonym: '反义词',
@@ -10,9 +11,10 @@ const relationLabels: Record<RelationType, string> = {
 type Attempt = { action: RecommendationAction; request_id: string };
 type FailedAttempt = Attempt & { message: string };
 
-export default function RelatedWordCard({ item, batchId, status, disabled, onSaved }: {
+export default function RelatedWordCard({ item, batchId, status, disabled, onSaved, variant = 'recommendation' }: {
   item: RelatedWord; batchId: number; status: WordStatus | null; disabled: boolean;
   onSaved: () => Promise<void>;
+  variant?: 'recommendation' | 'expansion';
 }) {
   const card = useRef<HTMLElement>(null);
   const active = useRef(false);
@@ -80,14 +82,14 @@ export default function RelatedWordCard({ item, batchId, status, disabled, onSav
   const blocked = disabled || busy !== null || failure !== null;
   const currentStatus = status ?? feedback?.status;
   return <article className="related-card" ref={card} aria-label={`${item.word} 关联推荐`}>
-    <h4>{item.word}</h4>
+    {variant === 'expansion' ? <div className="related-card-heading"><h4>{item.word}</h4><PronunciationButton text={item.word} label={`朗读 ${item.word}`} compact /></div> : <h4>{item.word}</h4>}
     <p className="related-meaning">{item.meaning}</p>
-    <div className="related-priority"><span className="tiny-badge">{relationLabels[item.relation]}</span>{Number.isFinite(item.priority) && <span>学习优先级 {Math.round(item.priority * 100)} / 100</span>}</div>
-    {!expanded ? <button className="text-button related-view" disabled={blocked} onClick={() => choose('VIEWED')}><Eye size={14} />查看关联</button> : <>
+    <div className="related-priority"><span className="tiny-badge">{variant === 'expansion' && item.relation === 'word_family' ? '派生词' : variant === 'expansion' && item.relation === 'domain_related' ? '同类词' : relationLabels[item.relation]}</span>{variant === 'recommendation' && Number.isFinite(item.priority) && <span>学习优先级 {Math.round(item.priority * 100)} / 100</span>}</div>
+    {!expanded ? <button className="text-button related-view" disabled={blocked} onClick={() => choose('VIEWED')}><Eye size={14} />{variant === 'expansion' ? '查看关联与区别' : '查看关联'}</button> : <>
       <p className="related-reason">{item.reason}</p>
       <fieldset className="related-feedback" disabled={blocked}><legend>你认识这个词吗？</legend>
-        <button className={currentStatus === 'KNOWN' ? 'selected' : ''} aria-pressed={currentStatus === 'KNOWN'} onClick={() => choose('KNOWN')}><Check size={13} />认识</button>
-        <button className={currentStatus === 'UNKNOWN' ? 'selected' : ''} aria-pressed={currentStatus === 'UNKNOWN'} onClick={() => choose('UNKNOWN')}><X size={13} />不认识</button>
+        <button type="button" className={currentStatus === 'KNOWN' ? 'selected' : ''} aria-pressed={currentStatus === 'KNOWN'} disabled={variant === 'expansion' && currentStatus === 'KNOWN'} onClick={() => choose('KNOWN')}><Check size={13} />{variant === 'expansion' ? '已掌握' : '认识'}</button>
+        <button type="button" className={currentStatus === 'UNKNOWN' ? 'selected' : ''} aria-pressed={currentStatus === 'UNKNOWN'} disabled={variant === 'expansion' && (currentStatus === 'UNKNOWN' || currentStatus === 'KNOWN')} onClick={() => choose('UNKNOWN')}><X size={13} />{variant === 'expansion' ? currentStatus === 'KNOWN' ? '已在词库 · 已掌握' : currentStatus === 'UNKNOWN' ? '已在生词库' : '加入生词' : '不认识'}</button>
       </fieldset>
       <fieldset className="related-feedback" disabled={blocked}><legend>这个关联对你有帮助吗？</legend>
         <button className={feedback?.useful === true ? 'selected' : ''} aria-pressed={feedback?.useful === true} onClick={() => choose('USEFUL')}><ThumbsUp size={13} />这个关联有用</button>
