@@ -12,6 +12,10 @@
 .speech-settings-controls select { appearance: auto; min-height: 30px; max-width: 140px; padding: 4px 6px; border: 1px solid #dfe7da; border-radius: 5px; background: #fffef9; color: #4f6549; font: inherit; cursor: pointer; }
 .speech-status { margin: 8px 0 0; color: #8a7050; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
 .speech-source { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 8px 0 0; color: #6b7e65; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.speech-hint, .speech-attribution { margin: 8px 0 0; color: #6b7e65; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.speech-attribution { display: flex; flex-wrap: wrap; gap: 3px 10px; }
+.speech-attribution a { color: #486c46; text-decoration: underline; text-underline-offset: 3px; }
+.speech-attribution a:focus-visible { outline: 2px solid #618a51; outline-offset: 3px; }
 .speech-rate-reset { min-height: 30px; padding: 3px 5px; border: 0; border-radius: 4px; background: transparent; color: #486c46; font: inherit; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .sentence-pronunciation { margin: 0 0 14px; }
 .dictionary-speech { margin: -6px 0 18px; }

@@ -1,6 +1,8 @@
 """Offline speech tests use fake model samples and isolated temporary caches."""
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
 from io import BytesIO
+import json
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -38,6 +40,7 @@ def runtime(tmp_path, monkeypatch):
         path.write_bytes(b"fake optional model")
     monkeypatch.setattr(speech, "get_settings", lambda: settings)
     monkeypatch.setattr(speech, "_dependency_problem", lambda: None)
+    monkeypatch.setattr("backend.services.word_recordings.record_word", lambda *args: None)
     engine = FakeEngine()
     monkeypatch.setattr(speech, "_get_engine", lambda *args: speech._PiperAdapter(engine, SimpleNamespace))
     return settings, engine
@@ -104,18 +107,31 @@ def test_long_text_chunks_stay_bounded_and_in_original_order():
 
 
 @pytest.mark.parametrize("accent,voice", [("en-US", "en_US-ljspeech-medium"), ("en-GB", "en_GB-cori-medium")])
-def test_fixed_natural_speed_voice_and_pcm_wav_format(runtime, accent, voice):
+def test_clear_word_cadence_voice_and_pcm_wav_format(runtime, accent, voice):
     _, engine = runtime
     data, selected_voice = speech.synthesize("Curious", accent)
     assert selected_voice == voice
-    assert engine.calls == [("Curious", {"length_scale": 1.0})]
+    assert engine.calls == [("Curious", {"length_scale": 1.35})]
     with wave.open(BytesIO(data), "rb") as audio:
         assert (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) == (1, 2, 22_050)
-        assert audio.getnframes() == 240
-        assert len(audio.readframes(1000)) == 480
+        expected_frames = round(.35 * 22_050) + 240 + round(.20 * 22_050)
+        assert audio.getnframes() == expected_frames
+        assert len(audio.readframes(expected_frames + 1)) == expected_frames * 2
 
 
-def test_piper_adapter_keeps_sentence_order_and_uses_normal_length_scale():
+@pytest.mark.parametrize("text,scale", [
+    ("curious", 1.35), ("Curious.", 1.35), ("hello!", 1.35), ("why?", 1.35),
+    ("well-being", 1.35), ("don't", 1.35), ("don’t", 1.35), ("don‘t", 1.35),
+    ("readers'", 1.35), ("readers’", 1.35), ("It's.", 1.35),
+    ("a curious reader", 1.18), ("Read this slowly.", 1.18), ("Hello. Again.", 1.18),
+])
+def test_word_and_sentence_profiles_change_timing_without_changing_text(runtime, text, scale):
+    _, engine = runtime
+    speech.synthesize(text, "en-US")
+    assert engine.calls == [(text, {"length_scale": scale})]
+
+
+def test_piper_adapter_keeps_sentence_order_and_adds_only_sentence_boundary_pauses():
     chunks = [SimpleNamespace(audio_float_array=np.array([value], dtype=np.float32),
                               sample_rate=22_050, sample_width=2, sample_channels=1)
               for value in (.1, .2, .3)]
@@ -125,11 +141,64 @@ def test_piper_adapter_keeps_sentence_order_and_uses_normal_length_scale():
         return iter(chunks)
     adapter = speech._PiperAdapter(SimpleNamespace(synthesize=synthesize), SimpleNamespace)
     samples, rate = adapter.synthesize("First. Second. Third.", "en-US")
-    assert calls == [("First. Second. Third.", 1.0)]
-    assert np.allclose(samples, [.1, .2, .3]) and rate == 22_050
+    assert calls == [("First. Second. Third.", 1.18)]
+    pause_frames = round(.18 * 22_050)
+    expected = np.concatenate([np.array([.1], dtype=np.float32), np.zeros(pause_frames, dtype=np.float32),
+                               np.array([.2], dtype=np.float32), np.zeros(pause_frames, dtype=np.float32),
+                               np.array([.3], dtype=np.float32)])
+    assert np.array_equal(samples, expected) and rate == 22_050
     chunks[1].sample_rate = 48_000
     with pytest.raises(speech.PronunciationUnavailable):
         adapter.synthesize("First. Second. Third.", "en-US")
+
+
+def test_start_and_end_protection_preserves_all_original_pcm_samples(runtime, monkeypatch):
+    _, engine = runtime
+    # Deliberate first/last nonzero samples expose clipping, trimming or fades.
+    original = np.array([.75, -.25, 0, .125, -.5], dtype=np.float32)
+    monkeypatch.setattr(engine, "synthesize", lambda *args, **kwargs: [SimpleNamespace(
+        audio_float_array=original, sample_rate=22_050, sample_width=2, sample_channels=1)])
+    data, _ = speech.synthesize("complete", "en-US")
+    with wave.open(BytesIO(data), "rb") as audio:
+        actual = np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2")
+    leading_frames, trailing_frames = round(.35 * 22_050), round(.20 * 22_050)
+    assert len(actual) == leading_frames + len(original) + trailing_frames
+    assert np.count_nonzero(actual[:leading_frames]) == 0
+    assert np.count_nonzero(actual[-trailing_frames:]) == 0
+    expected_pcm = (original * 32767).astype("<i2")
+    assert np.array_equal(actual[leading_frames:-trailing_frames], expected_pcm)
+    assert actual[leading_frames] == expected_pcm[0]
+    assert actual[-trailing_frames - 1] == expected_pcm[-1]
+
+
+def test_long_clause_keeps_chunk_order_with_exact_boundary_pauses(runtime):
+    _, engine = runtime
+    text = "This is one continuous English clause with several words " * 14
+    text = speech.normalize_text(text)
+    chunks = speech.split_text(text)
+    assert len(chunks) >= 3
+    data, _ = speech.synthesize(text, "en-US")
+    assert engine.calls == [(chunk, {"length_scale": 1.18}) for chunk in chunks]
+    original_pcm = (np.array([-.5, 0, .5] * 80, dtype=np.float32) * 32767).astype("<i2")
+    expected_parts = [np.zeros(round(.35 * 22_050), dtype="<i2")]
+    for index in range(len(chunks)):
+        if index:
+            expected_parts.append(np.zeros(round(.18 * 22_050), dtype="<i2"))
+        expected_parts.append(original_pcm)
+    expected_parts.append(np.zeros(round(.20 * 22_050), dtype="<i2"))
+    with wave.open(BytesIO(data), "rb") as audio:
+        actual = np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2")
+    assert np.array_equal(actual, np.concatenate(expected_parts))
+
+
+def test_protection_silence_is_counted_in_the_audio_size_limit(runtime, monkeypatch):
+    settings, engine = runtime
+    padding_bytes = (round(.35 * 22_050) + round(.20 * 22_050)) * 2
+    monkeypatch.setattr(speech, "MAX_AUDIO_BYTES", padding_bytes + 240 * 2 + 43)
+    with pytest.raises(speech.PronunciationUnavailable, match="音频过长"):
+        speech.synthesize("curious", "en-US")
+    assert len(engine.calls) == 1
+    assert not (settings.storage_dir / "tts-audio").exists()
 
 
 def test_success_is_cached_and_new_service_call_reuses_without_loading(runtime, monkeypatch):
@@ -140,6 +209,32 @@ def test_success_is_cached_and_new_service_call_reuses_without_loading(runtime, 
     assert not list(files[0].parent.glob("*.part"))
     monkeypatch.setattr(speech, "_get_engine", lambda *args: pytest.fail("cache hit loaded model"))
     assert speech.synthesize("curious", "en-US") == (data, voice)
+    assert len(engine.calls) == 1
+
+
+def test_old_unprotected_cache_is_not_reused(runtime):
+    settings, engine = runtime
+    identity = speech._file_identity(settings.storage_dir)
+    assert identity[0] == "piper-pcm22050-clear-v2"
+    previous_identity = ("piper-pcm22050-v1", *identity[1:])
+    old_key = sha256(json.dumps([previous_identity, "curious", "en-US"], ensure_ascii=True).encode("ascii")).hexdigest()
+    old_path = settings.storage_dir / "tts-audio" / f"{old_key}.wav"
+    old_path.parent.mkdir()
+    output = BytesIO()
+    with wave.open(output, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(22_050)
+        audio.writeframes(b"\x00\x40" * 240)
+    old_data = output.getvalue()
+    assert speech._valid_wav(old_data)
+    old_path.write_bytes(old_data)
+
+    new_data, _ = speech.synthesize("curious", "en-US")
+    assert len(engine.calls) == 1 and new_data != old_data
+    assert old_path.read_bytes() == old_data
+    assert len(list(old_path.parent.glob("*.wav"))) == 2
+    assert speech.synthesize("curious", "en-US")[0] == new_data
     assert len(engine.calls) == 1
 
 
@@ -317,7 +412,7 @@ def test_public_auth_runs_before_speech_and_never_opens_models(tmp_path, monkeyp
     settings = Settings(app_mode="public", cors_origins="https://reader.example", data_dir=tmp_path, _env_file=None)
     monkeypatch.setattr("backend.auth.get_settings", lambda: settings)
     monkeypatch.setattr(routes, "pronunciation_status", lambda: pytest.fail("unauthenticated status reached runtime"))
-    monkeypatch.setattr(routes, "synthesize", lambda *args: pytest.fail("unauthenticated synthesis reached runtime"))
+    monkeypatch.setattr(routes, "synthesize_with_source", lambda *args: pytest.fail("unauthenticated synthesis reached runtime"))
     app = FastAPI()
     app.include_router(routes.router)
     def session():

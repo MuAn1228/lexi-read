@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/speech.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { createSpeechController, readSpeechPreferences, selectSpeechVoice, speechTextProblem } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { createSpeechController, readSpeechPreferences, restoreSpeechPreferences, selectSpeechVoice, speechTextProblem } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const us = { lang: 'en-US', name: 'US offline', localService: true, default: false };
 const gb = { lang: 'en-GB', name: 'British offline', localService: true, default: false };
 
@@ -142,6 +142,51 @@ test('preference parsing ignores malformed input and speech length counts Unicod
   assert.equal(speechTextProblem('hello ' + '🌱'.repeat(3_994)), '');
   assert.match(speechTextProblem('hello ' + '🌱'.repeat(3_995)), /4,000/);
   assert.match(speechTextProblem(' \n\t'), /没有/);
+});
+
+test('a recalibrated voice resets legacy speed once and keeps the selected accent', () => {
+  for (const rate of [0.8, 1, 1.2]) {
+    for (const accent of ['en-US', 'en-GB']) {
+      assert.deepEqual(restoreSpeechPreferences(null, JSON.stringify({ accent, rate })), { accent, rate: 1 });
+    }
+  }
+  assert.deepEqual(restoreSpeechPreferences(null, null), { accent: 'en-US', rate: 1 });
+  assert.deepEqual(restoreSpeechPreferences(null, 'unreadable'), { accent: 'en-US', rate: 1 });
+});
+
+test('saved recalibrated preferences take precedence and preserve later speed choices across reloads', () => {
+  const legacy = JSON.stringify({ accent: 'en-GB', rate: 1.2 });
+  for (const rate of [0.8, 1, 1.2]) {
+    const current = JSON.stringify({ accent: 'en-US', rate });
+    assert.deepEqual(restoreSpeechPreferences(current, legacy), { accent: 'en-US', rate });
+    assert.deepEqual(restoreSpeechPreferences(JSON.stringify(restoreSpeechPreferences(current, legacy)), legacy), { accent: 'en-US', rate });
+  }
+  assert.deepEqual(restoreSpeechPreferences('{"accent":"en-GB","rate":0.8}', null), { accent: 'en-GB', rate: 0.8 });
+});
+
+test('invalid recalibrated preferences use safe defaults instead of recovering the old fast speed', () => {
+  const legacy = '{"accent":"en-GB","rate":1.2}';
+  for (const current of ['', 'bad json', 'null', '[]', 'true', '{}', '{"accent":"zh-CN","rate":9}']) {
+    assert.deepEqual(restoreSpeechPreferences(current, legacy), { accent: 'en-US', rate: 1 });
+  }
+  assert.deepEqual(restoreSpeechPreferences('{"accent":"en-GB","rate":1.3}', legacy), { accent: 'en-GB', rate: 1 });
+});
+
+test('missing storage still starts at normal speed and rejected preference writes do not prevent speech', () => {
+  const { synth } = engine();
+  const controller = createSpeechController({
+    synthesis: synth,
+    createUtterance: text => ({ text }),
+    preferences: restoreSpeechPreferences(null, null),
+    onPreferences: () => { throw new Error('storage unavailable'); },
+  });
+  assert.equal(controller.getSnapshot().rate, 1);
+  controller.setAccent('en-GB');
+  controller.setRate(0.8);
+  controller.speak('curious');
+  assert.equal(synth.utterances.at(-1).lang, 'en-GB');
+  assert.equal(synth.utterances.at(-1).rate, 0.8);
+  controller.stop();
 });
 
 test('a silently unresponsive engine times out and cannot revive after a retry', context => {
@@ -283,7 +328,7 @@ test('a failed natural request clearly falls back to the same accent and the nex
   controller.speak('curious'); await flush();
   assert.equal(requests.length, 2);
   assert.equal(controller.getSnapshot().engine, 'neural');
-  assert.equal(controller.getSnapshot().notice, '');
+  assert.match(controller.getSnapshot().notice, /暂无.*录音.*本机合成/);
 });
 
 test('natural failure with no matching British voice never substitutes an American voice', async context => {
@@ -376,4 +421,157 @@ test('empty audio and player construction errors release resources before a safe
   broken.controller.speak('hello'); await flush();
   assert.equal(broken.revoked.length, 1); assert.equal(broken.synth.utterances.length, 1);
   assert.equal(broken.controller.getSnapshot().notice.includes('private'), false);
+});
+
+const recordingAttribution = {
+  author: 'Public example recorder', license: 'CC BY-SA 4.0',
+  source_url: 'https://commons.wikimedia.org/wiki/File:En-us-example.ogg',
+  license_url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+};
+const recorded = () => ({ blob: wav(), source: 'dictionary', attribution: { ...recordingAttribution } });
+
+test('a verified dictionary recording changes source only after its own response and uses the selected playback rate', async context => {
+  const response = deferred();
+  const { controller, players } = naturalEngine(context, { load: () => response.promise });
+  controller.speak('example');
+  assert.notEqual(controller.getSnapshot().engine, 'dictionary');
+  assert.equal(controller.getSnapshot().voiceName, '');
+  assert.equal(controller.getSnapshot().attribution, null);
+  response.resolve(recorded()); await flush();
+  assert.equal(controller.getSnapshot().engine, 'dictionary');
+  assert.equal(controller.getSnapshot().voiceName, '美式英语');
+  assert.deepEqual(controller.getSnapshot().attribution, recordingAttribution);
+  assert.equal(players[0].playbackRate, 1);
+  assert.equal(players[0].preservesPitch, true);
+  players[0].onended();
+  assert.equal(controller.getSnapshot().engine, 'dictionary', 'recording credits stay available after playback');
+  assert.deepEqual(controller.getSnapshot().attribution, recordingAttribution);
+});
+
+test('new requests clear old recording credits and aborted late metadata cannot replace the current source', async context => {
+  const late = deferred(), current = deferred(); let count = 0;
+  const { controller } = naturalEngine(context, { load: () => ++count === 1 ? Promise.resolve(recorded()) : count === 2 ? late.promise : current.promise });
+  controller.speak('example'); await flush();
+  assert.equal(controller.getSnapshot().engine, 'dictionary');
+  controller.speak('older');
+  assert.equal(controller.getSnapshot().attribution, null);
+  assert.equal(controller.getSnapshot().voiceName, '');
+  controller.speak('A public example sentence.');
+  current.resolve({ blob: wav(), source: 'piper' }); await flush();
+  late.resolve(recorded()); await flush();
+  assert.equal(controller.getSnapshot().engine, 'neural');
+  assert.equal(controller.getSnapshot().attribution, null);
+  assert.equal(controller.getSnapshot().notice, '');
+});
+
+test('a local synthesis fallback for a single word is explicit while a normal sentence needs no warning', async context => {
+  const { controller } = naturalEngine(context, { load: () => Promise.resolve({ blob: wav(), source: 'piper' }) });
+  controller.speak('example'); await flush();
+  assert.match(controller.getSnapshot().notice, /此词暂无.*所选口音录音.*本机合成/);
+  controller.speak('A public example.'); await flush();
+  assert.equal(controller.getSnapshot().notice, '');
+  assert.equal(controller.getSnapshot().engine, 'neural');
+  assert.equal(controller.getSnapshot().attribution, null);
+});
+
+test('stop, accent changes and system fallbacks never retain dictionary recording credits', async context => {
+  let count = 0;
+  const { controller, synth } = naturalEngine(context, { load: () => ++count === 3 ? Promise.reject(new Error('offline')) : Promise.resolve(recorded()) });
+  controller.speak('example'); await flush(); controller.stop();
+  assert.equal(controller.getSnapshot().attribution, null);
+  controller.speak('example'); await flush(); controller.setAccent('en-GB');
+  assert.equal(controller.getSnapshot().attribution, null);
+  controller.speak('example'); await flush();
+  assert.equal(controller.getSnapshot().engine, 'system');
+  assert.equal(controller.getSnapshot().attribution, null);
+  assert.equal(synth.utterances.at(-1).lang, 'en-GB');
+});
+
+test('an uncredited dictionary result cannot be labelled as a usable recording', async context => {
+  const { controller, players, synth } = naturalEngine(context, { load: () => Promise.resolve({ blob: wav(), source: 'dictionary' }) });
+  controller.speak('example'); await flush();
+  assert.equal(players.length, 0);
+  assert.equal(synth.utterances.length, 1);
+  assert.equal(controller.getSnapshot().engine, 'system');
+  assert.equal(controller.getSnapshot().attribution, null);
+});
+
+const apiSource = await readFile(new URL('../src/api.ts', import.meta.url), 'utf8');
+let apiModule = 0;
+async function pronunciationAPI(context, respond, guest = false) {
+  const saved = { fetch: globalThis.fetch, window: globalThis.window, storage: globalThis.localStorage };
+  context.after(() => {
+    globalThis.fetch = saved.fetch; globalThis.window = saved.window; globalThis.localStorage = saved.storage;
+  });
+  globalThis.window = { location: { origin: 'https://reader.example.com' } };
+  const stored = new Map();
+  globalThis.localStorage = { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) };
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/health')) return new Response(JSON.stringify({ auth_mode: guest ? 'guest' : 'local' }), { headers: { 'Content-Type': 'application/json' } });
+    if (url.endsWith('/session')) return new Response(JSON.stringify({ token: 'public-test-identity' }), { headers: { 'Content-Type': 'application/json' } });
+    return respond(url, init);
+  };
+  const environment = JSON.stringify({ VITE_API_ORIGIN: 'https://api.example.com', BASE_URL: '/lexi-read/' });
+  const output = ts.transpileModule(apiSource.replaceAll('import.meta.env', `(${environment})`), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText;
+  const client = await import(`data:text/javascript;base64,${Buffer.from(`${output}\n// pronunciation ${++apiModule}`).toString('base64')}`);
+  return { client, calls };
+}
+
+function pronunciationResponse(source = 'dictionary', attribution = recordingAttribution) {
+  const headers = { 'Content-Type': 'audio/wav' };
+  if (source !== null) headers['X-Pronunciation-Source'] = source;
+  if (attribution !== null) headers['X-Pronunciation-Attribution'] = typeof attribution === 'string' ? attribution : JSON.stringify(attribution);
+  return new Response(wav(), { headers });
+}
+
+test('pronunciation requests authenticate one fixed backend path and return verified recording credits', async context => {
+  const abort = new AbortController();
+  const { client, calls } = await pronunciationAPI(context, (url, init) => {
+    assert.equal(url, 'https://api.example.com/api/pronunciation');
+    assert.equal(init.method, 'POST');
+    assert.equal(init.headers.get('Authorization'), 'Bearer public-test-identity');
+    assert.deepEqual(JSON.parse(init.body), { text: 'example', accent: 'en-GB' });
+    assert.equal(init.signal.aborted, false);
+    return pronunciationResponse();
+  }, true);
+  const result = await client.requestPronunciation('example', 'en-GB', abort.signal);
+  assert.equal(result.source, 'dictionary');
+  assert.deepEqual(result.attribution, recordingAttribution);
+  assert.ok(result.blob.size);
+  assert.ok(calls.every(call => !call.url.includes('public-test-identity')));
+});
+
+test('unsafe source links, license links and disguised HTML credits are rejected before dictionary playback', async context => {
+  let attribution = recordingAttribution;
+  const { client } = await pronunciationAPI(context, () => pronunciationResponse('dictionary', attribution));
+  const bad = [
+    null, 'bad json', '[]', '{}',
+    { ...recordingAttribution, author: '<a href="https://evil.example">Recorder</a>' },
+    { ...recordingAttribution, license: '<script>alert(1)</script>' },
+    { ...recordingAttribution, author: 'Recorder\nInjected header' },
+    { ...recordingAttribution, license: 'x'.repeat(121) },
+    ...['javascript:alert(1)', 'http://commons.wikimedia.org/wiki/File:Word.ogg', 'https://commons.wikimedia.org.evil.example/wiki/File:Word.ogg', 'https://commons.wikimedia.org@evil.example/wiki/File:Word.ogg', 'https://commons.wikimedia.org/wiki/User:Recorder', 'https://commons.wikimedia.org/wiki/File:Word.ogg?redirect=evil', 'https://commons.wikimedia.org:444/wiki/File:Word.ogg'].map(source_url => ({ ...recordingAttribution, source_url })),
+    ...['javascript:alert(1)', 'https://creativecommons.org.evil.example/licenses/by/4.0/', 'https://evil.example/licenses/by/4.0/', 'https://creativecommons.org/about/', 'https://creativecommons.org/licenses/by/4.0/#injected'].map(license_url => ({ ...recordingAttribution, license_url })),
+  ];
+  for (attribution of bad) await assert.rejects(client.requestPronunciation('example', 'en-US'), /来源信息不完整/);
+});
+
+test('synthesized audio never receives dictionary credits and unknown audio sources cannot impersonate Piper', async context => {
+  let source = 'piper';
+  const { client } = await pronunciationAPI(context, () => pronunciationResponse(source, { ...recordingAttribution, source_url: 'javascript:alert(1)' }));
+  const synthesized = await client.requestPronunciation('A public example.', 'en-US');
+  assert.equal(synthesized.source, 'piper');
+  assert.equal(synthesized.attribution, undefined);
+  for (source of [null, '', 'system', 'natural', '<a>dictionary</a>']) await assert.rejects(client.requestPronunciation('example', 'en-US'), /来源信息不完整/);
+});
+
+test('a canceled pronunciation request cannot fetch audio or recover external metadata', async context => {
+  const { client, calls } = await pronunciationAPI(context, () => { throw new Error('audio fetch must not happen'); });
+  const abort = new AbortController(); abort.abort();
+  await assert.rejects(client.requestPronunciation('example', 'en-US', abort.signal), error => error.name === 'AbortError');
+  assert.equal(calls.some(call => call.url.endsWith('/pronunciation')), false);
 });

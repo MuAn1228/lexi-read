@@ -1,3 +1,4 @@
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -5,7 +6,7 @@ from pydantic import BaseModel, Field, StrictStr
 
 from backend.auth import get_current_user_id
 from backend.services.pronunciation import (PronunciationBusy, PronunciationUnavailable,
-                                            pronunciation_status, synthesize)
+                                            pronunciation_status, synthesize_with_source)
 
 router = APIRouter(prefix="/api/pronunciation")
 
@@ -30,7 +31,7 @@ def status(response: Response, user_id: int = Depends(get_current_user_id)):
 @router.post("")
 def pronunciation(payload: PronunciationRequest, user_id: int = Depends(get_current_user_id)):
     try:
-        data, voice = synthesize(payload.text, payload.accent)
+        data, voice, source, attribution = synthesize_with_source(payload.text, payload.accent)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except PronunciationBusy as exc:
@@ -38,5 +39,7 @@ def pronunciation(payload: PronunciationRequest, user_id: int = Depends(get_curr
     except PronunciationUnavailable as exc:
         raise HTTPException(503, str(exc), headers={"Cache-Control": "private, no-store"}) from exc
     return Response(content=data, media_type="audio/wav", headers={
-        "X-Pronunciation-Voice": voice, "Cache-Control": "private, no-store",
+        "X-Pronunciation-Voice": voice, "X-Pronunciation-Source": source,
+        "X-Pronunciation-Attribution": json.dumps(attribution, ensure_ascii=True, separators=(",", ":")) if attribution else "",
+        "Cache-Control": "private, no-store",
     })

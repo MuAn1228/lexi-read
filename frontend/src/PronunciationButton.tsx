@@ -36,7 +36,14 @@ export function SpeechSettings() {
       <label htmlFor={rateId}>语速<select id={rateId} aria-label="朗读语速" disabled={!speech.isSupported} value={speech.rate} onChange={event => speech.setRate(Number(event.target.value) as SpeechRate)}><option value={0.8}>慢速 · 0.8×</option><option value={1}>正常 · 1×</option><option value={1.2}>快速 · 1.2×</option></select></label>
       {speech.rate !== 1 && <button type="button" className="speech-rate-reset" onClick={() => speech.setRate(1)}>恢复正常语速</button>}
     </div>
-    {speech.voiceName && <p className="speech-source">{speech.engine === 'neural' ? '本机自然发音' : '系统语音'}<span>·</span>{speech.voiceName}</p>}
+    <p className="speech-hint">单词优先词典录音，句子在本机朗读。</p>
+    {speech.voiceName && <p className="speech-source" title={speech.engine === 'system' ? undefined : '已加首尾缓冲'}>{speech.engine === 'dictionary' ? '词典录音' : speech.engine === 'neural' ? '本机合成' : '系统语音'}<span>·</span>{speech.voiceName}</p>}
+    {speech.engine === 'dictionary' && speech.attribution && <p className="speech-attribution">
+      <span>{speech.attribution.author} · {speech.attribution.license}</span>
+      <a href={speech.attribution.source_url} target="_blank" rel="noopener noreferrer">Commons 来源</a>
+      <a href={speech.attribution.license_url} target="_blank" rel="noopener noreferrer">许可</a>
+      <span>已加首尾缓冲</span>
+    </p>}
     <SpeechStatus />
   </div>;
 }

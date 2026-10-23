@@ -39,7 +39,7 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
-    expose_headers=["Retry-After"],
+    expose_headers=["Retry-After", "X-Pronunciation-Voice", "X-Pronunciation-Source", "X-Pronunciation-Attribution"],
 )
 app.add_middleware(MaintenanceMiddleware)
 

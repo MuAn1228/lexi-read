@@ -1,4 +1,5 @@
 import type { Health } from './types';
+import type { PronunciationAudio, PronunciationAttribution, SpeechAccent } from './speech';
 
 export class ApiError extends Error {
   constructor(message: string, public status = 0) { super(message); }
@@ -123,6 +124,39 @@ export async function requestImage(path: string, signal?: AbortSignal): Promise<
 /** Fetch downloads with the same identity as JSON requests, never a token in the URL. */
 export async function requestFile(path: string, init: RequestInit = {}): Promise<Blob> {
   return await requestBlob(path, init, '文件地址无效，请重新打开阅读材料。');
+}
+
+function pronunciationAttribution(raw: string | null): PronunciationAttribution | null {
+  if (!raw || raw.length > 4_096) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const data = value as Record<string, unknown>;
+    const plain = (text: unknown, limit: number): text is string => typeof text === 'string'
+      && Boolean(text.trim()) && text.length <= limit && !/[\p{Cc}\p{Cs}<>]/u.test(text);
+    if (!plain(data.author, 240) || !plain(data.license, 120)) return null;
+    const allowedURL = (text: unknown, source: boolean): text is string => {
+      if (typeof text !== 'string' || text.length > 2_048 || /[\s\\<>]/u.test(text)) return false;
+      const url = new URL(text);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) return false;
+      return source ? url.hostname === 'commons.wikimedia.org' && /^\/wiki\/File:.+/.test(url.pathname)
+        : url.hostname === 'creativecommons.org' && /^\/(?:licenses|publicdomain)\/.+/.test(url.pathname);
+    };
+    if (!allowedURL(data.source_url, true) || !allowedURL(data.license_url, false)) return null;
+    return { author: data.author.trim(), license: data.license.trim(), source_url: data.source_url, license_url: data.license_url };
+  } catch { return null; }
+}
+
+/** Audio and verified recording credits share the same authenticated backend response. */
+export async function requestPronunciation(text: string, accent: SpeechAccent, signal?: AbortSignal): Promise<PronunciationAudio> {
+  const response = await fetchBackend('/api/pronunciation', { method: 'POST', body: JSON.stringify({ text, accent }), signal });
+  const source = response.headers.get('X-Pronunciation-Source');
+  if (source !== 'dictionary' && source !== 'piper') throw new ApiError('发音来源信息不完整，请重试。');
+  const attribution = source === 'dictionary' ? pronunciationAttribution(response.headers.get('X-Pronunciation-Attribution')) : null;
+  if (source === 'dictionary' && !attribution) throw new ApiError('词典录音的来源信息不完整，请重试。');
+  const blob = await response.blob();
+  if (!blob.size) throw new ApiError('发音音频为空，请重试。');
+  return { blob, source, ...(attribution ? { attribution } : {}) };
 }
 
 async function requestBlob(path: string, init: RequestInit, invalidMessage: string): Promise<Blob> {

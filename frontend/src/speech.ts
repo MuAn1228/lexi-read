@@ -1,13 +1,16 @@
 export type SpeechAccent = 'en-US' | 'en-GB';
 export type SpeechRate = 0.8 | 1 | 1.2;
 export type SpeechPreferences = { accent: SpeechAccent; rate: SpeechRate };
+export type PronunciationAttribution = { author: string; license: string; source_url: string; license_url: string };
+export type PronunciationAudio = { blob: Blob; source: 'dictionary' | 'piper'; attribution?: PronunciationAttribution };
 export type SpeechSnapshot = SpeechPreferences & {
   isSupported: boolean;
   status: 'idle' | 'starting' | 'speaking' | 'error';
   activeKey: string | null;
   error: string;
   notice: string;
-  engine: 'neural' | 'system';
+  engine: 'dictionary' | 'neural' | 'system';
+  attribution: PronunciationAttribution | null;
   neuralAvailable: boolean;
   voiceAvailable: boolean;
   voiceName: string;
@@ -16,7 +19,7 @@ export const SPEECH_TEXT_LIMIT = 4_000;
 const DEFAULTS: SpeechPreferences = { accent: 'en-US', rate: 1 };
 const RATES: SpeechRate[] = [0.8, 1, 1.2];
 const SYSTEM_NOTICE = '当前使用系统英语语音，音色与基础语速受设备影响。';
-const FALLBACK_NOTICE = '自然语音暂不可用，已回退到系统英语语音；再次点击会重新尝试自然语音。';
+const FALLBACK_NOTICE = '录音与本机合成暂不可用，已回退到系统英语语音；再次点击会重新尝试。';
 
 export function readSpeechPreferences(raw: string | null): SpeechPreferences {
   try {
@@ -28,6 +31,12 @@ export function readSpeechPreferences(raw: string | null): SpeechPreferences {
       rate: RATES.includes(data.rate as SpeechRate) ? data.rate as SpeechRate : 1,
     };
   } catch { return { ...DEFAULTS }; }
+}
+
+/** The recalibrated voice starts at normal speed while preserving the previous accent. */
+export function restoreSpeechPreferences(currentRaw: string | null, legacyRaw: string | null): SpeechPreferences {
+  if (currentRaw !== null) return readSpeechPreferences(currentRaw);
+  return { accent: readSpeechPreferences(legacyRaw).accent, rate: 1 };
 }
 
 /** Keep the requested accent; never substitute a Chinese default or another English accent. */
@@ -54,7 +63,7 @@ type ControllerOptions = {
   createUtterance: ((text: string) => SpeechSynthesisUtterance) | null;
   preferences?: SpeechPreferences;
   onPreferences?: (value: SpeechPreferences) => void;
-  loadAudio?: (text: string, accent: SpeechAccent, signal: AbortSignal) => Promise<Blob>;
+  loadAudio?: (text: string, accent: SpeechAccent, signal: AbortSignal) => Promise<Blob | PronunciationAudio>;
   createAudio?: (url: string) => SpeechAudio;
   createObjectURL?: (blob: Blob) => string;
   revokeObjectURL?: (url: string) => void;
@@ -76,7 +85,7 @@ export function createSpeechController({ synthesis, createUtterance, preferences
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   let snapshot: SpeechSnapshot = {
     ...preferences, isSupported: systemSupported || naturalReady, status: 'idle', activeKey: null,
-    error: '', notice: naturalReady ? '' : systemNotice, engine: naturalReady ? 'neural' : 'system',
+    error: '', notice: naturalReady ? '' : systemNotice, engine: naturalReady ? 'neural' : 'system', attribution: null,
     neuralAvailable: naturalReady, voiceAvailable: false, voiceName: '',
   };
   const listeners = new Set<() => void>();
@@ -100,8 +109,8 @@ export function createSpeechController({ synthesis, createUtterance, preferences
     ++sequence; detach();
     try { synthesis?.cancel(); } catch { /* Some embedded browsers expose a non-working speech engine. */ }
   };
-  const preferredVoice = () => naturalReady ? { engine: 'neural' as const, voiceName: snapshot.accent === 'en-US' ? '美式英语' : '英式英语' }
-    : { engine: 'system' as const, voiceName: selectSpeechVoice(voices, snapshot.accent)?.name ?? '' };
+  const preferredVoice = () => naturalReady ? { engine: 'neural' as const, voiceName: '', attribution: null }
+    : { engine: 'system' as const, voiceName: selectSpeechVoice(voices, snapshot.accent)?.name ?? '', attribution: null };
   const stop = (key?: string) => {
     if (key !== undefined && key !== snapshot.activeKey) return;
     cancel(); update({ activeKey: null, status: 'idle', error: '', notice: naturalReady ? '' : systemNotice, ...preferredVoice() });
@@ -114,7 +123,7 @@ export function createSpeechController({ synthesis, createUtterance, preferences
       voiceAvailable: naturalReady || Boolean(voice), ...(snapshot.activeKey === null ? preferredVoice() : {}) });
   };
   refreshVoices();
-  const fail = (message: string) => { cancel(); update({ activeKey: null, status: 'error', error: message }); };
+  const fail = (message: string) => { cancel(); update({ activeKey: null, status: 'error', error: message, ...preferredVoice() }); };
   const savePreferences = () => {
     try { onPreferences?.({ accent: snapshot.accent, rate: snapshot.rate }); } catch { /* Speech still works without storage. */ }
   };
@@ -122,7 +131,7 @@ export function createSpeechController({ synthesis, createUtterance, preferences
     if (token !== sequence) return;
     const voice = selectSpeechVoice(voices, snapshot.accent);
     if (!systemSupported || !synthesis || !createUtterance || !voice) {
-      fail(fallback ? '自然语音暂不可用，设备也没有所选口音的系统英语语音。请稍后重试或切换口音。'
+      fail(fallback ? '录音与本机合成暂不可用，设备也没有所选口音的系统英语语音。请稍后重试或切换口音。'
         : !systemSupported ? '当前浏览器不支持发音，请使用新版 Edge 或 Chrome。'
           : '当前设备没有所选口音的英语语音。请切换口音，或在系统设置中安装英语语音。'); return;
     }
@@ -148,7 +157,7 @@ export function createSpeechController({ synthesis, createUtterance, preferences
           : event.error === 'network' ? '系统语音服务连接失败，请检查网络或改用已安装的英语语音。'
             : '英语发音暂不可用，请检查系统英语语音与音频输出后重试。');
       };
-      update({ activeKey: key, status: 'starting', error: '', engine: 'system', voiceName: voice.name, notice: fallback ? FALLBACK_NOTICE : systemNotice });
+      update({ activeKey: key, status: 'starting', error: '', engine: 'system', voiceName: voice.name, attribution: null, notice: fallback ? FALLBACK_NOTICE : systemNotice });
       watchdog = setTimeout(() => { if (isCurrent()) fail('系统语音没有响应，请检查英语语音设置后重试。'); }, 12_000);
       if (synthesis.paused) synthesis.resume();
       synthesis.speak(utterance);
@@ -159,14 +168,22 @@ export function createSpeechController({ synthesis, createUtterance, preferences
     const request = new AbortController(); pending = request;
     const isCurrent = () => token === sequence && !request.signal.aborted;
     update({ activeKey: key, status: 'starting', error: '', notice: '', ...preferredVoice() });
-    watchdog = setTimeout(() => { if (isCurrent()) fail('自然语音准备超时，请稍后再次点击播放。'); }, 180_000);
+    watchdog = setTimeout(() => { if (isCurrent()) fail('发音准备超时，请稍后再次点击播放。'); }, 180_000);
     try {
-      const blob = await loadAudio(text, snapshot.accent, request.signal);
+      const result = await loadAudio(text, snapshot.accent, request.signal);
       if (!isCurrent()) return;
+      const recording = result instanceof Blob ? { blob: result, source: 'piper' as const } : result;
+      const { blob, source, attribution } = recording;
+      if (source !== 'dictionary' && source !== 'piper' || source === 'dictionary' && !attribution) throw new Error('Unverified pronunciation source');
       if (!blob.size) throw new Error('Empty pronunciation audio');
       const url = createObjectURL(blob); audioURL = url;
       const player = createAudio(url); audio = player;
       player.playbackRate = snapshot.rate; player.preservesPitch = true;
+      update({ engine: source === 'dictionary' ? 'dictionary' : 'neural',
+        voiceName: snapshot.accent === 'en-US' ? '美式英语' : '英式英语',
+        attribution: source === 'dictionary' ? attribution ?? null : null,
+        notice: source === 'piper' && /^[A-Za-z]+(?:['’\-][A-Za-z]+)*$/.test(text)
+          ? '此词暂无可用的所选口音录音，使用本机合成。' : '' });
       const isPlayerCurrent = () => isCurrent() && audio === player;
       const onPlaying = () => {
         if (!isPlayerCurrent()) { try { player.pause(); } catch { /* Ignore a stopped device. */ } return; }

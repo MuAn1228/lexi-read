@@ -22,6 +22,12 @@ MAX_TEXT_LENGTH = 4_000
 MAX_CHUNK_LENGTH = 300
 MAX_CACHE_BYTES = 128 * 1024 * 1024
 MAX_AUDIO_BYTES = 48 * 1024 * 1024
+LEADING_SILENCE_SECONDS = .35
+TRAILING_SILENCE_SECONDS = .20
+SENTENCE_PAUSE_SECONDS = .18
+WORD_LENGTH_SCALE = 1.35
+SENTENCE_LENGTH_SCALE = 1.18
+CACHE_VERSION = "piper-pcm22050-clear-v2"
 VOICES = {"en-US": "en_US-ljspeech-medium", "en-GB": "en_GB-cori-medium"}
 _inference_lock = Lock()
 _engine = None
@@ -62,8 +68,9 @@ def _file_identity(storage_dir: Path) -> tuple:
             identity.append((path.name, stat.st_size, stat.st_mtime_ns))
         except OSError as exc:
             raise PronunciationUnavailable("本机自然发音模型尚未安装，将使用系统朗读。") from exc
-    # Text normalization, voice selection and chunking form part of the cache identity.
-    return ("piper-pcm22050-v1", *identity)
+    # Version the reading cadence and protective silence as well as the model files.
+    # Old unpadded clips must not survive a change to the pronunciation pipeline.
+    return (CACHE_VERSION, *identity)
 
 
 def pronunciation_status() -> dict:
@@ -124,11 +131,21 @@ class _PiperAdapter:
 
     def synthesize(self, text: str, accent: str):
         np = import_module("numpy")
-        chunks = list(self.engine.synthesize(text, syn_config=self.synthesis_config(length_scale=1.0)))
+        # A vocabulary word needs a clearer cadence than continuous prose. Keep
+        # its original spelling and phonemes; length_scale changes model timing.
+        single_word = re.fullmatch(r"[A-Za-z]+(?:[-'‘’][A-Za-z]+)*['‘’]?[.!?]?", text) is not None
+        length_scale = WORD_LENGTH_SCALE if single_word else SENTENCE_LENGTH_SCALE
+        chunks = list(self.engine.synthesize(text, syn_config=self.synthesis_config(length_scale=length_scale)))
         if not chunks or any((chunk.sample_rate, chunk.sample_width, chunk.sample_channels) !=
                              (SAMPLE_RATE, 2, 1) for chunk in chunks):
             raise PronunciationUnavailable("自然发音生成失败，请使用系统朗读或稍后重试。")
-        return np.concatenate([chunk.audio_float_array for chunk in chunks]), SAMPLE_RATE
+        parts = []
+        for index, chunk in enumerate(chunks):
+            if index:
+                # Piper yields a separate chunk at each sentence boundary.
+                parts.append(np.zeros(round(SAMPLE_RATE * SENTENCE_PAUSE_SECONDS), dtype=np.float32))
+            parts.append(chunk.audio_float_array)
+        return np.concatenate(parts), SAMPLE_RATE
 
 
 def _get_engine(storage_dir: Path, identity: tuple, accent: str):
@@ -226,21 +243,26 @@ def _save_cache(path: Path, data: bytes) -> None:
 def _render(engine, text: str, accent: str) -> bytes:
     np = import_module("numpy")
     chunks = split_text(text)
-    parts = []
-    total_frames = 0
+    # Start the output device before the first consonant and let its final sound
+    # finish before playback ends. Never trim or fade the model's original audio.
+    leading = np.zeros(round(SAMPLE_RATE * LEADING_SILENCE_SECONDS), dtype=np.float32)
+    trailing = np.zeros(round(SAMPLE_RATE * TRAILING_SILENCE_SECONDS), dtype=np.float32)
+    parts = [leading]
+    total_frames = leading.size + trailing.size
     for index, chunk in enumerate(chunks):
         samples, sample_rate = engine.synthesize(chunk, accent)
         samples = np.asarray(samples, dtype=np.float32)
         if sample_rate != SAMPLE_RATE or samples.ndim != 1 or samples.size == 0 or not np.isfinite(samples).all():
             raise PronunciationUnavailable("自然发音生成失败，请使用系统朗读或稍后重试。")
         if index:
-            pause = np.zeros(round(SAMPLE_RATE * .12), dtype=np.float32)
+            pause = np.zeros(round(SAMPLE_RATE * SENTENCE_PAUSE_SECONDS), dtype=np.float32)
             parts.append(pause)
             total_frames += pause.size
         parts.append(samples)
         total_frames += samples.size
         if total_frames * 2 + 44 > MAX_AUDIO_BYTES:
             raise PronunciationUnavailable("朗读音频过长，请缩短选择的句子。")
+    parts.append(trailing)
     pcm = (np.clip(np.concatenate(parts), -1, 1) * 32767).astype("<i2").tobytes()
     output = BytesIO()
     with wave.open(output, "wb") as audio:
@@ -285,3 +307,17 @@ def synthesize(text: str, accent: str) -> tuple[bytes, str]:
         return data, VOICES[accent]
     finally:
         _inference_lock.release()
+
+
+def synthesize_with_source(text: str, accent: str) -> tuple[bytes, str, str, dict | None]:
+    """Prefer an attributed open recording for a word; retain Piper for prose."""
+    from backend.services.word_recordings import record_word
+
+    normalized = normalize_text(text)
+    if accent not in VOICES:
+        raise ValueError("请选择美式英语或英式英语发音。")
+    recording = record_word(normalized, accent, get_settings().storage_dir)
+    if recording is not None:
+        return recording.audio, f"wiktionary-{accent}", "dictionary", recording.attribution
+    data, voice = synthesize(normalized, accent)
+    return data, voice, "piper", None
