@@ -189,6 +189,39 @@ def test_corrupted_cache_is_revalidated_and_replaced(assistance):
     assert run(factory, occurrence).cached and len(calls) == 2
 
 
+def test_repeated_sentences_in_different_neighborhoods_do_not_share_cache(assistance):
+    client, factory, settings, _, calls = assistance
+    text = ("Financial records. " * 160 + "She sat by the bank. "
+            + "River wildlife. " * 220 + "She sat by the bank. " + "Water and boats. " * 80)
+    document = post(client, payload(text))
+    banks = [word for word in document["words"] if word["word"] == "bank"]
+    first = run(factory, banks[0]["id"])
+    second = run(factory, banks[1]["id"])
+    assert first.source == second.source == "llm" and not first.cached and not second.cached
+    assert calls[0]["article_context"] != calls[1]["article_context"]
+    same_sentence = next(word for word in document["words"] if word["word"] == "She"
+                         and word["text_start"] == text.rfind("She sat"))
+    assert run(factory, same_sentence["id"]).cached and len(calls) == 2
+
+
+def test_repagination_invalidates_sentence_context_without_changing_text(assistance):
+    _, factory, _, document, calls = assistance
+    with factory() as session:
+        doc = session.get(Document, document["id"])
+        doc.source = "pdf"
+        doc.pages = [{"number": 1, "text_start": 0, "text_end": len(doc.ocr_text)}]
+        session.commit()
+    occurrence = document["words"][0]["id"]
+    assert not run(factory, occurrence).cached
+    with factory() as session:
+        doc = session.get(Document, document["id"])
+        split = doc.ocr_text.index("A reader")
+        doc.pages = [{"number": 1, "text_start": 0, "text_end": split},
+                     {"number": 2, "text_start": split, "text_end": len(doc.ocr_text)}]
+        session.commit()
+    assert not run(factory, occurrence).cached and len(calls) == 2
+
+
 def test_cache_io_failure_still_returns_valid_result(assistance, monkeypatch):
     _, factory, _, document, _ = assistance
     before = snapshot(factory)

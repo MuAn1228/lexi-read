@@ -7,11 +7,13 @@ import WordHistoryPanel from './WordHistoryPanel';
 import RelatedWordCard from './RelatedWordCard';
 import SentencePanel from './SentencePanel';
 import { useDictionary } from './DictionaryPanel';
+import type { SentenceAnalysisCache } from './sentenceAnalysis';
 
-export default function ContextPanel({ word, onMark, saving, onNext, vocabulary, onLearningChanged }: {
+export default function ContextPanel({ word, onMark, saving, onNext, vocabulary, onLearningChanged, sentenceCache, sentencePageStart, sentenceKey }: {
   word: Occurrence | null; onMark: (status: WordStatus) => void; saving: boolean;
   onNext: () => void; vocabulary: Vocabulary[];
   onLearningChanged: () => Promise<void>;
+  sentenceCache?: SentenceAnalysisCache; sentencePageStart?: number; sentenceKey?: string;
 }) {
   const openDictionary = useDictionary();
   const [explanation, setExplanation] = useState<Explanation | null>(null);
@@ -85,7 +87,7 @@ export default function ContextPanel({ word, onMark, saving, onNext, vocabulary,
         {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(v => v + 1)}><RefreshCw size={13} />重新获取</button></div>}
         {explanation && <><h3>{explanation.meaning_in_context}</h3><p>{explanation.simple_explanation}</p>{typeof explanation.importance === 'number' && Number.isFinite(explanation.importance) && <p className="context-importance">文中重要程度 · <strong>{Math.round(explanation.importance * 100)} / 100</strong><span>{explanation.source === 'offline' ? '离线词表参考值，仅供阅读参考。' : '帮助安排阅读顺序，仅供参考。'}</span></p>}{explanation.warning && <p className="service-note">{explanation.warning}</p>}</>}
       </section>
-      <SentencePanel word={word} disabled={saving} />
+      <SentencePanel word={word} disabled={saving} analysisCache={sentenceCache} pageStart={sentencePageStart} analysisKey={sentenceKey} />
       <WordHistoryPanel lemma={word.lemma} updatedAt={vocabulary.find(entry => entry.lemma === word.lemma)?.updated_at} revision={historyRevision} />
       {syncError && <div className="learning-sync-error inline-error" role="alert"><p>词库统计刷新失败：{syncError}</p><button className="text-button" onClick={() => void onLearningChanged().then(() => { setSyncError(''); setHistoryRevision(revision => revision + 1); }).catch(e => setSyncError(errorMessage(e)))}><RefreshCw size={13} />刷新词库统计</button></div>}
       <section className="related-section"><div className="section-label"><span><Sparkles size={14} />关联词推荐</span><span className="tiny-badge">≤ 3 个词</span></div>

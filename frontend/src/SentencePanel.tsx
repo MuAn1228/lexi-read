@@ -1,25 +1,28 @@
-import { Languages, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Languages, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage, request } from './api';
-import { sentenceProblem } from './sentenceAnalysis';
-import type { SentenceAnalysis } from './sentenceAnalysis';
+import { rememberSentenceAnalysis, sentenceCacheKey, sentenceProblem } from './sentenceAnalysis';
+import type { SentenceAnalysis, SentenceAnalysisCache } from './sentenceAnalysis';
 import type { Occurrence } from './types';
+import { ThoughtLine } from './components/StudyInteractions';
 import './sentencePanel.css';
 
-export default function SentencePanel({ word, disabled }: { word: Occurrence; disabled: boolean }) {
-  const [result, setResult] = useState<{ occurrenceId: number; value: SentenceAnalysis } | null>(null);
+export default function SentencePanel({ word, disabled, analysisCache, pageStart = 0, analysisKey }: { word: Occurrence; disabled: boolean; analysisCache?: SentenceAnalysisCache; pageStart?: number; analysisKey?: string }) {
+  const [result, setResult] = useState<{ occurrenceId: number; key: string; cache?: SentenceAnalysisCache; value: SentenceAnalysis } | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const pending = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const problem = sentenceProblem(word.sentence);
-  const value = result?.occurrenceId === word.id ? result.value : null;
+  const key = analysisKey ?? sentenceCacheKey(pageStart, word.sentence, `occurrence:${word.id}`);
+  const cached = analysisCache?.get(key);
+  const value = result?.occurrenceId === word.id && result.key === key && result.cache === analysisCache ? result.value : cached?.source === 'llm' && cached.sentence === word.sentence ? { ...cached, cached: true } : null;
   useEffect(() => {
     ++generation.current; controller.current?.abort(); pending.current = false;
     setResult(null); setError(''); setLoading(false);
     return () => { ++generation.current; controller.current?.abort(); };
-  }, [word.id, word.sentence]);
+  }, [word.id, word.sentence, analysisCache, key]);
   const analyze = async () => {
     if (disabled || pending.current || problem) return;
     const current = ++generation.current;
@@ -27,7 +30,10 @@ export default function SentencePanel({ word, disabled }: { word: Occurrence; di
     pending.current = true; setLoading(true); setError('');
     try {
       const analysis = await request<SentenceAnalysis>('/sentences/analyze', { method: 'POST', body: JSON.stringify({ occurrence_id: word.id }), signal: abort.signal });
-      if (current === generation.current && !abort.signal.aborted) setResult({ occurrenceId: word.id, value: analysis });
+      if (current === generation.current && !abort.signal.aborted) {
+        rememberSentenceAnalysis(analysisCache, key, word.sentence, analysis);
+        setResult({ occurrenceId: word.id, key, cache: analysisCache, value: analysis });
+      }
     } catch (e) { if (current === generation.current && !abort.signal.aborted) setError(errorMessage(e)); }
     finally { if (current === generation.current && !abort.signal.aborted) { pending.current = false; setLoading(false); controller.current = null; } }
   };
@@ -36,7 +42,7 @@ export default function SentencePanel({ word, disabled }: { word: Occurrence; di
     <p className="sentence-analysis-intro">从句子结构和语法，理解当前单词所在的原句。</p>
     {problem ? <p className="service-note" role="status">{problem}</p> : <>
       {!value && !loading && !error && <button className="button related-button" disabled={disabled} onClick={() => void analyze()}><Languages size={16} />翻译与解析本句</button>}
-      {loading && <div className="loading-copy" role="status"><LoaderCircle size={16} className="spin" />正在翻译并拆解这句话…</div>}
+      {loading && <ThoughtLine label="正在翻译并拆解这句话…" />}
       {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" disabled={disabled || loading} onClick={() => void analyze()}><RefreshCw size={13} />重试句子解析</button></div>}
       {value?.source === 'unavailable' && <div className="sentence-unavailable" role="status"><p>{value.warning || '句子解析暂不可用，请检查模型服务后重试。'}</p><button className="text-button" disabled={disabled || loading} onClick={() => void analyze()}><RefreshCw size={13} />重试句子解析</button></div>}
       {value?.source === 'llm' && <div className="sentence-analysis-result" aria-label="本句解析结果">
