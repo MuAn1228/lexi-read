@@ -28,6 +28,7 @@ MAX_ENTRIES = 10_000
 TOKEN = re.compile(r"^[a-f0-9]{32}$")
 ASSET = re.compile(r"^assets/[a-f0-9]{32}\.(png|pdf)$")
 SAFETY = re.compile(r"^lexi-read-safety-[a-f0-9]{32}\.zip$")
+VOCABULARY_TOOL_TABLES = {"vocabulary_operations", "vocabulary_groups", "vocabulary_group_members"}
 TTL = timedelta(minutes=30)
 
 
@@ -84,14 +85,19 @@ def validate_database(connection: sqlite3.Connection):
     if list(connection.execute("SELECT name FROM sqlite_master WHERE type IN ('trigger','view')")):
         raise invalid("备份数据库包含不支持的结构。")
     expected = set(Base.metadata.tables) | {"schema_migrations"}
-    if table_names(connection) != expected:
+    actual = table_names(connection)
+    previous_structure = actual == expected - VOCABULARY_TOOL_TABLES
+    if actual != expected and not previous_structure:
         raise invalid("备份的数据结构与当前版本不一致，请使用相同版本的完整备份。")
     if {row[1] for row in connection.execute("PRAGMA table_info(schema_migrations)")} != {"version", "applied_at"}:
         raise invalid("备份的版本记录结构与当前版本不一致。")
     versions = [row[0] for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")]
-    if versions != sorted(version for version, _ in MIGRATIONS):
+    supported = MIGRATIONS[:-1] if previous_structure and MIGRATIONS[-1][0] == "013_vocabulary_tools" else MIGRATIONS
+    if versions != sorted(version for version, _ in supported):
         raise invalid("备份版本与当前版本不一致，请使用相同版本的完整备份。")
     for table in Base.metadata.sorted_tables:
+        if table.name not in actual:
+            continue
         columns = list(connection.execute(f'PRAGMA table_info("{table.name}")'))
         if {row[1] for row in columns} != {column.name for column in table.columns}:
             raise invalid("备份的数据列与当前版本不一致。")
@@ -109,7 +115,7 @@ def validate_database(connection: sqlite3.Connection):
                 if isinstance(column.type, JSON):
                     try:
                         json.loads(value)
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError, RecursionError):
                         raise invalid() from None
                 elif isinstance(column.type, Boolean) and value not in (0, 1):
                     raise invalid()
@@ -166,6 +172,12 @@ def validate_database(connection: sqlite3.Connection):
     for table, column in (("learning_events", "details"), ("restore_receipts", "result")):
         if any(not isinstance(json.loads(row[0]), dict) for row in connection.execute(f'SELECT "{column}" FROM "{table}"')):
             raise invalid("备份中的学习记录格式无效。")
+    if not previous_structure:
+        from backend.services.vocabulary_backup_validation import validate_vocabulary_tools
+        try:
+            validate_vocabulary_tools(connection)
+        except (ValueError, TypeError, KeyError):
+            raise invalid("备份中的词库分组或撤销记录无效。") from None
 
 
 def export_backup(engine: Engine, destination: Path) -> Path:
@@ -406,9 +418,17 @@ def _replace_data(engine, source, documents, paths, token, result):
         connection.execute("DELETE FROM schema_migrations")
         connection.executemany("INSERT INTO schema_migrations(version,applied_at) VALUES (?,?)",
                                [tuple(row) for row in source.execute("SELECT version,applied_at FROM schema_migrations")])
+        source_tables = table_names(source)
+        if not VOCABULARY_TOOL_TABLES & source_tables:
+            # A validated v012 archive restores into the current known schema;
+            # new organization/undo tables start empty. No incoming DDL is run.
+            connection.execute("INSERT INTO schema_migrations(version,applied_at) VALUES (?,?)",
+                               ("013_vocabulary_tools", now().isoformat()))
         for table in reversed(Base.metadata.sorted_tables):
             connection.execute(f'DELETE FROM "{table.name}"')
         for table in Base.metadata.sorted_tables:
+            if table.name not in source_tables:
+                continue
             columns = [column.name for column in table.columns]
             projection = ",".join(f'"{name}"' for name in columns)
             statement = f'INSERT INTO "{table.name}" ({projection}) VALUES ({",".join("?" for _ in columns)})'

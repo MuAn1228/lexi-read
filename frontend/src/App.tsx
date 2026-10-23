@@ -79,6 +79,7 @@ export default function App() {
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [maimemoBusy, setMaimemoBusy] = useState(false);
+  const [vocabularyBusy, setVocabularyBusy] = useState(false);
   const [busy, setBusy] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -131,8 +132,25 @@ export default function App() {
   const busyRef = useRef(false);
   const initializingRef = useRef(false);
 
+  const vocabularyOperationBusy = useCallback((value: boolean) => {
+    savingRef.current = value;
+    setSaving(value);
+    setVocabularyBusy(value);
+  }, []);
+  const vocabularyChanged = useCallback((items: Vocabulary[]) => {
+    const generation = ++libraryGeneration.current;
+    const updates = new Map(items.map(item => [item.id, item]));
+    const byLemma = new Map(items.map(item => [item.lemma, item.status]));
+    setVocabulary(values => values.map(item => updates.get(item.id) ?? item));
+    setDocument(value => value ? { ...value, words: value.words.map(item => byLemma.has(item.lemma)
+      ? { ...item, status: byLemma.get(item.lemma) ?? null } : item) } : null);
+    void request<LearningEvent[]>('/events').then(value => {
+      if (generation === libraryGeneration.current) setEvents(value);
+    }).catch(() => { /* Learning data is saved; opening history retries its read. */ });
+  }, []);
+
   const navigateFromMenu = (next: View) => {
-    if (next === view) return;
+    if (next === view || vocabularyBusy || savingRef.current) return;
     focusHeadingOnNavigation.current = window.matchMedia('(max-width: 799px)').matches;
     setView(next);
   };
@@ -579,7 +597,7 @@ export default function App() {
   </div>;
 
   return <DictionaryProvider onGenerated={result => setVocabulary(current => current.map(entry => entry.lemma === result.lemma ? { ...entry, meaning_summary: entry.meaning_summary || result.detail?.summary || null, phonetic: entry.phonetic || result.dictionary?.phonetic || null } : entry))}><div className="app-shell" data-view={view}>
-    <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><LexiMark /></span><span className="brand-name">词间<span className="brand-en">Lexi</span></span></a><span className="brand-tagline">在文章里，记住单词。</span></div><div className="profile"><span className="local-dot" /><span>{health?.auth_mode === 'guest' ? '我的学习空间' : '本机学习空间'}</span></div></header>
+    <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current && !savingRef.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><LexiMark /></span><span className="brand-name">词间<span className="brand-en">Lexi</span></span></a><span className="brand-tagline">在文章里，记住单词。</span></div><div className="profile"><span className="local-dot" /><span>{health?.auth_mode === 'guest' ? '我的学习空间' : '本机学习空间'}</span></div></header>
     <main>
       <div className="page-heading"><div key={view} className="page-heading-copy"><span className="page-folio" aria-hidden="true">{String(navigation.findIndex(item => item.value === view) + 1).padStart(2, '0')}</span><div><h1 ref={pageHeading} tabIndex={-1}>{title.title}</h1><p className="page-subtitle">{title.subtitle}</p></div></div><div className="heading-actions"><button className="button primary new-reading" disabled={isLoading || saving || restorationLocked} onClick={event => { setView('reader'); setDragOver(false); openUpload(event.currentTarget); }}><Plus size={17} />添加阅读材料</button></div></div>
       {health?.auth_mode === 'guest' && <p className="page-subtitle">学习记录保存在服务器，访问凭证保存在当前浏览器。清除浏览器数据会失去访问权限；暂不支持跨设备登录。</p>}
@@ -599,7 +617,7 @@ export default function App() {
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <StudioLanding upload={uploadZone(true)} disabled={isLoading || saving || restorationLocked} onNavigate={setView} />}
       </>}
-      {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} loading={initializing || !vocabularyReady} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => setView('data')} onMark={(word, status) => void mark(word, status)} initialBrowsing={browsingPreferences.current.vocabulary} onBrowsingChange={rememberVocabularyBrowsing} storageWarning={browsingStorageWarning} />}
+      {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} loading={initializing || !vocabularyReady} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => { if (!savingRef.current) setView('data'); }} onMark={(word, status) => void mark(word, status)} onVocabularyChanged={vocabularyChanged} onBusyChange={vocabularyOperationBusy} onReloadVocabulary={refreshLearning} initialBrowsing={browsingPreferences.current.vocabulary} onBrowsingChange={rememberVocabularyBrowsing} storageWarning={browsingStorageWarning} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
       {view === 'data' && health?.auth_mode === 'local' && <><MaimemoPanel disabled={saving || isLoading || restorationLocked} onImported={refreshLearning} onBusyChange={setMaimemoBusy} /><DataManagementView disabled={saving || isLoading || maimemoBusy} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} /></>}
       {view === 'history' && <HistoryView events={events} />}
@@ -607,7 +625,7 @@ export default function App() {
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
       <footer className="app-footer"><span><LexiMark className="footer-mark" />词间 · 英语阅读与词汇学习</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
-    <StudyDock items={navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local')} view={view} disabled={restorationLocked || initializing} onNavigate={navigateFromMenu} vocabularyCount={vocabulary.filter(word => word.status !== null).length} navigationRef={navigationElement} />
+    <StudyDock items={navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local')} view={view} disabled={restorationLocked || initializing || vocabularyBusy} onNavigate={navigateFromMenu} vocabularyCount={vocabulary.filter(word => word.status !== null).length} navigationRef={navigationElement} />
     {notice && <div className="toast" role="status"><Check size={17} />{notice}</div>}
     {uploadOpen && <div className="modal-backdrop" onClick={() => !isLoading && setUploadOpen(false)}><section ref={uploadModal} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="upload-title" className="upload-modal panel" onClick={event => event.stopPropagation()}><div className="panel-heading"><div>{importMode === 'image' ? <FileImage size={17} /> : importMode === 'url' ? <Globe size={17} /> : <FileText size={17} />}<h2 id="upload-title">导入阅读材料</h2></div><button className="icon-button" disabled={isLoading} onClick={() => setUploadOpen(false)} aria-label="关闭导入窗口"><X size={20} /></button></div><div className="import-mode segmented" role="group" aria-label="导入方式"><button className={importMode === 'image' ? 'active' : ''} aria-pressed={importMode === 'image'} disabled={isLoading} onClick={() => { setImportMode('image'); setError(''); }}><FileImage size={15} />上传图片</button><button className={importMode === 'text' ? 'active' : ''} aria-pressed={importMode === 'text'} disabled={isLoading} onClick={() => { setImportMode('text'); setError(''); }}><FileText size={15} />粘贴文章</button><button className={importMode === 'pdf' ? 'active' : ''} aria-pressed={importMode === 'pdf'} disabled={isLoading} onClick={() => { setImportMode('pdf'); setError(''); }}><FileText size={15} />上传 PDF</button><button className={importMode === 'url' ? 'active' : ''} aria-pressed={importMode === 'url'} disabled={isLoading} onClick={() => { setImportMode('url'); setError(''); }}><Globe size={15} />网页链接</button></div>{importMode === 'image' ? uploadZone(false) : importMode === 'pdf' ? <PdfImportForm file={pdfDraft?.file ?? null} mode={pdfMode} onModeChange={changePdfMode} processing={pdfProcessing} onChoose={choosePdf} onSubmit={() => void importPdf()} disabled={isLoading || saving} /> : importMode === 'url' ? <UrlImportForm url={urlDraft} onChange={changeUrlDraft} onSubmit={() => void importUrl()} disabled={isLoading || saving} /> : <TextImportForm draft={textDraft} onChange={changeTextDraft} onSubmit={() => void importText()} disabled={isLoading || saving} />}{error && <p className="modal-error" role="alert">{error}</p>}{isLoading && <div className="loading-copy modal-loading"><LoaderCircle className="spin" size={16} />{busy}</div>}</section></div>}
     {proofread && <PdfProofreadWorkbench key={proofread.documentId} {...proofread} onClose={() => { proofreadLock.current = false; setProofread(null); }} onSaved={proofreadSaved} onUncertainClose={closeUncertainProofread} />}

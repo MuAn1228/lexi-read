@@ -3,6 +3,7 @@ import type { LearningEvent } from './types';
 export const eventLabels: Record<string, string> = {
   MARK_KNOWN: '标记为已掌握', MARK_UNKNOWN: '标记为不认识', MARK_UNCERTAIN: '标记为不确定',
   LOOKUP: '查看了语境释义', VIEW_RELATED: '查看了关联词',
+  VOCAB_MARK_REVERTED: '已撤销的状态调整', VOCABULARY_UNDO: '撤销了词库状态调整',
   IMPORT_MAIMEMO: '更新了墨墨来源记录', MAIMEMO_SYNC: '完成了墨墨词库导入',
   RECOMMENDATION_GENERATED: '生成了关联推荐', RECOMMENDATION_SHOWN: '看到了关联推荐',
   RECOMMENDATION_USEFUL: '认为关联有用', RECOMMENDATION_NOT_USEFUL: '认为关联没用',

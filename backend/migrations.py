@@ -382,6 +382,20 @@ def _create_web_import(connection: sqlite3.Connection, tables: set[str]) -> None
             connection.execute("ALTER TABLE documents ADD COLUMN source_url TEXT")
 
 
+def _create_vocabulary_tools(connection: sqlite3.Connection, tables: set[str]) -> None:
+    if not {"users", "vocabulary"} <= tables:
+        return
+    # Compile only application-owned definitions; never execute DDL from a backup.
+    from sqlalchemy.dialects.sqlite import dialect
+    from sqlalchemy.schema import CreateIndex, CreateTable
+    from backend.models import Base
+    for name in ("vocabulary_operations", "vocabulary_groups", "vocabulary_group_members"):
+        table = Base.metadata.tables[name]
+        connection.execute(str(CreateTable(table, if_not_exists=True).compile(dialect=dialect())))
+        for index in table.indexes:
+            connection.execute(str(CreateIndex(index, if_not_exists=True).compile(dialect=dialect())))
+
+
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
@@ -392,7 +406,8 @@ MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic",
               ("009_article_library", _create_article_library),
               ("010_pdf_reading", _create_pdf_reading),
               ("011_restore_receipts", _create_restore_receipts),
-              ("012_web_import", _create_web_import)]
+              ("012_web_import", _create_web_import),
+              ("013_vocabulary_tools", _create_vocabulary_tools)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

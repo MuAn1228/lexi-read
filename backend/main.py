@@ -19,6 +19,8 @@ from backend.api.question_routes import router as question_router
 from backend.api.practice_routes import router as practice_router
 from backend.api.maimemo_routes import router as maimemo_router
 from backend.api.dictionary_routes import router as dictionary_router
+from backend.api.vocabulary_operations import router as vocabulary_operations_router
+from backend.api.vocabulary_groups import router as vocabulary_groups_router
 from backend.services.maintenance import MaintenanceMiddleware
 from backend.ocr.service import OCRUnavailable
 
@@ -83,6 +85,8 @@ app.include_router(question_router)
 app.include_router(practice_router)
 app.include_router(maimemo_router)
 app.include_router(dictionary_router)
+app.include_router(vocabulary_operations_router)
+app.include_router(vocabulary_groups_router)
 frontend_dist = PROJECT_ROOT / "frontend" / "dist"
 if frontend_dist.is_dir():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

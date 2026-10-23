@@ -1,0 +1,69 @@
+.vocabulary-group-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 24px; padding: 0 24px 16px; color: var(--muted); font-size: 12px; }
+.vocabulary-group-filter { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.vocabulary-group-tools select, .vocabulary-selection-bar select { min-height: 36px; min-width: 140px; max-width: 220px; border: 1px solid #d8e2d1; border-radius: 7px; padding: 6px 10px; background: #fffef9; color: var(--ink); font: inherit; }
+.vocabulary-group-manager { flex: 1; min-width: 180px; }
+.vocabulary-group-manager > summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 36px; cursor: pointer; list-style: none; }
+.vocabulary-group-manager > summary::-webkit-details-marker { display: none; }
+.vocabulary-group-manager[open] > summary > svg:last-child { transform: rotate(180deg); }
+.vocabulary-group-hint { line-height: 1.8; margin: 6px 0 10px; }
+.vocabulary-group-form { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.vocabulary-group-form input { min-width: 100px; flex: 1; width: 0; min-height: 36px; border: 1px solid #d8e2d1; border-radius: 7px; padding: 7px 10px; background: #fffef9; color: var(--ink); font: inherit; }
+.vocabulary-group-form .button { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+.vocabulary-group-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 0; border-bottom: 1px solid #e8ecdf; }
+.vocabulary-group-row > span { flex: 1; min-width: 60px; overflow-wrap: anywhere; color: var(--ink); }
+.vocabulary-group-row small { margin-left: 10px; color: var(--muted); }
+.vocabulary-group-row .text-button, .vocabulary-group-confirm .text-button { min-height: 30px; font-size: 12px; }
+.vocabulary-group-confirm { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px; border-radius: 6px; background: #faf1e4; color: #845c3c; line-height: 1.7; }
+.vocabulary-selection-bar { position: sticky; top: 0; z-index: 8; padding: 10px 24px; border-block: 1px solid #dfe6d5; background: #f7f9f1; font-size: 12px; color: #61745a; }
+.vocabulary-selection-bar.has-selection { background: #edf4e4; box-shadow: 0 4px 10px #244e3610; }
+.vocabulary-selection-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; min-height: 30px; }
+.vocabulary-select-page { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; white-space: nowrap; color: #345a40; }
+.vocabulary-selection-bar input[type="checkbox"], .vocabulary-select-word input { width: 17px; height: 17px; margin: 0; flex-shrink: 0; cursor: pointer; accent-color: #35694b; }
+.vocabulary-selected-count { font-variant-numeric: tabular-nums; }
+.vocabulary-selection-bar .text-button { min-height: 30px; font-size: 12px; }
+.vocabulary-selection-top > .text-button { margin-left: auto; }
+.vocabulary-batch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding-top: 6px; }
+.vocabulary-batch-status { display: flex; flex-wrap: wrap; gap: 6px; }
+.vocabulary-batch-status .button { min-height: 34px; padding: 5px 11px; gap: 5px; font-size: 12px; }
+.vocabulary-batch-status .known { color: #3c734e; }
+.vocabulary-batch-status .unknown { color: #a16145; }
+.vocabulary-batch-status .uncertain { color: #8a7335; }
+.vocabulary-batch-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.vocabulary-batch-groups select { font-size: 12px; min-width: 110px; }
+.vocabulary-operation-feedback { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-top: 5px; line-height: 1.7; }
+.vocabulary-operation-feedback > div { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.vocabulary-operation-feedback [role="alert"], .vocabulary-operation-error { color: #a35e40; }
+.vocabulary-operation-feedback [role="alert"] > .text-button { display: block; }
+.vocabulary-undo { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 9px; border: 1px solid #ccd9be; border-radius: 6px; background: #fffef9; color: #365c40; font: inherit; white-space: nowrap; }
+.vocabulary-entry { position: relative; }
+.vocabulary-entry.is-selected { background: #f2f7e9; }
+.vocabulary-select-word { position: absolute; top: 25px; left: 17px; display: flex; align-items: center; justify-content: center; min-height: 28px; min-width: 28px; cursor: pointer; }
+.vocabulary-entry-main, .vocabulary-records-toggle, .vocabulary-records { margin-left: 28px; }
+.vocabulary-selection-bar :is(button,select,input):focus-visible, .vocabulary-group-tools :is(button,summary,select,input):focus-visible, .vocabulary-select-word input:focus-visible { outline: 3px solid #658d78; outline-offset: 3px; }
+.vocabulary-selection-bar button:disabled, .vocabulary-group-tools button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 799px) {
+  .vocabulary-selection-bar { top: 64px; }
+}
+@media (max-width: 620px) {
+  .vocabulary-group-tools { padding-inline: 20px; gap: 6px 16px; }
+  .vocabulary-group-manager { min-width: 100%; }
+  .vocabulary-group-filter select { max-width: calc(100vw - 150px); }
+  .vocabulary-selection-bar { padding: 8px 14px; }
+  .vocabulary-selection-top { gap: 4px 10px; }
+  .vocabulary-selected-count { font-size: 11px; }
+  .vocabulary-selected-count > span { display: none; }
+  .vocabulary-batch-actions { gap: 6px; }
+  .vocabulary-batch-status { width: 100%; }
+  .vocabulary-batch-status .button { flex: 1; padding-inline: 8px; }
+  .vocabulary-batch-groups { width: 100%; gap: 6px; }
+  .vocabulary-batch-groups select { min-width: 95px; flex: 1; width: 0; }
+  .vocabulary-batch-groups > .text-button { font-size: 11px; }
+  .vocabulary-select-word { left: 12px; top: 21px; }
+  .vocabulary-entry-main, .vocabulary-records-toggle, .vocabulary-records { margin-left: 24px; }
+  .vocabulary-operation-feedback { font-size: 11px; }
+  .vocabulary-operation-feedback > div { min-width: 130px; }
+}
+@media (max-height: 520px) and (max-width: 620px) {
+  .vocabulary-selection-bar { position: static; }
+}
+.panel.vocabulary-panel { overflow: clip; }
