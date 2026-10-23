@@ -13,7 +13,7 @@ from backend.config import get_settings
 from backend.models import WordOccurrence
 from backend.agents import VocabularyAgent
 from backend.repositories.vocabulary import VocabularyRepository
-from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, DocumentUpdateRequest, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, VocabularyRecommendationRequest, WordHistoryOut
+from backend.schemas import AnalysisOut, DashboardOut, DocumentOut, DocumentSummary, DocumentUpdateRequest, EventOut, FeedbackOut, FeedbackRequest, MarkRequest, OccurrenceRequest, RecommendationRequest, RecommendationsOut, RelationsOut, ReviewOut, TextImportRequest, VocabularyOut, VocabularyRecommendationRequest, VocabularyRecommendationsOut, WordHistoryOut
 from backend.services.feedback import FeedbackService
 from backend.services.relations import RelationService
 from backend.services.dashboard import DashboardService
@@ -260,12 +260,12 @@ def recommend_words(payload: RecommendationRequest, session: Session = Depends(g
     return VocabularyAgent(VocabularyRepository(session, user_id)).recommend(occurrence, doc, payload.relation)
 
 
-@router.post("/vocabulary/{word}/recommend", response_model=RecommendationsOut,
-             dependencies=[Depends(require_llm_budget)])
+@router.post("/vocabulary/{word}/recommend", response_model=VocabularyRecommendationsOut)
 def expand_vocabulary(word: str, payload: VocabularyRecommendationRequest,
                       session: Session = Depends(get_session), user_id: int = Depends(get_current_user_id)):
     try:
-        return VocabularyAgent(VocabularyRepository(session, user_id)).recommend_vocabulary(word, payload.relation)
+        return VocabularyAgent(VocabularyRepository(session, user_id)).recommend_vocabulary(
+            word, payload.relation, refresh=payload.refresh)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

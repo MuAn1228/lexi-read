@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, computed_field, field_serializer, field_validator, model_validator
 
 
 class Schema(BaseModel):
@@ -349,6 +349,7 @@ class RecommendationRequest(OccurrenceRequest):
 
 class VocabularyRecommendationRequest(Schema):
     relation: Relation
+    refresh: StrictBool = False
 
 
 class Recommendation(Schema):
@@ -365,6 +366,10 @@ class RecommendationsOut(Schema):
     items: tuple[Recommendation, ...] = Field(max_length=3)
     source: str
     warning: str | None = None
+
+
+class VocabularyRecommendationsOut(RecommendationsOut):
+    cached: bool = False
 
 
 class FeedbackRequest(Schema):

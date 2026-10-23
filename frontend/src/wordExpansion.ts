@@ -1,7 +1,7 @@
 import type { Recommendation } from './types';
 
 export type ExpansionRelation = 'domain_related' | 'synonym' | 'word_family' | 'antonym' | 'collocation';
-export type ExpansionRecommendation = Omit<Recommendation, 'warning'> & { warning?: string | null };
+export type ExpansionRecommendation = Omit<Recommendation, 'warning'> & { warning?: string | null; cached?: boolean };
 export type WordExpansionCache = Map<string, ExpansionRecommendation>;
 
 export const expansionOptions: { relation: ExpansionRelation; label: string; description: string; primary: boolean }[] = [
@@ -23,6 +23,11 @@ export function expansionPath(word: string): string {
   return `/vocabulary/${encodeURIComponent(value)}/recommend`;
 }
 
+/** Only an explicit regenerate action bypasses a saved AI result. */
+export function expansionRequestBody(relation: ExpansionRelation, refresh = false): { relation: ExpansionRelation; refresh: boolean } {
+  return { relation, refresh };
+}
+
 export function expansionCacheKey(word: string, relation: ExpansionRelation): string {
   return JSON.stringify([word.trim().toLowerCase(), relation]);
 }
@@ -33,6 +38,7 @@ export function isExpansionRecommendation(value: unknown, relation: ExpansionRel
   if (!Number.isSafeInteger(result.batch_id) || (result.batch_id as number) < 1
     || !['llm', 'offline'].includes(result.source as string)
     || (result.warning != null && typeof result.warning !== 'string')
+    || (result.cached !== undefined && typeof result.cached !== 'boolean')
     || !Array.isArray(result.items) || result.items.length > 3) return false;
   const seen = new Set<string>();
   return result.items.every(value => {
@@ -61,5 +67,6 @@ export function cacheExpansion(cache: WordExpansionCache, word: string, relation
 
 export function expansionSourceLabel(result: ExpansionRecommendation, cached = false): string {
   if (result.source === 'offline') return '离线规则推荐';
+  if (result.cached === true) return 'AI 词汇拓展 · 已复用';
   return cached ? 'AI 词汇拓展 · 本次已生成' : 'AI 词汇拓展';
 }

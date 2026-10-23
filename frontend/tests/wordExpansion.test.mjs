@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/wordExpansion.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { expansionOptions, expansionLabel, expansionPath, expansionCacheKey, isExpansionRecommendation, cacheExpansion, expansionSourceLabel } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { expansionOptions, expansionLabel, expansionPath, expansionRequestBody, expansionCacheKey, isExpansionRecommendation, cacheExpansion, expansionSourceLabel } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 function recommendation(relation = 'synonym', overrides = {}) {
   return {
@@ -41,11 +41,21 @@ test('cache identity ignores case and edge whitespace but separates word and cat
   assert.notEqual(expansionCacheKey('a:synonym', 'word_family'), expansionCacheKey('a', 'synonym'));
 });
 
+test('discovery and retries reuse saved results; only explicit regeneration bypasses them', () => {
+  for (const option of expansionOptions) {
+    assert.deepEqual(expansionRequestBody(option.relation), { relation: option.relation, refresh: false });
+    assert.deepEqual(expansionRequestBody(option.relation, false), { relation: option.relation, refresh: false });
+    assert.deepEqual(expansionRequestBody(option.relation, true), { relation: option.relation, refresh: true });
+  }
+});
+
 test('real response shape accepts nullable warnings and validates each selected category', () => {
   for (const option of expansionOptions) {
     assert.equal(isExpansionRecommendation(recommendation(option.relation), option.relation), true);
     assert.equal(isExpansionRecommendation(recommendation(option.relation, { source: 'offline' }), option.relation), true);
     assert.equal(isExpansionRecommendation(recommendation(option.relation, { warning: 'AI 暂时不可用' }), option.relation), true);
+    assert.equal(isExpansionRecommendation(recommendation(option.relation, { cached: true }), option.relation), true);
+    assert.equal(isExpansionRecommendation(recommendation(option.relation, { cached: false }), option.relation), true);
   }
   assert.equal(isExpansionRecommendation(recommendation('word_family'), 'synonym'), false);
   assert.equal(isExpansionRecommendation(recommendation('synonym', { items: [] }), 'synonym'), true);
@@ -56,6 +66,7 @@ test('malformed response never creates a broken or cross-category feedback card'
   const item = valid.items[0];
   for (const value of [null, '', [], {}, { ...valid, batch_id: 0 }, { ...valid, batch_id: 1.5 },
     { ...valid, source: 'unavailable' }, { ...valid, warning: { text: 'bad' } },
+    ...[null, 'true', 'false', 0, 1, {}].map(cached => ({ ...valid, cached })),
     { ...valid, items: null }, { ...valid, items: Array(4).fill(item) },
     ...[{ word: '' }, { meaning: '' }, { reason: '' }, { relation: 'antonym' },
       { score: NaN }, { priority: Infinity }, { score: -0.01 }, { priority: 1.01 }]
@@ -87,10 +98,15 @@ test('session cache bounds memory and refresh retains the newest result', () => 
   assert.equal(cache.get(expansionCacheKey('word-0', 'synonym')), refreshed);
 });
 
-test('source labels never describe offline fallback as successful AI generation', () => {
+test('source labels distinguish saved result reuse and session cache without relabelling offline fallbacks', () => {
   assert.equal(expansionSourceLabel(recommendation()), 'AI 词汇拓展');
+  assert.equal(expansionSourceLabel(recommendation('synonym', { cached: false })), 'AI 词汇拓展');
   assert.equal(expansionSourceLabel(recommendation(), true), 'AI 词汇拓展 · 本次已生成');
+  const reused = recommendation('synonym', { cached: true });
+  assert.equal(expansionSourceLabel(reused), 'AI 词汇拓展 · 已复用');
+  assert.equal(expansionSourceLabel(reused, true), 'AI 词汇拓展 · 已复用');
   const fallback = recommendation('synonym', { source: 'offline' });
   assert.equal(expansionSourceLabel(fallback), '离线规则推荐');
   assert.equal(expansionSourceLabel(fallback, true), '离线规则推荐');
+  assert.equal(expansionSourceLabel({ ...fallback, cached: true }), '离线规则推荐');
 });

@@ -3,7 +3,7 @@ import { ArrowUpRight, LoaderCircle, Network, RefreshCw } from 'lucide-react';
 import { errorMessage, request } from './api';
 import RelatedWordCard from './RelatedWordCard';
 import type { Vocabulary } from './types';
-import { cacheExpansion, expansionCacheKey, expansionLabel, expansionOptions, expansionPath, expansionSourceLabel, isExpansionRecommendation } from './wordExpansion';
+import { cacheExpansion, expansionCacheKey, expansionLabel, expansionOptions, expansionPath, expansionRequestBody, expansionSourceLabel, isExpansionRecommendation } from './wordExpansion';
 import type { ExpansionRecommendation, ExpansionRelation, WordExpansionCache } from './wordExpansion';
 import './wordExpansion.css';
 
@@ -14,7 +14,7 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
 }) {
   const [relation, setRelation] = useState<ExpansionRelation>('domain_related');
   const [recommendation, setRecommendation] = useState<ExpansionRecommendation | null>(null);
-  const [cached, setCached] = useState(false);
+  const [sessionCached, setSessionCached] = useState(false);
   const [loading, setLoading] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState('');
@@ -26,7 +26,7 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
   useEffect(() => {
     ++generation.current; controller.current?.abort(); controller.current = null;
     const saved = cache.get(expansionCacheKey(word, relation)) ?? null;
-    setRecommendation(saved); setCached(Boolean(saved)); setLoading(false); setError('');
+    setRecommendation(saved); setSessionCached(Boolean(saved)); setLoading(false); setError('');
     return () => { ++generation.current; controller.current?.abort(); controller.current = null; };
   }, [word, relation, cache]);
 
@@ -46,18 +46,18 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
     stop(); setRelation(value);
   };
 
-  const generate = async () => {
+  const generate = async (refresh = false) => {
     if (controller.current) return;
     const abort = new AbortController(); controller.current = abort;
     const attempt = ++generation.current;
     setLoading(true); setSeconds(0); setError('');
     try {
       const result = await request<unknown>(expansionPath(word), {
-        method: 'POST', body: JSON.stringify({ relation }), signal: abort.signal,
+        method: 'POST', body: JSON.stringify(expansionRequestBody(relation, refresh)), signal: abort.signal,
       });
       if (attempt !== generation.current || abort.signal.aborted) return;
       if (!isExpansionRecommendation(result, relation)) throw new Error('拓展结果暂时无法读取，请重试。');
-      setRecommendation(result); setCached(false);
+      setRecommendation(result); setSessionCached(false);
       cacheExpansion(cache, word, relation, result);
     } catch (reason) {
       if (attempt === generation.current && !abort.signal.aborted) setError(errorMessage(reason));
@@ -68,7 +68,7 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
 
   return <section className="dictionary-section word-expansion" aria-labelledby={heading}>
     <div className="dictionary-section-heading"><h3 id={heading}><Network size={17} />词汇拓展</h3><span className="dictionary-badge">一次最多 3 个</span></div>
-    <p className="word-expansion-intro">从一个词多走一步。选择关联方式，按需生成；想记住的词再加入生词库。</p>
+    <p className="word-expansion-intro">选择一种关联方式，优先复用已保存的结果；想记住的词再加入生词库。</p>
     <div className="word-expansion-options" role="group" aria-label="词汇拓展类型">
       {expansionOptions.map(option => <button type="button" className={`${option.primary ? 'is-primary ' : ''}${relation === option.relation ? 'is-active' : ''}`} key={option.relation}
         aria-pressed={relation === option.relation} aria-controls={panel} onClick={() => select(option.relation)}>{option.label}</button>)}
@@ -81,15 +81,15 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
       {loading && <div className="word-expansion-loading"><p role="status"><LoaderCircle size={16} className="spin" />正在整理{selectedOption.label}…<span>{seconds} 秒</span></p><button type="button" className="text-button" onClick={stop}>停止等待</button></div>}
       {error && <div className="inline-error word-expansion-error" role="alert"><p>{error}</p>{recommendation && <button type="button" className="text-button" disabled={loading} onClick={() => void generate()}><RefreshCw size={13} />重试获取</button>}</div>}
       {recommendation && <>
-        <div className="recommendation-meta word-expansion-meta"><span className={`source-badge ${recommendation.source}`}>{expansionSourceLabel(recommendation, cached)}</span>
-          <button type="button" className="text-button" disabled={loading} aria-label={`重新生成${selectedOption.label}`} onClick={() => void generate()}><RefreshCw size={13} />重新获取</button></div>
+        <div className="recommendation-meta word-expansion-meta"><span className={`source-badge ${recommendation.source}`}>{expansionSourceLabel(recommendation, sessionCached)}</span>
+          <button type="button" className="text-button" disabled={loading} aria-label={`重新生成${selectedOption.label}`} onClick={() => void generate(true)}><RefreshCw size={13} />重新生成</button></div>
         <div className="word-expansion-cards">{recommendation.items.map(item => <RelatedWordCard key={`${recommendation.batch_id}:${item.word}`} item={item} batchId={recommendation.batch_id}
           status={vocabulary.find(entry => entry.lemma === item.word.toLowerCase() || entry.word.toLowerCase() === item.word.toLowerCase())?.status ?? null}
           disabled={loading} onSaved={onLearningChanged ?? noLearningChange} variant="expansion" />)}</div>
         {!recommendation.items.length && <p className="word-expansion-empty">暂时没有找到合适的{selectedOption.label}。可以换一种关联方式，或稍后重试。</p>}
         {recommendation.warning && <p className="word-expansion-warning" role="status">{recommendation.warning}</p>}
       </>}
-      <p className="word-expansion-note">生成和查看不改变掌握状态或复习安排。派生词关注词族关系，近义词请结合具体用法辨别。</p>
+      <p className="word-expansion-note">成功结果会在本机保存，刷新后再次获取优先复用；“重新生成”会再次调用 AI。生成和查看不改变掌握状态或复习安排。</p>
     </div>
   </section>;
 }

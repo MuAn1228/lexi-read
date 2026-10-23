@@ -79,6 +79,12 @@ def mock_candidates(monkeypatch, values):
         return GeneratedCandidates(values, "llm")
 
     monkeypatch.setattr(LLMService, "recommend_related_words", generate)
+
+    def expand(self, word, lemma, relation):
+        captured.append({"word": word, "lemma": lemma, "relation": relation})
+        return GeneratedCandidates(values, "llm")
+
+    monkeypatch.setattr(LLMService, "expand_vocabulary", expand)
     return captured
 
 
@@ -106,9 +112,10 @@ def test_all_focuses_support_words_without_an_article_and_record_exact_snapshot(
     assert result["source"] == "llm" and [item["word"] for item in result["items"]] == [target]
     assert result["items"][0]["relation"] == relation
     assert learning_snapshot(factory) == before
-    assert calls[0]["word"] == "Create" and calls[0]["sentence"] == calls[0]["article"] == ""
+    assert calls[0]["word"] == "Create" and calls[0]["lemma"] == "create"
     assert calls[0]["relation"] == Relation(relation)
-    assert calls[0]["learner_context"]["current_word_history"]["vocabulary"]["lemma"] == "create"
+    assert set(calls[0]) == {"word", "lemma", "relation"}
+    assert result["cached"] is False
     recorded = client.get("/api/events").json()
     assert len(recorded) == 1 and recorded[0]["id"] == result["batch_id"]
     assert recorded[0]["document_id"] is None and recorded[0]["lemma"] == "create"
@@ -190,8 +197,8 @@ def test_public_words_history_and_feedback_are_isolated(expansion_app, monkeypat
     calls = mock_candidates(monkeypatch, [candidate("creation")])
     result = issue(client, headers=one)
     assert result.status_code == 200, result.text
-    assert {row["user_id"] for row in calls[0]["vocabulary"]} == {2}
-    assert all(row["lemma"] != "private" for row in calls[0]["vocabulary"])
+    assert set(calls[0]) == {"word", "lemma", "relation"}
+    assert calls[0]["lemma"] == "create"
     assert issue(client, word="private", headers=one).status_code == 404
     assert issue(client, word="create", headers=two).status_code == 404
     issued = result.json()
@@ -313,7 +320,7 @@ def test_slow_generation_rechecks_source_ownership_before_writing_batch(expansio
             session.commit()
         return GeneratedCandidates([candidate("creation")], "llm")
 
-    monkeypatch.setattr(LLMService, "recommend_related_words", after_delete)
+    monkeypatch.setattr(LLMService, "expand_vocabulary", after_delete)
     response = issue(client)
     assert response.status_code == 404
     assert client.get("/api/events").json() == []
@@ -331,7 +338,7 @@ def test_slow_generation_filters_words_marked_known_during_provider_call(expansi
             session.commit()
         return GeneratedCandidates([candidate("creation")], "llm")
 
-    monkeypatch.setattr(LLMService, "recommend_related_words", after_mark)
+    monkeypatch.setattr(LLMService, "expand_vocabulary", after_mark)
     response = issue(client)
     assert response.status_code == 200, response.text
     assert response.json()["items"] == []
