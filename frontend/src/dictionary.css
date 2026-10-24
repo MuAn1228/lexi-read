@@ -10,6 +10,7 @@
 .dictionary-phonetic { font: 14px/1.6 Georgia, serif; color: #76856b; }
 .dictionary-headword { font-size: 12px; color: #75816b; margin-top: 4px; }
 .dictionary-intro { padding: 13px 30px 21px; color: #78816e; font-size: 12px; line-height: 1.85; }
+.dictionary-speech { padding-inline: 30px; }
 .dictionary-body { padding: 0 30px 26px; min-height: 100px; }
 .dictionary-loading { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 32px 0; color: #6d8354; font-size: 13px; }
 .dictionary-section { padding: 22px 0; border-top: 1px solid #e7ebdf; }
@@ -74,6 +75,7 @@
   .dictionary-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 24px); border-radius: 19px; }
   .dictionary-heading { padding: 22px 19px 0; }
   .dictionary-intro { padding: 12px 19px 18px; font-size: 11px; }
+  .dictionary-speech { padding-inline: 19px; }
   .dictionary-body { padding: 0 19px 16px; }
   .dictionary-section { padding: 18px 0; }
   .dictionary-section-heading h3 { font-size: 16px; }
