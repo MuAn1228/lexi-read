@@ -149,24 +149,26 @@ export default function StudyDock({ items, view, disabled, onNavigate, vocabular
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) clearProximity(); }}
     onScroll={clearProximity}
   >
-    <div className="study-dock__caption" aria-hidden="true"><span>学习导航</span><span>{String(items.length).padStart(2, '0')}</span></div>
-    {items.map(({ value, label, icon: Icon }) => <button
-      key={value}
-      type="button"
-      className={`study-dock__item${view === value ? ' is-active' : ''}`}
-      aria-label={label}
-      aria-current={view === value ? 'page' : undefined}
-      disabled={disabled}
-      onClick={() => { if (mobile) closeMenu(value === view); onNavigate(value); }}
-    >
-      <span className="study-dock__icon" aria-hidden="true"><Icon size={21} strokeWidth={1.65} /></span>
-      <span className="study-dock__label">{label}</span>
-      {value === 'vocabulary' && count > 0 && <span
-        className="study-dock__count"
-        title={`${count.toLocaleString()} 个已标记单词`}
-        aria-hidden="true"
-      >{visibleCount}</span>}
-    </button>)}
+    <div className="study-dock__content">
+      <div className="study-dock__caption" aria-hidden="true"><span>学习导航</span><span>{String(items.length).padStart(2, '0')}</span></div>
+      {items.map(({ value, label, icon: Icon }) => <button
+        key={value}
+        type="button"
+        className={`study-dock__item${view === value ? ' is-active' : ''}`}
+        aria-label={label}
+        aria-current={view === value ? 'page' : undefined}
+        disabled={disabled}
+        onClick={() => { if (mobile) closeMenu(value === view); onNavigate(value); }}
+      >
+        <span className="study-dock__icon" aria-hidden="true"><Icon size={21} strokeWidth={1.65} /></span>
+        <span className="study-dock__label">{label}</span>
+        {value === 'vocabulary' && count > 0 && <span
+          className="study-dock__count"
+          title={`${count.toLocaleString()} 个已标记单词`}
+          aria-hidden="true"
+        >{visibleCount}</span>}
+      </button>)}
+    </div>
   </nav>;
 
   if (!mobile) return rail;
@@ -203,6 +205,8 @@ export default function StudyDock({ items, view, disabled, onNavigate, vocabular
 }
 
 function revealButton(dock: HTMLElement, button: HTMLButtonElement) {
+  // Only the mobile drawer has its own scroll area. Desktop uses page scrolling.
+  if (!['auto', 'scroll'].includes(getComputedStyle(dock).overflowY)) return;
   const bounds = dock.getBoundingClientRect();
   const item = button.getBoundingClientRect();
   // Scroll only the list, preserving the reading and vocabulary browsing position.

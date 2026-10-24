@@ -1,7 +1,8 @@
-/* Left navigation follows the document; the mobile drawer scrolls independently. */
+/* A page-height desktop rail; only the mobile drawer scrolls independently. */
 .study-dock { position: fixed; z-index: 35; top: 98px; bottom: 20px; left: 16px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 190px; min-width: 0; padding: 17px 12px; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #648266 transparent; scroll-behavior: auto; border: 1px solid #a7c4a732; border-radius: 21px; background: #183e32; color: #e1ead8; box-shadow: 0 7px 24px #14362814; -webkit-tap-highlight-color: transparent; }
 .study-dock__caption { display: flex; flex-shrink: 0; justify-content: space-between; padding: 5px 10px 20px; color: #b8cda8; font-size: 10px; letter-spacing: .08em; }
 .study-dock__caption > span:last-child { font: 10px/1.4 Consolas, monospace; }
+.study-dock__content { display: contents; }
 .study-dock .study-dock__item { position: relative; display: flex; flex: 0 0 48px; flex-direction: row; align-items: center; justify-content: flex-start; gap: 11px; width: 100%; height: 48px; padding: 0 11px; margin: 0; border: 0; border-radius: 11px; background: transparent; color: #e1ead8; font: inherit; font-size: 12px; font-weight: 450; line-height: 1.3; text-align: left; white-space: nowrap; cursor: pointer; box-shadow: none; transform: none; transition: background-color .16s, color .16s; }
 .study-dock .study-dock__item:hover:not(:disabled) { background: #365c478c; color: #f4f7e8; transform: none; box-shadow: none; }
 .study-dock .study-dock__item.is-active, .study-dock .study-dock__item.is-active:hover:not(:disabled) { color: #183b2c; background: #d7e9b4; font-weight: 650; }
@@ -29,7 +30,14 @@ dialog.study-drawer::backdrop { background: #102c26a3; backdrop-filter: blur(2px
 
 @media (min-width: 800px) {
   .app-shell { position: relative; }
-  .app-shell > .study-dock { position: absolute; bottom: auto; min-height: calc(100dvh - 118px); overflow: visible; overscroll-behavior: auto; }
+  .app-shell:not(.is-reading-focus) { min-height: max(100dvh, 660px); }
+  .app-shell > .study-dock { position: absolute; bottom: 20px; min-height: 0; overflow: visible; overscroll-behavior: auto; }
+  .app-shell > .study-dock > .study-dock__content { display: flex; flex-shrink: 0; flex-direction: column; gap: 4px; }
+}
+
+/* A short viewport lets the whole menu travel with the page instead of clipping it. */
+@media (min-width: 800px) and (min-height: 620px) {
+  .app-shell > .study-dock > .study-dock__content { position: sticky; top: 16px; }
 }
 
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
