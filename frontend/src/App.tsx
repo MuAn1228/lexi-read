@@ -49,7 +49,7 @@ const titles: Record<View, { title: string; subtitle: string }> = {
   vocabulary: { title: '我的词库', subtitle: '查看中文释义，搜索单词，更新掌握程度。' },
   review: { title: '生词复习', subtitle: '复习到期单词，先回想释义或完成原句填空，再记录掌握程度。' },
   practice: { title: '短文练习', subtitle: '用需要巩固的单词生成英文短文，在新语境中练习。' },
-  history: { title: '学习记录', subtitle: '回看词汇标记、语境学习和复习记录。' },
+  history: { title: '学习记录', subtitle: '按日复盘，找出没记牢的词，接着学。' },
   dashboard: { title: '学习概览', subtitle: '查看词汇掌握情况和学习统计。' },
   relations: { title: '词汇关联', subtitle: '查看保存的关联词和推荐反馈。' },
   data: { title: '数据管理', subtitle: '导入墨墨单词，导出或恢复学习数据备份。' },
@@ -635,7 +635,7 @@ export default function App() {
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} loading={initializing || !vocabularyReady} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => { if (!savingRef.current) setView('data'); }} onMark={(word, status) => void mark(word, status)} onVocabularyChanged={vocabularyChanged} onBusyChange={vocabularyOperationBusy} onReloadVocabulary={refreshLearning} initialBrowsing={browsingPreferences.current.vocabulary} onBrowsingChange={rememberVocabularyBrowsing} storageWarning={browsingStorageWarning} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
       {view === 'data' && health?.auth_mode === 'local' && <><MaimemoPanel disabled={saving || isLoading || restorationLocked} onImported={refreshLearning} onBusyChange={setMaimemoBusy} /><DataManagementView disabled={saving || isLoading || maimemoBusy} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} /></>}
-      {view === 'history' && <HistoryView events={events} />}
+      {view === 'history' && <HistoryView revision={events[0]?.id ?? 0} disabled={saving || isLoading || restorationLocked || proofread !== null || readerBlocked} onReview={() => navigateFromMenu('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
       {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
       <footer className="app-footer"><span><LexiMark className="footer-mark" />词间 · 英语阅读与词汇学习</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
