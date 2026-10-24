@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/speech.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { createSpeechController, readSpeechPreferences, restoreSpeechPreferences, selectSpeechVoice, speechTextProblem, isSpeechWord } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { createSpeechController, readSpeechPreferences, restoreSpeechPreferences, selectSpeechVoice, speechTextProblem, isSpeechWord, pronunciationSourceLabel } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const us = { lang: 'en-US', name: 'US offline', localService: true, default: false };
 const gb = { lang: 'en-GB', name: 'British offline', localService: true, default: false };
 
@@ -16,7 +16,7 @@ function engine(initial = [us, gb]) {
   synth.speak = utterance => { synth.utterances.push(utterance); };
   synth.cancel = () => { synth.cancels++; };
   synth.resume = () => { synth.paused = false; };
-  // Legacy engine tests explicitly opt in to synthetic word speech.
+  // The system engine remains available for sentences only.
   const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), preferences: { accent: 'en-US', rate: 1, wordFallback: true } });
   return { synth, controller };
 }
@@ -42,9 +42,9 @@ test('empty asynchronous voice lists are refreshed and listener cleanup can reco
   disconnectAgain();
 });
 
-test('rapid word-to-sentence switches cancel the queue and ignore late old callbacks', () => {
+test('rapid sentence switches cancel the queue and ignore late old callbacks', () => {
   const { synth, controller } = engine();
-  controller.speak('curious', { key: 'word' });
+  controller.speak('A curious word.', { key: 'word' });
   const first = synth.utterances.at(-1);
   const oldStart = first.onstart, oldEnd = first.onend, oldError = first.onerror;
   controller.speak('A curious reader explores the garden.', { key: 'sentence' });
@@ -66,7 +66,7 @@ test('rapid word-to-sentence switches cancel the queue and ignore late old callb
 
 test('accent and rate changes stop current speech and apply to the next utterance', () => {
   const { synth, controller } = engine();
-  controller.speak('habit', { key: 'word' });
+  controller.speak('A good habit.', { key: 'word' });
   controller.setAccent('en-GB');
   assert.equal(controller.getSnapshot().activeKey, null);
   controller.setRate(0.8);
@@ -83,24 +83,24 @@ test('accent and rate changes stop current speech and apply to the next utteranc
 
 test('missing chosen voice is explicit and never queues speech with the system default', () => {
   const { synth, controller } = engine([gb]);
-  controller.speak('hello');
+  controller.speak('Hello there.');
   assert.equal(synth.utterances.length, 0);
   assert.match(controller.getSnapshot().error, /没有所选口音/);
   controller.setAccent('en-GB');
   assert.equal(controller.getSnapshot().error, '');
-  controller.speak('hello');
+  controller.speak('Hello there.');
   assert.equal(synth.utterances.length, 1);
   controller.stop();
 });
 
 test('browser audio errors clear active playback and retries do not retain the failure', () => {
   const { synth, controller } = engine();
-  controller.speak('hello');
+  controller.speak('Hello there.');
   synth.utterances.at(-1).onerror({ error: 'not-allowed' });
   assert.equal(controller.getSnapshot().activeKey, null);
   assert.equal(controller.getSnapshot().status, 'error');
   assert.match(controller.getSnapshot().error, /点击/);
-  controller.speak('hello');
+  controller.speak('Hello there.');
   assert.equal(controller.getSnapshot().error, '');
   synth.utterances.at(-1).onerror({ error: 'interrupted' });
   assert.equal(controller.getSnapshot().status, 'idle');
@@ -110,12 +110,12 @@ test('browser audio errors clear active playback and retries do not retain the f
 test('a disconnected or removed voice cancels playing audio', () => {
   const { synth, controller } = engine();
   const disconnect = controller.connect();
-  controller.speak('hello');
+  controller.speak('Hello there.');
   synth.voices = [gb]; synth.dispatchEvent(new Event('voiceschanged'));
   assert.equal(controller.getSnapshot().activeKey, null);
   assert.equal(controller.getSnapshot().voiceAvailable, false);
   synth.voices = [us]; synth.dispatchEvent(new Event('voiceschanged'));
-  controller.speak('hello');
+  controller.speak('Hello there.');
   disconnect();
   assert.equal(controller.getSnapshot().activeKey, null);
 });
@@ -129,7 +129,7 @@ test('unsupported and broken engines fail safely and preference storage is optio
   synth.speak = () => { throw new Error('private platform diagnostic'); };
   const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), preferences: { accent: 'en-US', rate: 1, wordFallback: true }, onPreferences: () => { throw new Error('storage unavailable'); } });
   controller.setRate(0.8);
-  controller.speak('hello');
+  controller.speak('Hello there.');
   assert.equal(controller.getSnapshot().activeKey, null);
   assert.match(controller.getSnapshot().error, /无法启动/);
   assert.equal(controller.getSnapshot().error.includes('private'), false);
@@ -185,7 +185,7 @@ test('missing storage still starts at normal speed and rejected preference write
   controller.setAccent('en-GB');
   controller.setRate(0.8);
   controller.setWordFallback(true);
-  controller.speak('curious');
+  controller.speak('A curious reader.');
   assert.equal(synth.utterances.at(-1).lang, 'en-GB');
   assert.equal(synth.utterances.at(-1).rate, 0.8);
   controller.stop();
@@ -194,12 +194,12 @@ test('missing storage still starts at normal speed and rejected preference write
 test('a silently unresponsive engine times out and cannot revive after a retry', context => {
   context.mock.timers.enable({ apis: ['setTimeout'] });
   const { synth, controller } = engine();
-  controller.speak('hello', { key: 'old' });
+  controller.speak('Hello there.', { key: 'old' });
   const lateStart = synth.utterances.at(-1).onstart;
   context.mock.timers.tick(12_000);
   assert.equal(controller.getSnapshot().activeKey, null);
   assert.match(controller.getSnapshot().error, /没有响应/);
-  controller.speak('next', { key: 'new' });
+  controller.speak('The next sentence.', { key: 'new' });
   lateStart();
   assert.equal(controller.getSnapshot().activeKey, 'new');
   assert.equal(controller.getSnapshot().status, 'starting');
@@ -318,25 +318,25 @@ test('a late old play promise and callbacks cannot revive canceled audio or stop
   assert.equal(controller.getSnapshot().engine, 'neural');
 });
 
-test('a failed natural request clearly falls back to the same accent and the next click retries natural', async context => {
+test('a failed sentence request falls back to the same accent and the next click retries local audio', async context => {
   let count = 0;
   const { controller, synth, requests } = naturalEngine(context, { load: () => ++count === 1 ? Promise.reject(new Error('private server failure')) : Promise.resolve(wav()) });
-  controller.speak('curious'); await flush();
+  controller.speak('A curious reader.'); await flush();
   assert.equal(synth.utterances.length, 1);
   assert.equal(controller.getSnapshot().engine, 'system');
   assert.equal(controller.getSnapshot().voiceName, us.name);
   assert.match(controller.getSnapshot().notice, /已回退.*再次点击/);
   assert.equal(controller.getSnapshot().notice.includes('private'), false);
   synth.utterances[0].onend();
-  controller.speak('curious'); await flush();
+  controller.speak('A curious reader.'); await flush();
   assert.equal(requests.length, 2);
   assert.equal(controller.getSnapshot().engine, 'neural');
-  assert.match(controller.getSnapshot().notice, /暂无.*录音.*本机合成/);
+  assert.equal(controller.getSnapshot().notice, '');
 });
 
 test('natural failure with no matching British voice never substitutes an American voice', async context => {
   const { controller, synth, players } = naturalEngine(context, { voices: [us], load: () => Promise.reject(new Error('offline')) });
-  controller.setAccent('en-GB'); controller.speak('hello'); await flush();
+  controller.setAccent('en-GB'); controller.speak('Hello there.'); await flush();
   assert.equal(synth.utterances.length, 0); assert.equal(players.length, 0);
   assert.equal(controller.getSnapshot().status, 'error');
   assert.match(controller.getSnapshot().error, /没有所选口音/);
@@ -355,10 +355,10 @@ test('autoplay denial reports the click requirement and never bypasses it throug
   assert.equal(controller.getSnapshot().error, '');
 });
 
-test('audio decoding failure revokes its URL and leaves the system fallback in control', async context => {
+test('sentence audio decoding failure revokes its URL and leaves the system fallback in control', async context => {
   const play = deferred();
   const { controller, synth, players, revoked } = naturalEngine(context, { play: () => play.promise });
-  controller.speak('hello', { key: 'word' }); await flush();
+  controller.speak('Hello there.', { key: 'sentence' }); await flush();
   const player = players[0], latePlaying = player.onplaying;
   player.onerror();
   assert.equal(synth.utterances.length, 1); assert.equal(revoked.length, 1);
@@ -394,7 +394,7 @@ test('removing system voices does not interrupt a playing natural recording', as
 test('a late service status does not relabel already playing system speech as natural audio', async context => {
   const { controller, synth } = naturalEngine(context);
   controller.setNeuralAvailable(false, '本机自然语音尚未安装。');
-  controller.speak('hello'); synth.utterances.at(-1).onstart();
+  controller.speak('Hello there.'); synth.utterances.at(-1).onstart();
   controller.setNeuralAvailable(true);
   assert.equal(controller.getSnapshot().engine, 'system');
   assert.equal(controller.getSnapshot().voiceName, us.name);
@@ -416,12 +416,12 @@ test('natural preparation timeout aborts the request and ignores a very late res
   assert.equal(controller.getSnapshot().status, 'error');
 });
 
-test('empty audio and player construction errors release resources before a safe fallback', async context => {
+test('empty sentence audio and player construction errors release resources before a safe fallback', async context => {
   const empty = naturalEngine(context, { load: () => Promise.resolve(new Blob()) });
-  empty.controller.speak('hello'); await flush();
+  empty.controller.speak('Hello there.'); await flush();
   assert.equal(empty.players.length, 0); assert.equal(empty.synth.utterances.length, 1);
   const broken = naturalEngine(context, { create: () => { throw new Error('private device data'); } });
-  broken.controller.speak('hello'); await flush();
+  broken.controller.speak('Hello there.'); await flush();
   assert.equal(broken.revoked.length, 1); assert.equal(broken.synth.utterances.length, 1);
   assert.equal(broken.controller.getSnapshot().notice.includes('private'), false);
 });
@@ -484,18 +484,18 @@ test('stop, accent changes and system fallbacks never retain dictionary recordin
   assert.equal(controller.getSnapshot().attribution, null);
   controller.speak('example'); await flush(); controller.setAccent('en-GB');
   assert.equal(controller.getSnapshot().attribution, null);
-  controller.speak('example'); await flush();
+  controller.speak('A public example.'); await flush();
   assert.equal(controller.getSnapshot().engine, 'system');
   assert.equal(controller.getSnapshot().attribution, null);
   assert.equal(synth.utterances.at(-1).lang, 'en-GB');
 });
 
-test('an uncredited dictionary result cannot be labelled as a usable recording', async context => {
+test('an uncredited dictionary word result stays silent and cannot become system speech', async context => {
   const { controller, players, synth } = naturalEngine(context, { load: () => Promise.resolve({ blob: wav(), source: 'dictionary' }) });
   controller.speak('example'); await flush();
   assert.equal(players.length, 0);
-  assert.equal(synth.utterances.length, 1);
-  assert.equal(controller.getSnapshot().engine, 'system');
+  assert.equal(synth.utterances.length, 0);
+  assert.equal(controller.getSnapshot().status, 'error');
   assert.equal(controller.getSnapshot().attribution, null);
 });
 
@@ -639,7 +639,7 @@ test('word classification matches dictionary normalization and cannot bypass rec
   for (const text of ['', 'two words', '你好', '123', 'A full sentence.', 'eye\nheadmaster']) assert.equal(isSpeechWord(text), false, text);
 });
 
-test('the default controller never starts system word speech without an explicit opt-in', () => {
+test('the controller never starts system word speech even after opting into local synthesis', () => {
   const { synth } = engine(); const saved = [];
   const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), onPreferences: value => saved.push(value) });
   assert.equal(controller.getSnapshot().wordFallback, false);
@@ -647,7 +647,8 @@ test('the default controller never starts system word speech without an explicit
   assert.equal(synth.utterances.length, 0);
   assert.match(controller.getSnapshot().error, /未自动.*合成/);
   controller.setRate(0.8); controller.setWordFallback(true); controller.speak('eye');
-  assert.equal(synth.utterances.length, 1);
+  assert.equal(synth.utterances.length, 0);
+  assert.match(controller.getSnapshot().error, /未自动.*系统/);
   assert.deepEqual(saved.at(-1), { accent: 'en-US', rate: 0.8, wordFallback: true });
   controller.stop();
 });
@@ -745,4 +746,97 @@ test('API audio metadata validates actual accents and supports the previous resp
   assert.equal((await client.requestPronunciation('eye', 'en-US')).accent, 'en-US');
   accent = 'zh-CN';
   await assert.rejects(client.requestPronunciation('eye', 'en-US'), /口音信息不完整/);
+});
+
+const rosie = () => ({ blob: wav(), source: 'kitten', accent: 'en-US' });
+
+test('Rosie is identified as American synthesis without replacing a British preference or retaining recording credits', async context => {
+  let count = 0;
+  const { controller, players, synth } = naturalEngine(context, { load: () => Promise.resolve(++count === 1 ? recorded() : rosie()) });
+  controller.speak('eye'); await flush();
+  assert.equal(controller.getSnapshot().source, 'dictionary');
+  controller.setAccent('en-GB'); controller.setRate(0.8);
+  controller.speak('headmaster'); await flush();
+  const snapshot = controller.getSnapshot();
+  assert.equal(snapshot.source, 'kitten'); assert.equal(snapshot.engine, 'neural');
+  assert.equal(snapshot.accent, 'en-GB'); assert.equal(snapshot.voiceName, 'Rosie（美式）');
+  assert.equal(snapshot.attribution, null); assert.match(snapshot.notice, /Rosie 美式合成/);
+  assert.equal(players.at(-1).playbackRate, 0.8); assert.equal(players.at(-1).preservesPitch, true);
+  assert.equal(synth.utterances.length, 0);
+  assert.equal(pronunciationSourceLabel(snapshot.source), '本机神经语音');
+  assert.match(pronunciationSourceLabel('piper'), /Piper/);
+});
+
+test('Rosie availability is reported separately without changing saved synthesis permission', context => {
+  const { controller } = naturalEngine(context, { wordFallback: false });
+  assert.equal(controller.getSnapshot().naturalAvailable, false);
+  controller.setNeuralAvailable(true, null, true);
+  assert.equal(controller.getSnapshot().naturalAvailable, true);
+  assert.equal(controller.getSnapshot().wordFallback, false);
+  controller.setWordFallback(true); controller.setNeuralAvailable(true);
+  assert.equal(controller.getSnapshot().naturalAvailable, false);
+  assert.equal(controller.getSnapshot().wordFallback, true);
+  controller.setNeuralAvailable(false, null, true);
+  assert.equal(controller.getSnapshot().naturalAvailable, false);
+});
+
+test('a Rosie response cannot bypass recording-only playback or claim a British accent', async context => {
+  const strict = naturalEngine(context, { wordFallback: false, load: () => Promise.resolve(rosie()) });
+  strict.controller.speak('eye'); await flush();
+  assert.equal(strict.players.length, 0); assert.equal(strict.synth.utterances.length, 0);
+  assert.match(strict.controller.getSnapshot().error, /未找到.*录音/);
+  for (const accent of [undefined, 'en-GB', 'zh-CN']) {
+    const invalid = naturalEngine(context, { load: () => Promise.resolve({ ...rosie(), accent }) });
+    invalid.controller.speak('headmaster'); await flush();
+    assert.equal(invalid.players.length, 0); assert.equal(invalid.synth.utterances.length, 0);
+    assert.match(invalid.controller.getSnapshot().error, /重试/);
+  }
+});
+
+test('all word request and playback failures stay silent instead of using Windows voices after an opt-in', async context => {
+  const cases = [
+    { load: () => Promise.reject(new Error('private network trace')) },
+    { load: () => Promise.resolve(new Blob()) },
+    { create: () => { throw new Error('private output trace'); } },
+    { play: () => Promise.reject(new Error('decode failure')) },
+  ];
+  for (const options of cases) {
+    const { controller, synth } = naturalEngine(context, { load: () => Promise.resolve(rosie()), ...options });
+    controller.speak('eye'); await flush();
+    assert.equal(synth.utterances.length, 0);
+    assert.equal(controller.getSnapshot().status, 'error');
+    assert.match(controller.getSnapshot().error, /重试.*未自动.*系统/);
+    assert.equal(controller.getSnapshot().error.includes('private'), false);
+  }
+  const { controller, players, synth, revoked } = naturalEngine(context, { load: () => Promise.resolve(rosie()) });
+  controller.speak('headmaster'); await flush(); players[0].onerror();
+  assert.equal(synth.utterances.length, 0); assert.equal(revoked.length, 1);
+  assert.equal(controller.getSnapshot().status, 'error');
+  controller.speak('headmaster'); await flush();
+  assert.equal(players.length, 2); assert.equal(controller.getSnapshot().source, 'kitten');
+});
+
+test('late canceled Rosie metadata cannot replace a newer dictionary source', async context => {
+  const old = deferred(); let count = 0;
+  const { controller, players } = naturalEngine(context, { load: () => ++count === 1 ? old.promise : Promise.resolve(recorded()) });
+  controller.speak('headmaster'); controller.speak('eye'); await flush();
+  old.resolve(rosie()); await flush();
+  assert.equal(players.length, 1); assert.equal(controller.getSnapshot().source, 'dictionary');
+  assert.deepEqual(controller.getSnapshot().attribution, recordingAttribution);
+});
+
+test('API accepts only the installed Rosie voice with its actual American accent and no dictionary credits', async context => {
+  let voice = 'kitten-micro-0.8-rosie', accent = 'en-US';
+  const { client } = await pronunciationAPI(context, () => {
+    const response = pronunciationResponse('kitten', recordingAttribution);
+    if (voice !== null) response.headers.set('X-Pronunciation-Voice', voice);
+    if (accent !== null) response.headers.set('X-Pronunciation-Accent', accent);
+    return response;
+  });
+  const audio = await client.requestPronunciation('headmaster', 'en-GB', undefined, true);
+  assert.equal(audio.source, 'kitten'); assert.equal(audio.accent, 'en-US'); assert.equal(audio.attribution, undefined);
+  for (const fields of [[null, 'en-US'], ['piper', 'en-US'], ['kitten-micro-0.8-rosie', null], ['kitten-micro-0.8-rosie', 'en-GB']]) {
+    [voice, accent] = fields;
+    await assert.rejects(client.requestPronunciation('headmaster', 'en-GB', undefined, true), /Rosie 发音信息不完整/);
+  }
 });

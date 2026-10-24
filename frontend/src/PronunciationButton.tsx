@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { LoaderCircle, Square, Volume2 } from 'lucide-react';
 import { useSpeech } from './SpeechProvider';
-import { speechTextProblem } from './speech';
+import { pronunciationSourceLabel, speechTextProblem } from './speech';
 import type { SpeechAccent, SpeechRate } from './speech';
 import './pronunciation.css';
 
@@ -60,9 +60,10 @@ export function SpeechSettings() {
       <label htmlFor={rateId}>语速<select id={rateId} aria-label="朗读语速" disabled={!speech.isSupported} value={speech.rate} onChange={event => speech.setRate(Number(event.target.value) as SpeechRate)}><option value={0.8}>慢速 · 0.8×</option><option value={1}>正常 · 1×</option><option value={1.2}>快速 · 1.2×</option></select></label>
       {speech.rate !== 1 && <button type="button" className="speech-rate-reset" onClick={() => speech.setRate(1)}>恢复正常语速</button>}
     </div>
-    <label className="speech-fallback-option"><input type="checkbox" checked={speech.wordFallback} onChange={event => speech.setWordFallback(event.target.checked)} />无录音时使用合成朗读</label>
-    <p className="speech-hint" title="只准备当前单词，不会自动播放。句子在本机朗读。">{speech.wordFallback ? '首选口音缺录音时尝试另一口音，均无录音时使用合成朗读。' : '单词仅播放词典录音；首选口音缺录音时尝试另一口音。'}</p>
-    {speech.voiceName && <p className="speech-source" title={speech.engine === 'system' ? undefined : '已加首尾缓冲'}>{speech.engine === 'dictionary' ? '词典录音' : speech.engine === 'neural' ? '本机合成' : '系统语音'}<span>·</span>{speech.voiceName}</p>}
+    <label className="speech-fallback-option"><input type="checkbox" checked={speech.wordFallback} onChange={event => speech.setWordFallback(event.target.checked)} />{speech.naturalAvailable ? '无录音时使用自然合成' : '无录音时使用合成朗读'}</label>
+    {speech.naturalAvailable && <p className="speech-hint">开启后，缺录音单词使用 Rosie 美式合成声线。</p>}
+    <p className="speech-hint" title="只准备当前单词，不会自动播放。句子在本机朗读。">{speech.wordFallback ? '首选口音缺录音时尝试另一口音；发音失败可重新点击。' : '单词仅播放词典录音；首选口音缺录音时尝试另一口音。'}</p>
+    {speech.voiceName && <p className="speech-source" title={speech.engine === 'system' ? undefined : '已加首尾缓冲'}>{pronunciationSourceLabel(speech.source)}<span>·</span>{speech.voiceName}</p>}
     {speech.engine === 'dictionary' && speech.attribution && <p className="speech-attribution">
       <span>{speech.attribution.author} · {speech.attribution.license}</span>
       <a href={speech.attribution.source_url} target="_blank" rel="noopener noreferrer">Commons 来源</a>

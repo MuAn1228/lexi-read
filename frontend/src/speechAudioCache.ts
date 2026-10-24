@@ -93,7 +93,8 @@ export function createPronunciationCache({ load, getScope, now = Date.now, maxEn
           if (!wordFallback && isSpeechWord(normalized) && audio.source !== 'dictionary') {
             throw Object.assign(new Error('No dictionary recording available'), { code: 'recording_not_found' });
           }
-          if (!audio.blob.size || !['dictionary', 'piper'].includes(audio.source)
+          if (!audio.blob.size || !['dictionary', 'piper', 'kitten'].includes(audio.source)
+            || audio.source === 'kitten' && audio.accent !== 'en-US'
             || audio.source === 'dictionary' && !audio.attribution) throw new Error('Invalid pronunciation audio');
           if (currentGeneration !== generation) throw abortError();
           if (fresh.consumers.size) remember(key, audio);

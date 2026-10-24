@@ -31,8 +31,8 @@ export function SpeechProvider({ children }: { children: ReactNode }) {
   });
   useEffect(() => {
     const abort = new AbortController();
-    request<{ available: boolean; reason: string | null }>('/pronunciation/status', { signal: abort.signal })
-      .then(status => { if (!abort.signal.aborted) controller.setNeuralAvailable(status.available === true, status.reason); })
+    request<{ available: boolean; reason: string | null; natural_available?: boolean }>('/pronunciation/status', { signal: abort.signal })
+      .then(status => { if (!abort.signal.aborted) controller.setNeuralAvailable(status.available === true, status.reason, status.natural_available === true); })
       .catch(() => { if (!abort.signal.aborted) controller.setNeuralAvailable(false, '暂时无法连接发音服务。'); });
     return () => abort.abort();
   }, [controller]);

@@ -166,3 +166,29 @@ test('a policy-violating synthetic word response is rejected and never delays th
   assert.equal((await get('eye')).source, 'dictionary');
   await get('eye'); assert.equal(calls.length, 2);
 });
+
+test('Rosie synthesis keeps its American source metadata, uses a short retry window and stays isolated from strict recording requests', async () => {
+  let now = 1_000;
+  const { get, calls } = resource({ now: () => now, load: ({ wordFallback }) => Promise.resolve(wordFallback
+    ? { ...audio('kitten'), accent: 'en-US' } : { ...audio(), accent: 'en-GB' }) });
+  const allowed = () => get('headmaster', 'en-GB', signal(), true);
+  const first = await allowed(); first.accent = 'en-GB';
+  const again = await allowed();
+  assert.equal(again.source, 'kitten'); assert.equal(again.accent, 'en-US');
+  assert.equal((await get('headmaster', 'en-GB')).source, 'dictionary');
+  assert.equal(calls.length, 2);
+  now += 15_000; await allowed(); assert.equal(calls.length, 3);
+  await get('headmaster', 'en-GB'); assert.equal(calls.length, 3);
+});
+
+test('unapproved Rosie responses and incorrect accents never become reusable cache entries', async () => {
+  for (const accent of [undefined, 'en-GB']) {
+    let count = 0;
+    const { get, calls } = resource({ load: () => Promise.resolve(++count === 1 ? { ...audio('kitten'), accent } : audio()) });
+    await assert.rejects(get('eye', 'en-US', signal(), true), /Invalid pronunciation/);
+    assert.equal((await get('eye', 'en-US', signal(), true)).source, 'dictionary');
+    assert.equal(calls.length, 2);
+  }
+  const { get } = resource({ load: () => Promise.resolve({ ...audio('kitten'), accent: 'en-US' }) });
+  await assert.rejects(get('eye'), error => error.code === 'recording_not_found');
+});

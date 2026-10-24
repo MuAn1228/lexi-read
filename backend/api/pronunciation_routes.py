@@ -19,8 +19,9 @@ class PronunciationRequest(BaseModel):
 
 class PronunciationStatus(BaseModel):
     available: bool
-    engine: Literal["piper", "system"]
+    engine: Literal["piper", "kitten", "system"]
     reason: str | None
+    natural_available: bool = False
 
 
 @router.get("/status", response_model=PronunciationStatus)
@@ -45,7 +46,7 @@ def pronunciation(payload: PronunciationRequest, user_id: int = Depends(get_curr
         raise HTTPException(503, str(exc), headers={"Cache-Control": "private, no-store"}) from exc
     return Response(content=data, media_type="audio/wav", headers={
         "X-Pronunciation-Voice": voice, "X-Pronunciation-Source": source,
-        "X-Pronunciation-Accent": voice[len("wiktionary-"):] if source == "dictionary" else payload.accent,
+        "X-Pronunciation-Accent": voice[len("wiktionary-"):] if source == "dictionary" else "en-US" if source == "kitten" else payload.accent,
         "X-Pronunciation-Attribution": json.dumps(attribution, ensure_ascii=True, separators=(",", ":")) if attribution else "",
         "Cache-Control": "private, no-store",
     })

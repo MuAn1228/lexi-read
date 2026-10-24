@@ -58,7 +58,7 @@ def client():
 def test_status_only_checks_files_and_dependencies_without_loading_or_writing(runtime, monkeypatch):
     settings, _ = runtime
     monkeypatch.setattr(speech, "_get_engine", lambda *args: pytest.fail("status loaded a model"))
-    assert speech.pronunciation_status() == {"available": True, "engine": "piper", "reason": None}
+    assert speech.pronunciation_status() == {"available": True, "engine": "piper", "reason": None, "natural_available": False}
     assert not (settings.storage_dir / "tts-audio").exists()
 
 
@@ -471,3 +471,39 @@ def test_sentences_keep_local_speech_without_dictionary_network(client, runtime,
     response = client.post("/api/pronunciation", json={"text": "A quiet garden."})
     assert response.status_code == 200
     assert response.headers["x-pronunciation-source"] == "piper"
+
+
+def test_enabled_new_voice_is_explicitly_american_and_not_a_recording(client, runtime, monkeypatch):
+    monkeypatch.setattr("backend.services.natural_speech.natural_status", lambda storage: (True, None))
+    monkeypatch.setattr("backend.services.natural_speech.synthesize_natural",
+                        lambda text, storage: (b"rosie-audio", "kitten-micro-0.8-rosie"))
+    response = client.post("/api/pronunciation", json={"text": "metacognition", "accent": "en-GB", "allow_word_synthesis": True})
+    assert response.status_code == 200 and response.content == b"rosie-audio"
+    assert response.headers["x-pronunciation-source"] == "kitten"
+    assert response.headers["x-pronunciation-voice"] == "kitten-micro-0.8-rosie"
+    assert response.headers["x-pronunciation-accent"] == "en-US"
+    assert not response.headers["x-pronunciation-attribution"]
+    assert not runtime[1].calls
+
+
+def test_new_voice_does_not_bypass_the_word_synthesis_preference(client, runtime, monkeypatch):
+    monkeypatch.setattr("backend.services.natural_speech.natural_status", lambda storage: (True, None))
+    monkeypatch.setattr("backend.services.natural_speech.synthesize_natural", lambda *args: pytest.fail("strict word synthesized"))
+    response = client.post("/api/pronunciation", json={"text": "metacognition"})
+    assert response.status_code == 404 and not runtime[1].calls
+
+
+def test_failed_new_voice_never_silently_uses_the_old_voice(client, runtime, monkeypatch):
+    monkeypatch.setattr("backend.services.natural_speech.natural_status", lambda storage: (True, None))
+    def fail(*args):
+        raise speech.PronunciationUnavailable("新声线暂不可用，请重试。")
+    monkeypatch.setattr("backend.services.natural_speech.synthesize_natural", fail)
+    response = client.post("/api/pronunciation", json={"text": "metacognition", "allow_word_synthesis": True})
+    assert response.status_code == 503 and not runtime[1].calls
+
+
+def test_new_voice_status_does_not_require_piper(client, runtime, monkeypatch):
+    monkeypatch.setattr("backend.services.natural_speech.natural_status", lambda storage: (True, None))
+    monkeypatch.setattr(speech, "_dependency_problem", lambda: "Piper未安装")
+    response = client.get("/api/pronunciation/status")
+    assert response.json() == {"available": True, "engine": "kitten", "reason": None, "natural_available": True}

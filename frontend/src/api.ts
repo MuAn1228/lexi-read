@@ -152,9 +152,12 @@ function pronunciationAttribution(raw: string | null): PronunciationAttribution 
 export async function requestPronunciation(text: string, accent: SpeechAccent, signal?: AbortSignal, wordFallback = false): Promise<PronunciationAudio> {
   const response = await fetchBackend('/api/pronunciation', { method: 'POST', body: JSON.stringify({ text, accent, allow_word_synthesis: wordFallback }), signal });
   const source = response.headers.get('X-Pronunciation-Source');
-  if (source !== 'dictionary' && source !== 'piper') throw new ApiError('发音来源信息不完整，请重试。');
+  if (source !== 'dictionary' && source !== 'piper' && source !== 'kitten') throw new ApiError('发音来源信息不完整，请重试。');
   const returnedAccent = response.headers.get('X-Pronunciation-Accent');
   if (returnedAccent !== null && returnedAccent !== 'en-US' && returnedAccent !== 'en-GB') throw new ApiError('发音口音信息不完整，请重试。');
+  if (source === 'kitten' && (returnedAccent !== 'en-US' || response.headers.get('X-Pronunciation-Voice') !== 'kitten-micro-0.8-rosie')) {
+    throw new ApiError('Rosie 发音信息不完整，请重试。');
+  }
   const attribution = source === 'dictionary' ? pronunciationAttribution(response.headers.get('X-Pronunciation-Attribution')) : null;
   if (source === 'dictionary' && !attribution) throw new ApiError('词典录音的来源信息不完整，请重试。');
   const blob = await response.blob();

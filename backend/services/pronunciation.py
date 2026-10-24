@@ -84,13 +84,18 @@ def _file_identity(storage_dir: Path) -> tuple:
 
 
 def pronunciation_status() -> dict:
+    from backend.services.natural_speech import natural_status
+
+    natural_available, _ = natural_status(get_settings().storage_dir)
     reason = _dependency_problem()
     if reason is None:
         try:
             _file_identity(get_settings().storage_dir)
         except PronunciationUnavailable as exc:
             reason = str(exc)
-    return {"available": reason is None, "engine": "piper" if reason is None else "system", "reason": reason}
+    return {"available": natural_available or reason is None,
+            "engine": "kitten" if natural_available else "piper" if reason is None else "system",
+            "reason": None if natural_available else reason, "natural_available": natural_available}
 
 
 def normalize_text(text: str) -> str:
@@ -336,5 +341,13 @@ def synthesize_with_source(text: str, accent: str, *, allow_word_synthesis: bool
                 return recording.audio, f"wiktionary-{actual_accent}", "dictionary", recording.attribution
         if not allow_word_synthesis:
             raise RecordingNotFound("暂无可用的英美词典录音，请稍后重试；如需合成朗读，可在发音设置中开启。")
+        from backend.services.natural_speech import natural_status, synthesize_natural
+
+        natural_available, _ = natural_status(storage_dir)
+        if natural_available:
+            # A failed new voice is reported rather than silently reverting to
+            # the older word voice or a device's unrelated system synthesizer.
+            data, voice = synthesize_natural(normalized, storage_dir)
+            return data, voice, "kitten", None
     data, voice = synthesize(normalized, accent)
     return data, voice, "piper", None
