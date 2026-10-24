@@ -1,0 +1,133 @@
+/* Word content moves; the surrounding reading panel remains anchored. */
+@media (min-width: 1440px) {
+  .app-shell:not(.is-reading-focus) .reading-workspace > .reading-lookup > .context-panel {
+    height: 720px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .app-shell:not(.is-reading-focus) .reading-workspace .context-panel > .panel-heading { flex-shrink: 0; }
+  .app-shell:not(.is-reading-focus) .reading-workspace .context-panel > .context-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #b2c3a4 transparent;
+  }
+}
+.context-panel .context-word-transition,
+.context-panel .context-meaning-piece {
+  animation: lexi-context-reveal var(--motion-base) var(--motion-out) both;
+}
+.context-panel .context-meaning-second { animation-delay: calc(var(--motion-fast) / 2); }
+.context-panel .context-meaning-third { animation-delay: var(--motion-fast); }
+@keyframes lexi-context-reveal {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.context-panel .context-request-button[aria-busy="true"] {
+  opacity: 1;
+  color: #55745e;
+  background: #eef3e9;
+  cursor: progress;
+}
+.context-processing { padding: 13px 0 5px; }
+.context-processing-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #647b69;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.context-processing-indicator {
+  position: relative;
+  flex: 0 0 18px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #dee7d8;
+}
+.context-processing-indicator::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 9px;
+  border-radius: inherit;
+  background: #77967a;
+  animation: lexi-context-processing calc(var(--motion-slow) * 4) var(--motion-ease) infinite;
+}
+@keyframes lexi-context-processing {
+  from { transform: translateX(-9px); }
+  to { transform: translateX(18px); }
+}
+.context-processing-lines {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+  animation: lexi-context-reveal var(--motion-base) var(--motion-ease) both;
+}
+.context-processing-lines > span { display: block; height: 8px; border-radius: 2px; background: #ebefe4; }
+.context-processing-lines > span:nth-child(2) { width: 88%; }
+.context-processing-lines > span:nth-child(3) { width: 64%; }
+
+/* Only freshly requested, at-most-three recommendations stagger their arrival. */
+.related-card.related-card-enter {
+  animation: lexi-context-reveal var(--motion-base) var(--motion-out) both;
+  animation-delay: calc(var(--related-reveal-order, 0) * var(--motion-fast) / 2);
+}
+.related-disclosure,
+.related-disclosure-trigger {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--motion-slow) var(--motion-ease);
+}
+.related-disclosure-trigger { grid-template-rows: 1fr; }
+.related-disclosure[data-expanded="true"] { grid-template-rows: 1fr; }
+.related-disclosure-trigger[data-expanded="true"] { grid-template-rows: 0fr; }
+.related-disclosure > .related-disclosure-inner,
+.related-disclosure-trigger > div { min-height: 0; overflow: hidden; }
+.related-disclosure-trigger > div { opacity: 1; transition: opacity var(--motion-fast) var(--motion-ease); }
+.related-disclosure-trigger[data-expanded="true"] > div { opacity: 0; }
+.related-disclosure .related-reason {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--motion-base) var(--motion-ease), transform var(--motion-base) var(--motion-out);
+}
+.related-disclosure .related-feedback {
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--motion-ease);
+}
+.related-disclosure[data-expanded="true"] .related-reason { opacity: 1; transform: translateY(0); }
+.related-disclosure[data-expanded="true"] .related-feedback { opacity: 1; transition-delay: calc(var(--motion-fast) / 2); }
+.related-disclosure .related-reason:focus-visible { outline: 2px solid #91aa83; outline-offset: -2px; }
+.related-card .related-feedback button {
+  transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-out);
+}
+.related-card .related-feedback button:active:not(:disabled) { transform: scale(.97); }
+.related-card .related-feedback button.selected > svg { animation: lexi-feedback-selected var(--motion-base) var(--motion-out); }
+.related-card .related-feedback button[aria-busy="true"] { opacity: 1; border-style: dashed; cursor: progress; }
+.related-card .feedback-saving { animation: lexi-context-reveal var(--motion-fast) var(--motion-ease) both; }
+@keyframes lexi-feedback-selected {
+  from { transform: scale(.88); }
+  to { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-panel .context-word-transition,
+  .context-panel .context-meaning-piece,
+  .context-processing-lines,
+  .context-processing-indicator::after,
+  .related-card.related-card-enter,
+  .related-card .related-feedback button.selected > svg,
+  .related-card .feedback-saving { animation: none !important; }
+  .related-disclosure,
+  .related-disclosure-trigger,
+  .related-disclosure-trigger > div,
+  .related-disclosure .related-reason,
+  .related-disclosure .related-feedback,
+  .related-card .related-feedback button { transition: none !important; }
+  .context-processing-indicator::after { transform: translateX(4px); }
+}

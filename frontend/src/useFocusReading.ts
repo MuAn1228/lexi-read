@@ -7,7 +7,9 @@ function capture(surface: HTMLElement | null): ReadingPosition | null {
   if (!surface) return null;
   const top = surface.getBoundingClientRect().top;
   const word = Array.from(surface.querySelectorAll<HTMLElement>('[data-occurrence-id]'))
-    .find(element => element.getBoundingClientRect().top >= top);
+    // Restoring fractional image coordinates may round a word less than a pixel
+    // above the edge. Keep that same anchor when toggling back.
+    .find(element => element.getBoundingClientRect().top >= top - 1);
   return { id: word?.dataset.occurrenceId ?? null, offset: word ? word.getBoundingClientRect().top - top : 0,
     fraction: surface.scrollTop / Math.max(1, surface.scrollHeight - surface.clientHeight) };
 }
@@ -24,7 +26,8 @@ export function useFocusReading(available: boolean, documentId: number | null) {
   const lookupOpener = useRef<HTMLElement | null>(null);
   const pageScroll = useRef(0);
   const pending = useRef<ReadingPosition | null>(null);
-  const surface = () => workspace.current?.querySelector<HTMLElement>('.text-article, .document-canvas') ?? null;
+  // Both views stay mounted for the crossfade; capture only the visible reading surface.
+  const surface = () => workspace.current?.querySelector<HTMLElement>('.reader-surface.is-current .text-article, .reader-surface.is-current .document-canvas') ?? null;
 
   const toggle = useCallback(() => {
     pending.current = capture(surface());

@@ -1,5 +1,5 @@
 import { ListFilter, Search } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Occurrence, WordStatus } from './types';
 import { StatusBadge, WordControls } from './WordControls';
 
@@ -15,6 +15,19 @@ export default function WordList({ words, selectedId, query, setQuery, filter, s
   wholeDocument?: boolean;
 }) {
   const rows = useRef<HTMLDivElement>(null);
+  const previousStatuses = useRef(new Map<number, WordStatus | null>());
+  const [updatedRows, setUpdatedRows] = useState<Set<number>>(() => new Set());
+  useEffect(() => {
+    const next = new Map(words.map(word => [word.id, word.status]));
+    const changed = words.filter(word => previousStatuses.current.has(word.id) && previousStatuses.current.get(word.id) !== word.status);
+    previousStatuses.current = next;
+    // Only confirmed status changes receive feedback; mounting or filtering a row is not a learning action.
+    setUpdatedRows(current => {
+      const updated = new Set([...current].filter(id => next.has(id)));
+      changed.forEach(word => updated.add(word.id));
+      return updated.size === current.size && [...updated].every(id => current.has(id)) ? current : updated;
+    });
+  }, [words]);
   useEffect(() => {
     const container = rows.current;
     const selected = container?.querySelector<HTMLElement>('.word-row.selected');
@@ -29,7 +42,10 @@ export default function WordList({ words, selectedId, query, setQuery, filter, s
     <div className="panel-heading"><div><ListFilter size={16} /><h2>{wholeDocument ? '全文单词' : '本页单词'}</h2><span className="count-badge">{total}</span></div></div>
     <div className="word-search"><Search size={15} /><input aria-label={wholeDocument ? '搜索全文单词' : '搜索本页单词'} placeholder="查找单词…" value={query} onChange={event => setQuery(event.target.value)} /></div>
     <div className="filter-tabs" aria-label="筛选单词状态">{filters.map(item => <button key={item.value} className={filter === item.value ? 'active' : ''} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</button>)}</div>
-    <div ref={rows} className="word-list-rows">{words.map((word, index) => <div key={word.id} className={`word-row ${selectedId === word.id ? 'selected' : ''}`}>
+    <div ref={rows} className="word-list-rows">{words.map((word, index) => <div key={word.id} data-occurrence-id={word.id} data-status={word.status ?? 'UNMARKED'} className={`word-row ${selectedId === word.id ? 'selected' : ''} ${updatedRows.has(word.id) ? 'is-updated' : ''}`} onAnimationEnd={event => {
+      if (event.target !== event.currentTarget || event.animationName !== 'reader-row-status') return;
+      setUpdatedRows(current => { const next = new Set(current); next.delete(word.id); return next; });
+    }}>
       <button className="word-select" aria-pressed={selectedId === word.id} onClick={() => onSelect(word)}><span className="word-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{word.word}</strong><StatusBadge status={word.status} /></span></button>
       <WordControls word={word.word} status={word.status} compact disabled={saving} onMark={status => onMark(word, status)} />
     </div>)}{!words.length && <div className="empty-small"><Search size={24} /><p>没有符合条件的单词</p><button className="text-button" onClick={() => { setQuery(''); setFilter('ALL'); }}>清除筛选</button></div>}</div>

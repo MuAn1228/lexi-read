@@ -24,6 +24,7 @@ export default function DocumentPanel({ document, selectedId, revealToken, citat
   const [imageError, setImageError] = useState('');
   const [imageAttempt, setImageAttempt] = useState(0);
   const [image, setImage] = useState<{ source: string; url: string } | null>(null);
+  const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const article = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -50,6 +51,7 @@ export default function DocumentPanel({ document, selectedId, revealToken, citat
     });
   }, [parts, pageStart, focus]);
   const imageUrl = image?.source === document.image_url ? image.url : null;
+  const imageReady = Boolean(imageUrl && loadedImageUrl === imageUrl);
   useEffect(() => {
     setImage(null); setImageError('');
     const source = document.image_url;
@@ -132,11 +134,12 @@ export default function DocumentPanel({ document, selectedId, revealToken, citat
     const surface = container.getBoundingClientRect(); const word = button.getBoundingClientRect();
     if (word.top < surface.top || word.bottom > surface.bottom) container.scrollTop += word.top - surface.top - container.clientHeight / 2 + word.height / 2;
     if (word.left < surface.left || word.right > surface.right) container.scrollLeft += word.left - surface.left - container.clientWidth / 2 + word.width / 2;
-  }, [selectedId, textVisible, revealToken, imageUrl, showBoxes, zoom, pageNumber, focus?.token]);
+  }, [selectedId, textVisible, revealToken, imageUrl, imageReady, showBoxes, zoom, pageNumber, focus?.token]);
   return <section ref={panel} className={`document-panel panel ${textVisible ? 'text-document-panel' : ''} ${isPdf ? 'pdf-document-panel' : ''}`}>
     <div className="panel-heading"><div><FileText size={16} /><h2>阅读原文</h2></div><span className="tiny-badge">{isPdf ? `PDF · ${pages.length} 页` : isWeb ? '网页文章' : isText ? '文字文章' : corrected ? '图片 · 已校对' : document.source === 'demo' ? '示例图片 · 已预标注' : '图片文章'}</span></div>
     {isImage && <div className="image-proofread-toolbar"><div className="segmented"><button disabled={disabled} className={!showText ? 'active' : ''} aria-pressed={!showText} onClick={() => setShowText(false)}>原始图片</button><button disabled={disabled} className={showText ? 'active' : ''} aria-pressed={showText} onClick={() => setShowText(true)}>{corrected ? '阅读正文' : '识别文本'}</button></div>{onProofread && <button className="text-button pdf-proofread-entry" aria-label="校对图片正文" disabled={disabled} onClick={event => onProofread(1, event.currentTarget)}><FileCheck2 size={14} />校对正文</button>}</div>}
-    {textVisible ? <>
+    <div className="reader-surfaces">
+    <div className={`reader-surface reader-text-surface ${textVisible ? 'is-current' : ''}`} inert={!textVisible} aria-hidden={!textVisible}>
       {isPdf && <div className="pdf-page-toolbar"><div className="pdf-page-controls"><button className="icon-button" aria-label="PDF 上一页" disabled={disabled || pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}><ChevronLeft size={17} /></button><label><select aria-label="PDF 页码" disabled={disabled} value={pageNumber} onChange={event => changePage(Number(event.target.value))}>{pages.map(item => <option key={item.number} value={item.number}>第 {item.number} 页</option>)}</select><span>/ {pages.length} 页</span></label><button className="icon-button" aria-label="PDF 下一页" disabled={disabled || pageNumber >= pages.length} onClick={() => changePage(pageNumber + 1)}><ChevronRight size={17} /></button></div><div className="pdf-proofread-actions">{onProofread && <button className="text-button pdf-proofread-entry" aria-label="校对 PDF 正文" disabled={disabled} onClick={event => onProofread(pageNumber, event.currentTarget)}><FileCheck2 size={14} />校对正文</button>}<button className="text-button" aria-label="下载原 PDF" disabled={downloading || !document.pdf_url} onClick={() => void downloadPdf()}>{downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}下载原 PDF</button></div></div>}
       {webLink && <div className="web-source-toolbar"><span><Globe size={14} />{webLink.host}</span><a className="text-button" href={webLink.href} target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开原网页">查看原网页<ExternalLink size={14} /></a></div>}
       <p className="text-reading-guide">{isPdf ? 'PDF 正文 · 按原文件页码阅读。扫描识别结果请结合原文件核对。' : isWeb ? '网页正文已保存 · 点击英文单词，在原句中学习。' : corrected ? '已校对的阅读正文 · 点击单词学习。原始图片保留，原图词框已停用。' : isImage && !selectableText ? '图片识别正文 · 可先校对错字和断行，保存后即可在正文中点击单词学习。' : '点击英文单词，查看它在这句话里的意思。'}</p>
@@ -145,24 +148,28 @@ export default function DocumentPanel({ document, selectedId, revealToken, citat
         className={`article-word ${part.occurrence.status?.toLowerCase() ?? 'unmarked'} ${part.occurrence.id === selectedId ? 'selected' : ''}`}
         data-occurrence-id={part.occurrence.id} disabled={disabled} aria-label={`选择单词 ${part.text}`} aria-pressed={part.occurrence.id === selectedId}
         onClick={() => onSelect(part.occurrence!)}>{part.highlighted.map((piece, number) => piece.highlighted ? <mark className="article-citation-highlight" data-article-citation="true" tabIndex={-1} key={number}>{piece.text}</mark> : piece.text)}</button> : <span key={`text-${index}`}>{part.highlighted.map((piece, number) => piece.highlighted ? <mark className="article-citation-highlight" data-article-citation="true" tabIndex={-1} key={number}>{piece.text}</mark> : piece.text)}</span>)}</div>
-    </> : <><div className="document-toolbar"><div className="zoom-controls"><button className="icon-button" aria-label="缩小图片" disabled={disabled || zoom <= 75} onClick={() => setZoom(v => v - 25)}><ZoomOut size={16} /></button><span>{zoom}%</span><button className="icon-button" aria-label="放大图片" disabled={disabled || zoom >= 200} onClick={() => setZoom(v => v + 25)}><ZoomIn size={16} /></button><button className="icon-button" title="适应宽度" aria-label="图片恢复默认大小" disabled={disabled} onClick={() => setZoom(100)}><Maximize2 size={15} /></button></div>{corrected && <span className="image-corrected-note">原图保留 · 请在阅读正文中选词</span>}</div>
-      <div className="document-canvas" ref={canvas}>
-        {imageError ? <div className="empty-small" role="alert"><p>{imageError}</p><button className="button secondary" onClick={() => setImageAttempt(value => value + 1)}>重新加载</button></div> : !imageUrl ? <div className="empty-small" role="status"><p>正在加载原图…</p></div> :
-          <div className="image-stage" style={{ width: `${zoom}%`, aspectRatio: `${document.width} / ${document.height}` }}>
-            <img src={imageUrl} alt={`英文阅读原图：${document.title}`} onError={() => setImageError('图片暂时无法加载。')} draggable={false} />
-            {showBoxes && !corrected && document.words.map(word => {
+    </div>
+    {!isText && <div className={`reader-surface reader-image-surface ${!textVisible ? 'is-current' : ''}`} inert={textVisible} aria-hidden={textVisible}>
+      <div className="document-toolbar"><div className="zoom-controls"><button className="icon-button" aria-label="缩小图片" disabled={disabled || zoom <= 75} onClick={() => setZoom(v => v - 25)}><ZoomOut size={16} /></button><span>{zoom}%</span><button className="icon-button" aria-label="放大图片" disabled={disabled || zoom >= 200} onClick={() => setZoom(v => v + 25)}><ZoomIn size={16} /></button><button className="icon-button" title="适应宽度" aria-label="图片恢复默认大小" disabled={disabled} onClick={() => setZoom(100)}><Maximize2 size={15} /></button></div>{corrected && <span className="image-corrected-note">原图保留 · 请在阅读正文中选词</span>}</div>
+      <div className="document-canvas" ref={canvas} aria-busy={!imageError && !imageReady}>
+        {imageError ? <div className="empty-small" role="alert"><p>{imageError}</p><button className="button secondary" onClick={() => setImageAttempt(value => value + 1)}>重新加载</button></div> :
+          <div className={`image-stage ${imageReady ? 'is-ready' : 'is-loading'}`} style={{ width: `${zoom}%`, aspectRatio: `${document.width} / ${document.height}` }}>
+            {imageUrl && <img src={imageUrl} alt={`英文阅读原图：${document.title}`} onLoad={() => setLoadedImageUrl(imageUrl)} onError={() => setImageError('图片暂时无法加载。')} draggable={false} />}
+            {!imageReady && <div className="reader-image-placeholder" role="status"><FileText size={22} aria-hidden="true" /><p>正在加载原图…</p><div className="reader-image-lines" aria-hidden="true"><span /><span /><span /><span /><span /></div></div>}
+            {imageReady && showBoxes && !corrected && document.words.map(word => {
               if (!word.bbox || word.bbox_source === 'corrected_text') return null;
               const [x0, y0, x1, y1] = word.bbox;
               return <button key={word.id}
                 data-occurrence-id={word.id}
                 className={`word-overlay ${word.status?.toLowerCase() ?? 'unmarked'} ${word.id === selectedId ? 'selected' : ''}`}
                 style={{ left: `${x0 / document.width * 100}%`, top: `${y0 / document.height * 100}%`, width: `${(x1 - x0) / document.width * 100}%`, height: `${(y1 - y0) / document.height * 100}%` }}
-                aria-label={`选择单词 ${word.word}`} aria-pressed={word.id === selectedId} disabled={disabled}
+                aria-label={`选择单词 ${word.word}${word.status ? `，${word.status === 'KNOWN' ? '已掌握' : word.status === 'UNKNOWN' ? '不认识' : '不确定'}` : '，未标记'}`} aria-pressed={word.id === selectedId} disabled={disabled}
                 title={`${word.word}${word.confidence === null ? '' : ` · 识别置信度 ${Math.round(word.confidence * 100)}%`}${word.bbox_source === 'estimated' ? ' · 词框为估算位置' : ''}`}
                 onClick={() => onSelect(word)} />;
             })}
           </div>}
-      </div></>}
-    <div className="document-footer"><span><span className="pulse-dot" />{corrected && !textVisible ? '切换到阅读正文，点击单词学习' : isImage && textVisible && !selectableText ? '对照原图核对识别文字' : `点击${textVisible ? '正文' : '图片'}中的单词，开始学习`}</span>{textVisible || corrected ? <span>{isPdf ? `本页 ${pageContent.words.length}` : document.words.length} 处英文单词</span> : <button className="text-button" disabled={disabled} onClick={() => setShowBoxes(v => !v)}>{showBoxes ? <Eye size={14} /> : <EyeOff size={14} />}{showBoxes ? '隐藏标注' : '显示标注'}</button>}</div>
+      </div></div>}
+    </div>
+    <div className="document-footer"><span><span className="pulse-dot" />{corrected && !textVisible ? '切换到阅读正文，点击单词学习' : isImage && textVisible && !selectableText ? '对照原图核对识别文字' : `点击${textVisible ? '正文' : '图片'}中的单词，开始学习`}</span>{textVisible || corrected ? <span>{isPdf ? `本页 ${pageContent.words.length}` : document.words.length} 处英文单词</span> : <button className="text-button" disabled={disabled} aria-pressed={showBoxes} onClick={() => setShowBoxes(v => !v)}>{showBoxes ? <Eye size={14} /> : <EyeOff size={14} />}{showBoxes ? '隐藏标注' : '显示标注'}</button>}</div>
   </section>;
 }

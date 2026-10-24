@@ -1,0 +1,155 @@
+/* Reading stays spatially stable: only the visible surface and the current word receive feedback. */
+.reader-surfaces {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  isolation: isolate;
+}
+.reader-surface {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--motion-base) var(--motion-ease), visibility 0s;
+}
+.reader-surface:not(.is-current) {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--motion-base) var(--motion-ease), visibility 0s var(--motion-base);
+}
+.reader-surface.is-current { z-index: 1; }
+.reader-image-surface .document-canvas { min-height: 0; }
+.reader-image-surface .image-stage img {
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--motion-ease);
+}
+.reader-image-surface .image-stage.is-ready img { opacity: 1; }
+.reader-image-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 12px;
+}
+.reader-image-placeholder > svg { color: #7e916b; }
+.reader-image-lines { display: grid; gap: 13px; width: min(85%, 290px); margin-top: 13px; }
+.reader-image-lines span { display: block; height: 7px; background: #e7ecdf; border-radius: 2px; }
+.reader-image-lines span:nth-child(2) { width: 92%; }
+.reader-image-lines span:nth-child(4) { width: 78%; }
+.reader-image-lines span:last-child { width: 56%; }
+
+/* Zoom changes the original percentage geometry immediately. Never transform a word box or its image. */
+.document-panel .image-stage,
+.document-panel .image-stage img,
+.document-panel .word-overlay,
+.document-panel .article-word,
+.document-panel .word-overlay:active,
+.document-panel .article-word:active {
+  transform: none;
+}
+.document-panel .word-overlay {
+  --reader-word-fill: transparent;
+  --reader-word-hover: #78986a20;
+  --reader-word-border: #7a9b871a;
+  border-width: 1px;
+  border-color: var(--reader-word-border);
+  background-color: var(--reader-word-fill);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  box-shadow: none;
+  transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), outline-color var(--motion-base) var(--motion-ease);
+}
+.document-panel .word-overlay.known { --reader-word-fill: #6ba98117; --reader-word-hover: #6ba9812a; --reader-word-border: #6ba98155; }
+.document-panel .word-overlay.unknown { --reader-word-fill: #ca8e7421; --reader-word-hover: #ca8e7430; --reader-word-border: #b77d5f66; }
+.document-panel .word-overlay.uncertain { --reader-word-fill: #c7ab641e; --reader-word-hover: #c7ab6430; --reader-word-border: #baa05266; }
+.document-panel .word-overlay:hover:not(:disabled) { background-color: var(--reader-word-hover); border-color: #6d875b; }
+.document-panel .word-overlay.selected {
+  background-color: var(--reader-word-hover);
+  border: 1px solid var(--reader-word-border);
+  outline-color: #497548;
+  box-shadow: none;
+  z-index: 2;
+}
+.document-panel .word-overlay:focus-visible { outline-color: #355d3b; outline-offset: 3px; }
+.document-panel .article-word {
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  box-shadow: none;
+  transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), outline-color var(--motion-base) var(--motion-ease);
+}
+.document-panel .article-word.selected { outline-color: #6f8b59; box-shadow: none; }
+.document-panel .article-word.selected.known { background: #e5efdf; border-bottom-color: #80a273; }
+.document-panel .article-word.selected.unknown { background: #f4e6dc; border-bottom-color: #bb846d; }
+.document-panel .article-word.selected.uncertain { background: #f4edd5; border-bottom-color: #b9a15e; }
+.document-panel .article-word:focus-visible { outline-color: #355d3b; outline-offset: 3px; }
+
+/* A navigator, not a moving list. The previous status wash and the current leading mark can coexist. */
+.word-list .word-search { transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease); }
+.word-list .word-search:focus-within { border-color: #7b9564; background: var(--paper); }
+.word-list .filter-tabs button { transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); }
+.word-list .word-row {
+  --reader-row-background: transparent;
+  --reader-feedback: #e8ecdf;
+  position: relative;
+  background: var(--reader-row-background);
+  box-shadow: none;
+  transition: background-color var(--motion-base) var(--motion-ease), border-color var(--motion-base) var(--motion-ease);
+}
+.word-list .word-row::before {
+  content: '';
+  position: absolute;
+  inset: 12px auto 12px 0;
+  width: 3px;
+  border-radius: 2px;
+  background: #6c8c4f;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+.word-list .word-row:hover { --reader-row-background: #f0f4e9; }
+.word-list .word-row.selected { --reader-row-background: #e8efdc; background: var(--reader-row-background); box-shadow: none; }
+.word-list .word-row.selected::before { opacity: 1; }
+.word-list .word-row[data-status='KNOWN'] { --reader-feedback: #dcebd7; }
+.word-list .word-row[data-status='UNKNOWN'] { --reader-feedback: #f2e1d7; }
+.word-list .word-row[data-status='UNCERTAIN'] { --reader-feedback: #efe6c6; }
+.word-list .word-row.is-updated { animation: reader-row-status var(--motion-slow) var(--motion-ease); }
+@keyframes reader-row-status { from { background-color: var(--reader-feedback); } to { background-color: var(--reader-row-background); } }
+@keyframes reader-word-focus { from { outline-color: #a5b591; } 45% { outline-color: #4c7344; } to { outline-color: #6f8b59; } }
+@media (prefers-reduced-motion: no-preference) {
+  .reader-surface.is-current :is(.word-overlay, .article-word).selected { animation: reader-word-focus var(--motion-base) var(--motion-ease); }
+}
+
+/* Tablets retain the article and its navigator side by side, with context below. */
+@media (min-width: 621px) and (max-width: 1170px) {
+  .app-shell:not(.is-reading-focus) .reading-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 250px); }
+  .app-shell:not(.is-reading-focus) .reading-workspace > .reading-lookup { grid-column: 1 / -1; }
+}
+@media (min-width: 621px) and (max-width: 799px) {
+  .app-shell:not(.is-reading-focus) .reading-workspace > :is(.document-panel, .word-list) { height: 610px; }
+}
+@media (max-width: 620px) {
+  .reader-surfaces, .reader-surface { flex: none; }
+  .reader-image-surface .document-canvas { flex: none; min-height: 140px; max-height: 65vh; }
+  .reader-image-placeholder { padding: 18px; gap: 9px; }
+  .reader-image-lines { gap: 10px; margin-top: 6px; }
+}
+.is-reading-focus .reader-surfaces, .is-reading-focus .reader-surface { flex: 1; min-height: 0; }
+.is-reading-focus .reader-image-surface .document-canvas { flex: 1; min-height: 0; max-height: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reader-surface, .reader-image-surface .image-stage img,
+  .document-panel :is(.word-overlay, .article-word),
+  .word-list :is(.word-row, .word-row::before, .word-search, .filter-tabs button) { transition: none; }
+  .word-list .word-row.is-updated { animation-duration: .01ms; }
+}

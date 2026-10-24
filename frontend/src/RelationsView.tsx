@@ -9,6 +9,7 @@ import type { WordExpansionCache } from './wordExpansion';
 import { findRelationSource, relationPageNumbers, relationPracticeItems, relationRecallMeaning, relationSourceSuggestions, relationWorkspaceLabels, relationWorkspacePath } from './relationWorkspace';
 import type { RelationContext, RelationWorkspace, RelationWorkspaceFilters, WorkspaceRelation } from './relationWorkspace';
 import './relationWorkspace.css';
+import { MotionNumber } from './MotionPrimitives';
 
 type FeedbackAction = 'UNKNOWN' | 'USEFUL' | 'NOT_USEFUL';
 type Attempt = { action: FeedbackAction; request_id: string; batch_id: number; word: string };
@@ -190,14 +191,14 @@ export default function RelationsView({ vocabulary, disabled, revision, onLearni
     {!externallyDisabled && result.data && <section className="rw-summary" aria-label="词汇关联概况"><dl>{[
       ['保存的关联', result.data.summary.total_relations, '组'], ['关联起点', result.data.summary.source_words, '个词'],
       ['尚未掌握的关联词', result.data.summary.unfamiliar_targets, '个'], ['有释义的关联', result.data.summary.practice_pairs, '组'],
-    ].map(([label, value, unit]) => <div key={label}><dt>{label}</dt><dd>{Number(value).toLocaleString()}<span>{unit}</span></dd></div>)}</dl><p>统计全部未略过的关联，不随下方筛选变化。当前词库状态会同步显示。</p></section>}
+    ].map(([label, value, unit]) => <div key={label}><dt>{label}</dt><dd><MotionNumber value={Number(value)} formatted /><span>{unit}</span></dd></div>)}</dl><p>统计全部未略过的关联，不随下方筛选变化。当前词库状态会同步显示。</p></section>}
 
     {!practice && <section className="rw-explore" aria-labelledby="rw-explore-heading"><div className="rw-section-heading"><div><span className="rw-kicker">01 / 探索</span><h2 id="rw-explore-heading">从一个词，理清一组词</h2><p>选词库里的词，比较近义词、派生词与常用搭配。</p></div></div>
       <div className="rw-explore-grid"><div className="rw-source-picker"><label className="rw-search"><Search size={15} /><input type="search" aria-label="搜索词库中的单词" placeholder="搜索词库中的单词" maxLength={100} value={sourceQuery} disabled={blocked} onChange={event => setSourceQuery(event.target.value)} /></label>
         <p className="rw-menu-caption">{sourceQuery ? '匹配的词' : '先从尚未掌握的词开始'}</p>
         {suggestions.length ? <ul className="rw-source-menu">{suggestions.map(item => <li key={item.id}><button type="button" disabled={blocked} className={selected?.id === item.id ? 'is-selected' : ''} aria-pressed={selected?.id === item.id} aria-label={`选择 ${item.word} 作为关联起点`} onClick={() => pickSource(item.lemma)}><span><strong lang="en">{item.word}</strong><StatusBadge status={item.status} /></span><small>{item.meaning_summary || '选中后可查看详细释义'}</small></button></li>)}</ul> : <p className="rw-picker-empty">{vocabulary.length ? '没有匹配的词，换一个拼写试试。' : '词库还没有单词。先在阅读或词库中添加，再来建立关联。'}</p>}
       </div><div className="rw-explore-detail">
-        {selected ? <><div className="rw-selected-source"><div><span className="rw-kicker">当前起点</span><div className="rw-selected-word">{wordButton(selected.word)}<StatusBadge status={selected.status} /></div><p>{selected.meaning_summary || '点单词查看中文释义'}</p></div><span className="rw-source-instruction">选择关联类型后<br />点击「发现」获取</span></div>
+        {selected ? <><div className="rw-selected-source"><div key={selected.lemma}><span className="rw-kicker">当前起点</span><div className="rw-selected-word">{wordButton(selected.word)}<StatusBadge status={selected.status} /></div><p>{selected.meaning_summary || '点单词查看中文释义'}</p></div><span className="rw-source-instruction">选择关联类型后<br />点击「发现」获取</span></div>
           {!externallyDisabled && <fieldset className="rw-expansion-fieldset" disabled={blocked}><WordExpansion key={selected.lemma} word={selected.lemma} cache={cache.current} vocabulary={vocabulary} onLearningChanged={onLearningChanged} /></fieldset>}
         </> : <div className="rw-explore-empty"><Layers3 size={30} strokeWidth={1.3} /><h3>先选择一个起点词</h3><p>生成前不会调用 AI。已有结果会优先复用，<br />需要的关联再留下、加入生词库。</p></div>}
       </div></div>
