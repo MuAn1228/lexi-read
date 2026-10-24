@@ -2,7 +2,7 @@ import type { Health } from './types';
 import type { PronunciationAudio, PronunciationAttribution, SpeechAccent } from './speech';
 
 export class ApiError extends Error {
-  constructor(message: string, public status = 0) { super(message); }
+  constructor(message: string, public status = 0, public code = '') { super(message); }
 }
 
 function apiOrigin(): string {
@@ -98,8 +98,9 @@ async function fetchBackend(path: string, init: RequestInit = {}, authenticated 
       const data = await response.json().catch(() => null);
       const detail = typeof data?.detail === 'string' ? data.detail
         : Array.isArray(data?.detail) ? data.detail.map((item: { msg: string }) => item.msg).join('；')
+        : typeof data?.detail?.message === 'string' ? data.detail.message
         : `请求失败（${response.status}），请稍后重试。`;
-      throw new ApiError(detail, response.status);
+      throw new ApiError(detail, response.status, typeof data?.detail?.code === 'string' ? data.detail.code : '');
     }
     return response;
   } catch (error) {
@@ -148,15 +149,17 @@ function pronunciationAttribution(raw: string | null): PronunciationAttribution 
 }
 
 /** Audio and verified recording credits share the same authenticated backend response. */
-export async function requestPronunciation(text: string, accent: SpeechAccent, signal?: AbortSignal): Promise<PronunciationAudio> {
-  const response = await fetchBackend('/api/pronunciation', { method: 'POST', body: JSON.stringify({ text, accent }), signal });
+export async function requestPronunciation(text: string, accent: SpeechAccent, signal?: AbortSignal, wordFallback = false): Promise<PronunciationAudio> {
+  const response = await fetchBackend('/api/pronunciation', { method: 'POST', body: JSON.stringify({ text, accent, allow_word_synthesis: wordFallback }), signal });
   const source = response.headers.get('X-Pronunciation-Source');
   if (source !== 'dictionary' && source !== 'piper') throw new ApiError('发音来源信息不完整，请重试。');
+  const returnedAccent = response.headers.get('X-Pronunciation-Accent');
+  if (returnedAccent !== null && returnedAccent !== 'en-US' && returnedAccent !== 'en-GB') throw new ApiError('发音口音信息不完整，请重试。');
   const attribution = source === 'dictionary' ? pronunciationAttribution(response.headers.get('X-Pronunciation-Attribution')) : null;
   if (source === 'dictionary' && !attribution) throw new ApiError('词典录音的来源信息不完整，请重试。');
   const blob = await response.blob();
   if (!blob.size) throw new ApiError('发音音频为空，请重试。');
-  return { blob, source, ...(attribution ? { attribution } : {}) };
+  return { blob, source, accent: returnedAccent ?? accent, ...(attribution ? { attribution } : {}) };
 }
 
 async function requestBlob(path: string, init: RequestInit, invalidMessage: string): Promise<Blob> {

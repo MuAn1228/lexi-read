@@ -40,7 +40,7 @@ def runtime(tmp_path, monkeypatch):
         path.write_bytes(b"fake optional model")
     monkeypatch.setattr(speech, "get_settings", lambda: settings)
     monkeypatch.setattr(speech, "_dependency_problem", lambda: None)
-    monkeypatch.setattr("backend.services.word_recordings.record_word", lambda *args: None)
+    monkeypatch.setattr("backend.services.word_recordings.record_word", lambda *args, **kwargs: None)
     engine = FakeEngine()
     monkeypatch.setattr(speech, "_get_engine", lambda *args: speech._PiperAdapter(engine, SimpleNamespace))
     return settings, engine
@@ -379,7 +379,7 @@ def test_api_status_and_wav_headers(client, runtime):
     status = client.get("/api/pronunciation/status")
     assert status.status_code == 200 and status.json()["engine"] == "piper"
     assert status.headers["cache-control"] == "private, no-store"
-    response = client.post("/api/pronunciation", json={"text": "curious", "accent": "en-GB"})
+    response = client.post("/api/pronunciation", json={"text": "curious", "accent": "en-GB", "allow_word_synthesis": True})
     assert response.status_code == 200 and response.headers["content-type"] == "audio/wav"
     assert response.headers["x-pronunciation-voice"] == "en_GB-cori-medium"
     assert response.headers["cache-control"] == "private, no-store"
@@ -387,7 +387,9 @@ def test_api_status_and_wav_headers(client, runtime):
 
 
 @pytest.mark.parametrize("payload", [{}, {"text": ""}, {"text": " "}, {"text": 3}, {"text": "hello", "accent": "zh-CN"},
-                                      {"text": "中文"}, {"text": "a" * 4001}, {"text": "hello\x00"}])
+                                      {"text": "中文"}, {"text": "a" * 4001}, {"text": "hello\x00"},
+                                      {"text": "hello", "allow_word_synthesis": "false"},
+                                      {"text": "hello", "allow_word_synthesis": 1}])
 def test_api_bad_payloads_do_not_call_engine(client, runtime, payload):
     _, engine = runtime
     response = client.post("/api/pronunciation", json=payload)
@@ -397,12 +399,12 @@ def test_api_bad_payloads_do_not_call_engine(client, runtime, payload):
 
 def test_api_unavailable_and_busy_are_not_silent_audio(client, runtime, monkeypatch):
     monkeypatch.setattr(speech, "_dependency_problem", lambda: "缺少可选组件")
-    response = client.post("/api/pronunciation", json={"text": "hello"})
+    response = client.post("/api/pronunciation", json={"text": "hello", "allow_word_synthesis": True})
     assert response.status_code == 503 and response.json()["detail"] == "缺少可选组件"
     monkeypatch.setattr(speech, "_dependency_problem", lambda: None)
     assert speech._inference_lock.acquire(blocking=False)
     try:
-        response = client.post("/api/pronunciation", json={"text": "hello"})
+        response = client.post("/api/pronunciation", json={"text": "hello", "allow_word_synthesis": True})
         assert response.status_code == 429 and response.headers["retry-after"] == "1"
     finally:
         speech._inference_lock.release()
@@ -429,3 +431,43 @@ def test_main_app_registers_the_router():
     from backend.main import app
     paths = set(app.openapi()["paths"])
     assert "/api/pronunciation" in paths and "/api/pronunciation/status" in paths
+
+
+@pytest.mark.parametrize("word", ["hello", "readers’", "curious...", "a" * 81])
+def test_words_without_recordings_never_implicitly_synthesize(client, runtime, monkeypatch, word):
+    _, engine = runtime
+    calls = []
+    def unavailable(text, accent, storage_dir, **kwargs):
+        calls.append((text, accent, kwargs["deadline"]))
+        return None
+    monkeypatch.setattr("backend.services.word_recordings.record_word", unavailable)
+    response = client.post("/api/pronunciation", json={"text": word, "accent": "en-US"})
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "recording_not_found"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert [call[1] for call in calls] == ["en-US", "en-GB"]
+    assert calls[0][2] == calls[1][2]  # Both accents share one remote deadline.
+    assert not engine.calls
+
+
+def test_other_accent_recording_is_labeled_and_not_synthesized(client, runtime, monkeypatch):
+    _, engine = runtime
+    credits = {"author": "A Reader", "license": "CC BY-SA 4.0",
+               "source_url": "https://commons.wikimedia.org/wiki/File:Example.wav",
+               "license_url": "https://creativecommons.org/licenses/by-sa/4.0/"}
+    def lookup(text, accent, storage_dir, **kwargs):
+        return None if accent == "en-US" else SimpleNamespace(audio=b"recorded-word", attribution=credits)
+    monkeypatch.setattr("backend.services.word_recordings.record_word", lookup)
+    response = client.post("/api/pronunciation", json={"text": "headmaster", "accent": "en-US"})
+    assert response.status_code == 200 and response.content == b"recorded-word"
+    assert response.headers["x-pronunciation-source"] == "dictionary"
+    assert response.headers["x-pronunciation-accent"] == "en-GB"
+    assert json.loads(response.headers["x-pronunciation-attribution"]) == credits
+    assert not engine.calls
+
+
+def test_sentences_keep_local_speech_without_dictionary_network(client, runtime, monkeypatch):
+    monkeypatch.setattr("backend.services.word_recordings.record_word", lambda *args, **kwargs: pytest.fail("sentence looked up as a word"))
+    response = client.post("/api/pronunciation", json={"text": "A quiet garden."})
+    assert response.status_code == 200
+    assert response.headers["x-pronunciation-source"] == "piper"

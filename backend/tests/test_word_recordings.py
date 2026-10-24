@@ -1,6 +1,7 @@
 """Public word fixtures, mocked HTTP and temporary caches; never access live APIs."""
 from array import array
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from io import BytesIO
 import json
 from threading import Barrier, Event
@@ -80,9 +81,12 @@ def runtime(monkeypatch):
         if str(request.url).startswith(recordings.WIKTIONARY_API):
             return httpx.Response(200, json={"parse": {"wikitext": responses["wikitext"]}})
         if str(request.url).startswith(recordings.COMMONS_API):
-            return httpx.Response(200, json=responses["metadata"])
+            payload = deepcopy(responses["metadata"])
+            if responses.get("align_metadata_title", True):
+                payload["query"]["pages"][0]["title"] = request.url.params["titles"].split("|")[0]
+            return httpx.Response(200, json=payload)
         assert request.url.host == "upload.wikimedia.org"
-        return httpx.Response(200, content=responses["audio"])
+        return httpx.Response(200, content=responses.get("audio_by_path", {}).get(request.url.path, responses["audio"]))
     monkeypatch.setattr(recordings, "_new_client", lambda: httpx.Client(transport=httpx.MockTransport(handle), follow_redirects=False))
     return requests, responses, decoder, decoded_pcm
 
@@ -158,6 +162,73 @@ def test_only_explicit_compatible_open_licenses_are_accepted(runtime, tmp_path, 
     result = recordings.record_word("curious", "en-US", tmp_path)
     assert result is not None and result.attribution["license"] == name
     assert result.attribution["license_url"].startswith("https://creativecommons.org/")
+
+
+@pytest.mark.parametrize("name,url,canonical", [
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by/3.0/us/deed.en", "https://creativecommons.org/licenses/by/3.0/us/"),
+    ("CC BY-SA 3.0 US", "http://creativecommons.org/licenses/by-sa/3.0/us/", "https://creativecommons.org/licenses/by-sa/3.0/us/"),
+    ("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/deed.en", "https://creativecommons.org/licenses/by/4.0/"),
+])
+def test_ported_and_translated_cc_deeds_keep_the_exact_license_and_jurisdiction(runtime, tmp_path, name, url, canonical):
+    requests, responses, _, _ = runtime
+    responses["metadata"]["query"]["pages"][0]["imageinfo"][0]["extmetadata"].update({
+        "LicenseShortName": {"value": name}, "LicenseUrl": {"value": url}})
+    result = recordings.record_word("curious", "en-US", tmp_path)
+    assert result is not None
+    assert result.attribution["license"] == name and result.attribution["license_url"] == canonical
+    assert recordings.record_word("curious", "en-US", tmp_path) == result
+    assert len(requests) == 3
+
+
+@pytest.mark.parametrize("name,url", [
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by/3.0/"),
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by/3.0/uk/deed.en"),
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by/4.0/us/deed.en"),
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by-sa/3.0/us/deed.en"),
+    ("CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/us/deed.en"),
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by/3.0/usdeed.en"),
+    ("CC BY 3.0 us", "https://creativecommons.org/licenses/by/3.0/us/deed.en/elsewhere"),
+])
+def test_ported_license_name_must_agree_with_url_version_type_and_jurisdiction(runtime, tmp_path, name, url):
+    requests, responses, _, _ = runtime
+    responses["metadata"]["query"]["pages"][0]["imageinfo"][0]["extmetadata"].update({
+        "LicenseShortName": {"value": name}, "LicenseUrl": {"value": url}})
+    assert recordings.record_word("curious", "en-US", tmp_path) is None
+    assert len(requests) == 2 and list(tmp_path.iterdir()) == []
+
+
+def public_domain_metadata():
+    payload = metadata()
+    payload["query"]["pages"][0]["imageinfo"][0]["extmetadata"].update({
+        "LicenseShortName": {"value": "Public domain"}, "LicenseUrl": {"value": ""},
+        "License": {"value": "pd"}, "Copyrighted": {"value": "False"},
+        "AttributionRequired": {"value": "false"}, "Restrictions": {"value": ""}})
+    return payload
+
+
+def test_confirmed_public_domain_without_url_uses_mark_without_relabeling_cc0(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    responses["metadata"] = public_domain_metadata()
+    result = recordings.record_word("curious", "en-US", tmp_path)
+    assert result is not None
+    assert result.attribution == {"author": "A Reader", "license": "Public domain", "source_url": SOURCE,
+                                 "license_url": "https://creativecommons.org/publicdomain/mark/1.0/"}
+    assert recordings.record_word("curious", "en-US", tmp_path) == result
+    assert len(requests) == 3
+
+
+@pytest.mark.parametrize("field,value", [
+    ("LicenseShortName", "CC0"), ("LicenseShortName", "PD"), ("License", "cc-by"),
+    ("Copyrighted", "True"), ("Copyrighted", ""), ("AttributionRequired", "true"),
+    ("AttributionRequired", ""), ("Restrictions", "non-commercial only"),
+    ("LicenseUrl", "https://evil.example/"), ("Artist", ""),
+])
+def test_missing_public_domain_license_url_requires_all_corroborating_fields(runtime, tmp_path, field, value):
+    requests, responses, _, _ = runtime
+    responses["metadata"] = public_domain_metadata()
+    responses["metadata"]["query"]["pages"][0]["imageinfo"][0]["extmetadata"][field] = {"value": value}
+    assert recordings.record_word("curious", "en-US", tmp_path) is None
+    assert len(requests) == 2 and list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("name,url", [
@@ -244,7 +315,84 @@ def test_switching_accent_reuses_only_requested_words_filename_lookup(runtime, t
     assert [request.url.params["titles"] for request in requests if request.url.host == "commons.wikimedia.org"] == [
         "File:En-us-curious.ogg", "File:LL-Q1860 (eng)-Reader-curious.wav"]
     choices = next(iter(recordings._word_choices.values()))[1]
-    assert choices == {"en-US": "En-us-curious.ogg", "en-GB": "LL-Q1860 (eng)-Reader-curious.wav"}
+    assert choices == {"en-US": ("En-us-curious.ogg",), "en-GB": ("LL-Q1860 (eng)-Reader-curious.wav",)}
+
+
+def candidate_metadata(*filenames):
+    pages = []
+    for filename in filenames:
+        page = metadata()["query"]["pages"][0]
+        page["title"] = f"File:{filename}"
+        page["imageinfo"][0].update({
+            "url": f"https://upload.wikimedia.org/wikipedia/commons/a/ab/{filename}",
+            "descriptionurl": f"https://commons.wikimedia.org/wiki/File:{filename}"})
+        pages.append(page)
+    return {"query": {"pages": pages}}
+
+
+def configure_candidates(responses, *filenames):
+    responses["wikitext"] = "==English==\n" + "\n".join(f"{{{{audio|en|{name}}}}}" for name in filenames)
+    responses["metadata"] = candidate_metadata(*filenames)
+    responses["align_metadata_title"] = False
+
+
+def test_later_same_accent_recording_is_used_when_first_has_ineligible_license(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    configure_candidates(responses, "En-us-curious.ogg", "En-us-curious-2.ogg")
+    responses["metadata"]["query"]["pages"][0]["imageinfo"][0]["extmetadata"]["LicenseShortName"]["value"] = "All rights reserved"
+    result = recordings.record_word("curious", "en-US", tmp_path)
+    assert result is not None and result.attribution["source_url"].endswith("En-us-curious-2.ogg")
+    assert requests[1].url.params["titles"] == "File:En-us-curious.ogg|File:En-us-curious-2.ogg"
+    assert len(requests) == 3 and requests[-1].url.path.endswith("En-us-curious-2.ogg")
+
+
+def test_later_same_accent_recording_is_used_when_first_audio_is_corrupt(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    configure_candidates(responses, "En-us-curious.ogg", "En-us-curious-2.ogg")
+    responses["audio_by_path"] = {"/wikipedia/commons/a/ab/En-us-curious.ogg": b"invalid audio"}
+    result = recordings.record_word("curious", "en-US", tmp_path)
+    assert result is not None and result.attribution["source_url"].endswith("En-us-curious-2.ogg")
+    assert len(requests) == 4
+    assert [request.url.path.rsplit("/", 1)[-1] for request in requests[2:]] == ["En-us-curious.ogg", "En-us-curious-2.ogg"]
+
+
+def test_batch_metadata_order_does_not_change_the_selected_recording(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    configure_candidates(responses, "En-us-curious.ogg", "En-us-curious-2.ogg")
+    responses["metadata"]["query"]["pages"].reverse()
+    result = recordings.record_word("curious", "en-US", tmp_path)
+    assert result is not None and result.attribution["source_url"] == SOURCE
+    assert len(requests) == 3 and requests[-1].url.path.endswith("En-us-curious.ogg")
+
+
+def test_mismatched_file_title_is_not_downloaded_even_with_valid_license(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    configure_candidates(responses, "En-us-curious.ogg")
+    responses["metadata"]["query"]["pages"][0]["title"] = "File:En-us-unrelated.ogg"
+    assert recordings.record_word("curious", "en-US", tmp_path) is None
+    assert len(requests) == 2 and list(tmp_path.iterdir()) == []
+
+
+def test_commons_filename_initial_capitalization_and_spaces_are_normalized(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    configure_candidates(responses, "en-us-curious_audio.ogg")
+    responses["metadata"]["query"]["pages"][0]["title"] = "File:En-us-curious audio.ogg"
+    assert recordings.record_word("curious", "en-US", tmp_path) is not None
+    assert len(requests) == 3
+
+
+def test_candidates_are_deduplicated_accent_specific_and_bounded_to_three(runtime, tmp_path):
+    requests, responses, _, _ = runtime
+    names = ["En-us-curious.ogg", "En-us-curious-2.ogg", "En-us-curious-3.ogg", "En-us-curious-4.ogg"]
+    configure_candidates(responses, *names)
+    responses["wikitext"] = "==English==\n{{audio|en|En-uk-curious.ogg}}\n" + "\n".join(
+        f"{{{{audio|en|{name}}}}}" for name in [names[0], *names])
+    responses["audio_by_path"] = {f"/wikipedia/commons/a/ab/{name}": b"invalid audio" for name in names[:3]}
+    assert recordings.record_word("curious", "en-US", tmp_path) is None
+    assert requests[1].url.params["titles"] == "|".join(f"File:{name}" for name in names[:3])
+    assert len(requests) == 5
+    assert [request.url.path.rsplit("/", 1)[-1] for request in requests[2:]] == names[:3]
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_filename_cache_expires_and_is_bounded(runtime, tmp_path, monkeypatch):
@@ -411,6 +559,51 @@ def test_elapsed_total_budget_prevents_more_requests(runtime, tmp_path, monkeypa
     assert len(requests) <= 1 and list(tmp_path.iterdir()) == []
 
 
+def test_expired_external_deadline_does_not_start_network(runtime, tmp_path):
+    requests, _, _, _ = runtime
+    assert recordings.record_word("curious", "en-US", tmp_path, deadline=recordings.monotonic() - 1) is None
+    assert requests == [] and list(tmp_path.iterdir()) == []
+
+
+def test_expired_external_deadline_still_allows_an_existing_local_recording(runtime, tmp_path, monkeypatch):
+    requests, _, _, _ = runtime
+    initial = recordings.record_word("curious", "en-US", tmp_path)
+    monkeypatch.setattr(recordings, "_client", lambda: pytest.fail("cache hit used network"))
+    assert recordings.record_word("curious", "en-US", tmp_path, deadline=recordings.monotonic() - 1) == initial
+    assert len(requests) == 3
+
+
+def test_one_external_deadline_is_used_across_all_candidates(runtime, tmp_path, monkeypatch):
+    requests, responses, _, _ = runtime
+    configure_candidates(responses, "En-us-curious.ogg", "En-us-curious-2.ogg")
+    original_fetch, seen, clock = recordings._fetch, [], [100.0]
+    monkeypatch.setattr(recordings, "monotonic", lambda: clock[0])
+    def fetch(client, url, deadline, **kwargs):
+        seen.append(deadline)
+        result = original_fetch(client, url, deadline, **kwargs)
+        if url.startswith("https://upload.wikimedia.org/"):
+            clock[0] = 100.2
+        return result
+    monkeypatch.setattr(recordings, "_fetch", fetch)
+    assert recordings.record_word("curious", "en-US", tmp_path, deadline=100.1) is None
+    assert seen == [100.1] * 3
+    assert len(requests) == 3 and list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("external_budget,maximum", [(0.25, 0.25), (100, recordings.LOOKUP_SECONDS)])
+def test_shared_inflight_wait_respects_external_deadline_and_nine_second_cap(runtime, tmp_path, external_budget, maximum):
+    requests, _, _, _ = runtime
+    digest = recordings.sha256(json.dumps([recordings.CACHE_VERSION, "curious", "en-US"]).encode("ascii")).hexdigest()
+    waits = []
+    def result(*, timeout):
+        waits.append(timeout)
+        raise recordings.FutureTimeoutError()
+    recordings._inflight[f"{tmp_path}:{digest}"] = SimpleNamespace(result=result)
+    assert recordings.record_word("curious", "en-US", tmp_path, deadline=recordings.monotonic() + external_budget) is None
+    assert len(waits) == 1 and 0 <= waits[0] <= maximum
+    assert requests == [] and list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize("failure", ["error", "too_long", "empty", "wrong_type", "oversized_chunk"])
 def test_invalid_decoded_audio_never_creates_success_cache(runtime, tmp_path, failure):
     _, _, decoder, original = runtime
@@ -517,7 +710,7 @@ def test_sentence_route_is_piper_only_and_dictionary_miss_falls_back_explicitly(
         assert response.status_code == 200 and response.headers["X-Pronunciation-Source"] == "piper"
         assert response.headers["X-Pronunciation-Attribution"] == "" and requests == []
         responses["wikitext"] = "==English==\nNo recording.\n"
-        fallback = client.post("/api/pronunciation", json={"text": "curious", "accent": "en-US"})
+        fallback = client.post("/api/pronunciation", json={"text": "curious", "accent": "en-US", "allow_word_synthesis": True})
     assert fallback.status_code == 200 and fallback.headers["X-Pronunciation-Source"] == "piper"
     assert fallback.headers["X-Pronunciation-Attribution"] == ""
     assert piper_calls == [("A curious reader.", "en-US"), ("curious", "en-US")]

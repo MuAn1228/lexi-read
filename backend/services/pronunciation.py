@@ -1,4 +1,4 @@
-"""Optional offline English speech; never downloads models or contacts a provider."""
+"""Local speech and attributed English recordings; no automatic model downloads."""
 from __future__ import annotations
 
 from hashlib import sha256
@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 from tempfile import NamedTemporaryFile
 from threading import Lock
+from time import monotonic
 import unicodedata
 import wave
 
@@ -40,6 +41,15 @@ class PronunciationUnavailable(Exception):
 
 class PronunciationBusy(Exception):
     """One CPU inference is already in progress."""
+
+
+class RecordingNotFound(Exception):
+    """No usable English recording; synthesis has not been requested."""
+
+
+def is_pronunciation_word(text: str) -> bool:
+    word = text.strip().rstrip(".!?").replace("’", "'").replace("‘", "'")
+    return re.fullmatch(r"[A-Za-z]+(?:[-'][A-Za-z]+)*'?", word) is not None
 
 
 def _dependency_problem() -> str | None:
@@ -309,15 +319,22 @@ def synthesize(text: str, accent: str) -> tuple[bytes, str]:
         _inference_lock.release()
 
 
-def synthesize_with_source(text: str, accent: str) -> tuple[bytes, str, str, dict | None]:
-    """Prefer an attributed open recording for a word; retain Piper for prose."""
-    from backend.services.word_recordings import record_word
+def synthesize_with_source(text: str, accent: str, *, allow_word_synthesis: bool = False) -> tuple[bytes, str, str, dict | None]:
+    """Prefer English recordings; synthesize a word only by explicit choice."""
+    from backend.services.word_recordings import LOOKUP_SECONDS, record_word
 
     normalized = normalize_text(text)
     if accent not in VOICES:
         raise ValueError("请选择美式英语或英式英语发音。")
-    recording = record_word(normalized, accent, get_settings().storage_dir)
-    if recording is not None:
-        return recording.audio, f"wiktionary-{accent}", "dictionary", recording.attribution
+    if is_pronunciation_word(normalized):
+        storage_dir = get_settings().storage_dir
+        deadline = monotonic() + LOOKUP_SECONDS
+        other_accent = "en-GB" if accent == "en-US" else "en-US"
+        for actual_accent in (accent, other_accent):
+            recording = record_word(normalized, actual_accent, storage_dir, deadline=deadline)
+            if recording is not None:
+                return recording.audio, f"wiktionary-{actual_accent}", "dictionary", recording.attribution
+        if not allow_word_synthesis:
+            raise RecordingNotFound("暂无可用的英美词典录音，请稍后重试；如需合成朗读，可在发音设置中开启。")
     data, voice = synthesize(normalized, accent)
     return data, voice, "piper", None

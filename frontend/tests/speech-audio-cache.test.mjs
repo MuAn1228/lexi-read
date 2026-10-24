@@ -4,7 +4,10 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const source = await readFile(new URL('../src/speechAudioCache.ts', import.meta.url), 'utf8');
-const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+const speechSource = await readFile(new URL('../src/speech.ts', import.meta.url), 'utf8');
+const compilerOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext };
+const speechURL = `data:text/javascript;base64,${Buffer.from(ts.transpileModule(speechSource, { compilerOptions }).outputText).toString('base64')}`;
+const js = ts.transpileModule(source, { compilerOptions }).outputText.replace("from './speech'", `from '${speechURL}'`);
 const { createPronunciationCache } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const credits = { author: 'Example recorder', license: 'CC BY-SA 4.0',
   source_url: 'https://commons.wikimedia.org/wiki/File:Example.ogg', license_url: 'https://creativecommons.org/licenses/by-sa/4.0/' };
@@ -16,8 +19,8 @@ const signal = () => new AbortController().signal;
 function resource({ load, scope, ...options } = {}) {
   const calls = [];
   const cache = createPronunciationCache({ ...options, getScope: scope ?? (() => Promise.resolve('local-page')),
-    load: (text, accent, requestSignal) => { calls.push({ text, accent, signal: requestSignal }); return load ? load(calls.at(-1)) : Promise.resolve(audio()); } });
-  const get = (word = 'example', accent = 'en-US', requestSignal = signal()) => cache.load(word, accent, requestSignal);
+    load: (text, accent, requestSignal, wordFallback) => { calls.push({ text, accent, signal: requestSignal, wordFallback }); return load ? load(calls.at(-1)) : Promise.resolve(audio()); } });
+  const get = (word = 'example', accent = 'en-US', requestSignal = signal(), wordFallback = false) => cache.load(word, accent, requestSignal, wordFallback);
   return { cache, calls, get };
 }
 
@@ -87,10 +90,11 @@ test('dictionary recordings live for thirty minutes while fallback synthesis ret
   let now = 1_000;
   const dictionary = resource({ now: () => now });
   const fallback = resource({ now: () => now, load: () => Promise.resolve(audio('piper')) });
-  await dictionary.get(); await fallback.get();
-  now += 14_999; await dictionary.get(); await fallback.get();
+  const permittedFallback = () => fallback.get('example', 'en-US', signal(), true);
+  await dictionary.get(); await permittedFallback();
+  now += 14_999; await dictionary.get(); await permittedFallback();
   assert.equal(dictionary.calls.length, 1); assert.equal(fallback.calls.length, 1);
-  ++now; await fallback.get(); assert.equal(fallback.calls.length, 2);
+  ++now; await permittedFallback(); assert.equal(fallback.calls.length, 2);
   now = 1_000 + 30 * 60_000; await dictionary.get(); assert.equal(dictionary.calls.length, 2);
 });
 
@@ -132,4 +136,33 @@ test('a new request may replace an aborted identical request without its late cl
 test('clearing the session cache discards recordings and pending responses', async () => {
   const { cache, calls, get } = resource(); await get(); cache.clear(); await get();
   assert.equal(calls.length, 2);
+});
+
+test('cached synthesis from an explicit opt-in cannot be returned to a recording-only request', async () => {
+  const { get, calls } = resource({ load: ({ wordFallback }) => Promise.resolve(audio(wordFallback ? 'piper' : 'dictionary')) });
+  assert.equal((await get('eye', 'en-US', signal(), true)).source, 'piper');
+  assert.equal((await get('eye', 'en-US')).source, 'dictionary');
+  await get('eye', 'en-US'); await get('eye', 'en-US', signal(), true);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(call => call.wordFallback), [true, false]);
+});
+
+test('preparation shares only matching-policy requests and preserves the actual dictionary accent in cached metadata', async () => {
+  const strict = deferred(), allowed = deferred();
+  const { get, calls } = resource({ load: ({ wordFallback }) => wordFallback ? allowed.promise : strict.promise });
+  const strictPrepare = get('headmaster'), strictClick = get('headmaster');
+  const optedIn = get('headmaster', 'en-US', signal(), true);
+  await flush(); assert.equal(calls.length, 2);
+  strict.resolve({ ...audio(), accent: 'en-GB' }); allowed.resolve(audio('piper'));
+  assert.equal((await strictPrepare).accent, 'en-GB'); assert.equal((await strictClick).source, 'dictionary');
+  assert.equal((await optedIn).source, 'piper');
+  assert.equal((await get('headmaster')).accent, 'en-GB'); assert.equal(calls.length, 2);
+});
+
+test('a policy-violating synthetic word response is rejected and never delays the next dictionary retry', async () => {
+  let count = 0;
+  const { get, calls } = resource({ load: () => Promise.resolve(audio(++count === 1 ? 'piper' : 'dictionary')) });
+  await assert.rejects(get('eye'), error => error.code === 'recording_not_found');
+  assert.equal((await get('eye')).source, 'dictionary');
+  await get('eye'); assert.equal(calls.length, 2);
 });

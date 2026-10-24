@@ -7,8 +7,12 @@ requested word may be looked up on English Wiktionary:
 https://en.wiktionary.org/w/api.php
 The selected audio file and its license metadata are obtained from Wikimedia
 Commons: https://commons.wikimedia.org/w/api.php
-Only a recording with an identifiable requested accent, author, file page and
-eligible open license is played. No word lists are fetched in the background.
+Only a recording with an identifiable English accent, author, file page and
+eligible open license or corroborated public-domain status is played. The
+preferred accent is tried first, then the other English accent, within a shared
+lookup deadline. The actual accent is shown without changing the preference.
+No word lists are fetched in the background. No spelling or word-stem variants
+are silently substituted.
 
 Recordings retain their individual CC BY, CC BY-SA, CC0 or public-domain terms;
 the application does not assign a blanket license to these files. The playback
@@ -19,11 +23,21 @@ up at the normal playback setting. These modifications are identified in the UI.
 Recordings with a share-alike license retain that license for the modified audio.
 Preserve the stored credits and applicable license if redistributing recordings.
 
+Jurisdiction-specific CC BY / BY-SA licenses keep the matching jurisdiction in
+their name and canonical license link. If Commons omits a license URL for a
+public-domain file, the Public Domain Mark is linked only when its license,
+copyright, attribution-required and restriction metadata consistently indicate
+public-domain status. This mark is not represented as a CC0 dedication, and the
+Commons author description is retained, including any uncertainty it states.
+
 Downloaded recordings and their credits are cached together in
 `data/dictionary-audio`, outside learning records, for up to 30 days and 128 MB.
 They are fetched on demand and are not bundled as repository assets. The local
 Piper and browser system voices are separate fallbacks, clearly identified in
 the interface, and are not represented as dictionary recordings.
+Single-word synthesis is disabled by default and requires the user's explicit
+"use synthesis when no recording is available" preference. Sentence synthesis
+is unaffected by that preference.
 
 The browser may retain up to 64 successful audio responses and their credits,
 within an 8 MB memory limit, scoped to the current backend and learning space.

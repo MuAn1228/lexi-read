@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/speech.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { createSpeechController, readSpeechPreferences, restoreSpeechPreferences, selectSpeechVoice, speechTextProblem } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { createSpeechController, readSpeechPreferences, restoreSpeechPreferences, selectSpeechVoice, speechTextProblem, isSpeechWord } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const us = { lang: 'en-US', name: 'US offline', localService: true, default: false };
 const gb = { lang: 'en-GB', name: 'British offline', localService: true, default: false };
 
@@ -16,7 +16,8 @@ function engine(initial = [us, gb]) {
   synth.speak = utterance => { synth.utterances.push(utterance); };
   synth.cancel = () => { synth.cancels++; };
   synth.resume = () => { synth.paused = false; };
-  const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }) });
+  // Legacy engine tests explicitly opt in to synthetic word speech.
+  const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), preferences: { accent: 'en-US', rate: 1, wordFallback: true } });
   return { synth, controller };
 }
 
@@ -121,12 +122,12 @@ test('a disconnected or removed voice cancels playing audio', () => {
 
 test('unsupported and broken engines fail safely and preference storage is optional', () => {
   const unsupported = createSpeechController({ synthesis: null, createUtterance: null });
-  unsupported.speak('hello');
+  unsupported.speak('A public example.');
   assert.equal(unsupported.getSnapshot().isSupported, false);
   assert.match(unsupported.getSnapshot().error, /不支持/);
   const { synth } = engine();
   synth.speak = () => { throw new Error('private platform diagnostic'); };
-  const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), onPreferences: () => { throw new Error('storage unavailable'); } });
+  const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), preferences: { accent: 'en-US', rate: 1, wordFallback: true }, onPreferences: () => { throw new Error('storage unavailable'); } });
   controller.setRate(0.8);
   controller.speak('hello');
   assert.equal(controller.getSnapshot().activeKey, null);
@@ -136,9 +137,9 @@ test('unsupported and broken engines fail safely and preference storage is optio
 
 test('preference parsing ignores malformed input and speech length counts Unicode characters', () => {
   for (const raw of [null, '{}', 'null', '[]', 'true', 'bad json', '{"rate":0,"accent":"zh-CN"}']) {
-    assert.deepEqual(readSpeechPreferences(raw), { accent: 'en-US', rate: 1 });
+    assert.deepEqual(readSpeechPreferences(raw), { accent: 'en-US', rate: 1, wordFallback: false });
   }
-  assert.deepEqual(readSpeechPreferences('{"rate":0.8,"accent":"en-GB"}'), { accent: 'en-GB', rate: 0.8 });
+  assert.deepEqual(readSpeechPreferences('{"rate":0.8,"accent":"en-GB"}'), { accent: 'en-GB', rate: 0.8, wordFallback: false });
   assert.equal(speechTextProblem('hello ' + '🌱'.repeat(3_994)), '');
   assert.match(speechTextProblem('hello ' + '🌱'.repeat(3_995)), /4,000/);
   assert.match(speechTextProblem(' \n\t'), /没有/);
@@ -147,29 +148,29 @@ test('preference parsing ignores malformed input and speech length counts Unicod
 test('a recalibrated voice resets legacy speed once and keeps the selected accent', () => {
   for (const rate of [0.8, 1, 1.2]) {
     for (const accent of ['en-US', 'en-GB']) {
-      assert.deepEqual(restoreSpeechPreferences(null, JSON.stringify({ accent, rate })), { accent, rate: 1 });
+      assert.deepEqual(restoreSpeechPreferences(null, JSON.stringify({ accent, rate })), { accent, rate: 1, wordFallback: false });
     }
   }
-  assert.deepEqual(restoreSpeechPreferences(null, null), { accent: 'en-US', rate: 1 });
-  assert.deepEqual(restoreSpeechPreferences(null, 'unreadable'), { accent: 'en-US', rate: 1 });
+  assert.deepEqual(restoreSpeechPreferences(null, null), { accent: 'en-US', rate: 1, wordFallback: false });
+  assert.deepEqual(restoreSpeechPreferences(null, 'unreadable'), { accent: 'en-US', rate: 1, wordFallback: false });
 });
 
 test('saved recalibrated preferences take precedence and preserve later speed choices across reloads', () => {
   const legacy = JSON.stringify({ accent: 'en-GB', rate: 1.2 });
   for (const rate of [0.8, 1, 1.2]) {
     const current = JSON.stringify({ accent: 'en-US', rate });
-    assert.deepEqual(restoreSpeechPreferences(current, legacy), { accent: 'en-US', rate });
-    assert.deepEqual(restoreSpeechPreferences(JSON.stringify(restoreSpeechPreferences(current, legacy)), legacy), { accent: 'en-US', rate });
+    assert.deepEqual(restoreSpeechPreferences(current, legacy), { accent: 'en-US', rate, wordFallback: false });
+    assert.deepEqual(restoreSpeechPreferences(JSON.stringify(restoreSpeechPreferences(current, legacy)), legacy), { accent: 'en-US', rate, wordFallback: false });
   }
-  assert.deepEqual(restoreSpeechPreferences('{"accent":"en-GB","rate":0.8}', null), { accent: 'en-GB', rate: 0.8 });
+  assert.deepEqual(restoreSpeechPreferences('{"accent":"en-GB","rate":0.8}', null), { accent: 'en-GB', rate: 0.8, wordFallback: false });
 });
 
 test('invalid recalibrated preferences use safe defaults instead of recovering the old fast speed', () => {
   const legacy = '{"accent":"en-GB","rate":1.2}';
   for (const current of ['', 'bad json', 'null', '[]', 'true', '{}', '{"accent":"zh-CN","rate":9}']) {
-    assert.deepEqual(restoreSpeechPreferences(current, legacy), { accent: 'en-US', rate: 1 });
+    assert.deepEqual(restoreSpeechPreferences(current, legacy), { accent: 'en-US', rate: 1, wordFallback: false });
   }
-  assert.deepEqual(restoreSpeechPreferences('{"accent":"en-GB","rate":1.3}', legacy), { accent: 'en-GB', rate: 1 });
+  assert.deepEqual(restoreSpeechPreferences('{"accent":"en-GB","rate":1.3}', legacy), { accent: 'en-GB', rate: 1, wordFallback: false });
 });
 
 test('missing storage still starts at normal speed and rejected preference writes do not prevent speech', () => {
@@ -183,6 +184,7 @@ test('missing storage still starts at normal speed and rejected preference write
   assert.equal(controller.getSnapshot().rate, 1);
   controller.setAccent('en-GB');
   controller.setRate(0.8);
+  controller.setWordFallback(true);
   controller.speak('curious');
   assert.equal(synth.utterances.at(-1).lang, 'en-GB');
   assert.equal(synth.utterances.at(-1).rate, 0.8);
@@ -216,14 +218,15 @@ function deferred() {
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 const wav = () => new Blob(['public-example-wave'], { type: 'audio/wav' });
 
-function naturalEngine(context, { voices = [us, gb], load, play, system = true, create } = {}) {
+function naturalEngine(context, { voices = [us, gb], load, play, system = true, create, wordFallback = true } = {}) {
   const { synth } = engine(voices);
   const requests = [], players = [], urls = [], revoked = [];
   const controller = createSpeechController({
     synthesis: system ? synth : null, createUtterance: system ? text => ({ text }) : null,
     neuralAvailable: true,
-    loadAudio: (text, accent, signal) => {
-      const request = { text, accent, signal }; requests.push(request);
+    preferences: { accent: 'en-US', rate: 1, wordFallback },
+    loadAudio: (text, accent, signal, wordFallback) => {
+      const request = { text, accent, signal, wordFallback }; requests.push(request);
       return load ? load(request) : Promise.resolve(wav());
     },
     createAudio: url => {
@@ -269,7 +272,7 @@ test('natural audio uses one normal-speed recording and adjusts playback without
     controller.setRate(rate); controller.speak('A public example.', { key: 'sentence' }); await flush();
     assert.equal(players.at(-1).playbackRate, rate);
     assert.equal(players.at(-1).preservesPitch, true);
-    assert.deepEqual(Object.keys(requests.at(-1)).sort(), ['accent', 'signal', 'text']);
+    assert.deepEqual(Object.keys(requests.at(-1)).sort(), ['accent', 'signal', 'text', 'wordFallback']);
     assert.equal(controller.getSnapshot().status, 'speaking');
   }
   controller.stop();
@@ -467,7 +470,7 @@ test('new requests clear old recording credits and aborted late metadata cannot 
 test('a local synthesis fallback for a single word is explicit while a normal sentence needs no warning', async context => {
   const { controller } = naturalEngine(context, { load: () => Promise.resolve({ blob: wav(), source: 'piper' }) });
   controller.speak('example'); await flush();
-  assert.match(controller.getSnapshot().notice, /此词暂无.*所选口音录音.*本机合成/);
+  assert.match(controller.getSnapshot().notice, /此词暂无.*词典录音.*本机合成/);
   controller.speak('A public example.'); await flush();
   assert.equal(controller.getSnapshot().notice, '');
   assert.equal(controller.getSnapshot().engine, 'neural');
@@ -534,7 +537,7 @@ test('pronunciation requests authenticate one fixed backend path and return veri
     assert.equal(url, 'https://api.example.com/api/pronunciation');
     assert.equal(init.method, 'POST');
     assert.equal(init.headers.get('Authorization'), 'Bearer public-test-identity');
-    assert.deepEqual(JSON.parse(init.body), { text: 'example', accent: 'en-GB' });
+    assert.deepEqual(JSON.parse(init.body), { text: 'example', accent: 'en-GB', allow_word_synthesis: false });
     assert.equal(init.signal.aborted, false);
     return pronunciationResponse();
   }, true);
@@ -617,4 +620,129 @@ test('preparation failure is silent and never falls back to a system voice', asy
   controller.prepare('example'); await flush();
   assert.equal(controller.getSnapshot().status, 'idle'); assert.equal(controller.getSnapshot().error, '');
   assert.equal(players.length, 0); assert.equal(synth.utterances.length, 0);
+});
+
+test('existing speed and accent preferences are preserved while synthetic words require a saved boolean opt-in', () => {
+  const old = '{"accent":"en-GB","rate":0.8}';
+  assert.deepEqual(restoreSpeechPreferences(old, null), { accent: 'en-GB', rate: 0.8, wordFallback: false });
+  for (const value of [null, 1, 'true', [], {}]) {
+    assert.equal(readSpeechPreferences(JSON.stringify({ wordFallback: value })).wordFallback, false);
+  }
+  const enabled = { accent: 'en-GB', rate: 1.2, wordFallback: true };
+  assert.deepEqual(restoreSpeechPreferences(JSON.stringify(enabled), null), enabled);
+});
+
+test('word classification matches dictionary normalization and cannot bypass recording-only behavior using length or punctuation', () => {
+  for (const text of ['eye', 'headmaster', 'readers’', '‘not', "reader's", 'curious...', 'well-known!?', 'a'.repeat(81)]) {
+    assert.equal(isSpeechWord(text), text !== '‘not', text);
+  }
+  for (const text of ['', 'two words', '你好', '123', 'A full sentence.', 'eye\nheadmaster']) assert.equal(isSpeechWord(text), false, text);
+});
+
+test('the default controller never starts system word speech without an explicit opt-in', () => {
+  const { synth } = engine(); const saved = [];
+  const controller = createSpeechController({ synthesis: synth, createUtterance: text => ({ text }), onPreferences: value => saved.push(value) });
+  assert.equal(controller.getSnapshot().wordFallback, false);
+  controller.speak('eye...');
+  assert.equal(synth.utterances.length, 0);
+  assert.match(controller.getSnapshot().error, /未自动.*合成/);
+  controller.setRate(0.8); controller.setWordFallback(true); controller.speak('eye');
+  assert.equal(synth.utterances.length, 1);
+  assert.deepEqual(saved.at(-1), { accent: 'en-US', rate: 0.8, wordFallback: true });
+  controller.stop();
+});
+
+test('missing recordings and network failures stay silent by default and retry dictionary audio on the next click', async context => {
+  let count = 0;
+  const { controller, synth, players, requests } = naturalEngine(context, { wordFallback: false, load: () => {
+    ++count;
+    return count === 1 ? Promise.reject(Object.assign(new Error('missing'), { code: 'recording_not_found' }))
+      : count === 2 ? Promise.reject(new Error('private network trace')) : Promise.resolve(recorded());
+  } });
+  controller.speak('headmaster'); await flush();
+  assert.match(controller.getSnapshot().error, /未找到.*词典录音.*发音设置/);
+  controller.speak('eye'); await flush();
+  assert.match(controller.getSnapshot().error, /录音暂时无法播放/);
+  assert.equal(controller.getSnapshot().error.includes('private'), false);
+  assert.equal(synth.utterances.length, 0); assert.equal(players.length, 0);
+  controller.speak('eye'); await flush();
+  assert.equal(players.length, 1); assert.equal(requests.length, 3);
+  assert.ok(requests.every(request => request.wordFallback === false));
+  assert.equal(controller.getSnapshot().engine, 'dictionary');
+});
+
+test('an old backend returning synthetic audio cannot bypass recording-only word playback', async context => {
+  for (const text of ['headmaster', 'curious...', 'readers’', 'a'.repeat(81)]) {
+    const { controller, players, synth, urls } = naturalEngine(context, { wordFallback: false });
+    controller.speak(text); await flush();
+    assert.equal(players.length, 0); assert.equal(urls.length, 0); assert.equal(synth.utterances.length, 0);
+    assert.match(controller.getSnapshot().error, /未找到.*词典录音/);
+  }
+});
+
+test('dictionary decoding, audio construction and play errors never fall through to system word speech by default', async context => {
+  const cases = [
+    { play: () => Promise.reject(new Error('decode failed')) },
+    { create: () => { throw new Error('unavailable output'); } },
+    { load: () => Promise.resolve({ blob: wav(), source: 'dictionary' }) },
+  ];
+  for (const options of cases) {
+    const { controller, synth } = naturalEngine(context, { wordFallback: false, load: () => Promise.resolve(recorded()), ...options });
+    controller.speak('eye'); await flush();
+    assert.equal(synth.utterances.length, 0);
+    assert.equal(controller.getSnapshot().status, 'error');
+    assert.match(controller.getSnapshot().error, /未自动.*合成/);
+  }
+  const { controller, players, synth, revoked } = naturalEngine(context, { wordFallback: false, load: () => Promise.resolve(recorded()) });
+  controller.speak('eye'); await flush(); players[0].onerror();
+  assert.equal(synth.utterances.length, 0); assert.equal(revoked.length, 1);
+  assert.equal(controller.getSnapshot().status, 'error');
+});
+
+test('sentence synthesis and same-accent system fallback still work while word synthesis is disabled', async context => {
+  let count = 0;
+  const { controller, players, synth } = naturalEngine(context, { wordFallback: false, load: () => ++count === 1 ? Promise.resolve(wav()) : Promise.reject(new Error('offline')) });
+  controller.speak('A complete public example.'); await flush();
+  assert.equal(players.length, 1); assert.equal(controller.getSnapshot().engine, 'neural');
+  controller.speak('Another complete sentence.'); await flush();
+  assert.equal(synth.utterances.length, 1); assert.equal(controller.getSnapshot().engine, 'system');
+});
+
+test('changing word synthesis permission cancels preparation and late playback before applying the new policy', async context => {
+  const late = deferred(); const { controller, requests, players, synth } = naturalEngine(context, { wordFallback: true, load: () => late.promise });
+  controller.prepare('eye'); controller.speak('eye');
+  controller.setWordFallback(false);
+  assert.ok(requests.every(request => request.signal.aborted));
+  late.resolve(wav()); await flush();
+  assert.equal(players.length, 0); assert.equal(synth.utterances.length, 0);
+  controller.prepare('eye'); assert.equal(requests.at(-1).wordFallback, false);
+});
+
+test('alternative dictionary accent is identified while the preferred accent stays unchanged', async context => {
+  const { controller, players } = naturalEngine(context, { wordFallback: false, load: () => Promise.resolve({ ...recorded(), accent: 'en-GB' }) });
+  controller.speak('headmaster'); await flush();
+  assert.equal(players.length, 1); assert.equal(controller.getSnapshot().engine, 'dictionary');
+  assert.equal(controller.getSnapshot().accent, 'en-US'); assert.equal(controller.getSnapshot().voiceName, '英式英语');
+  assert.match(controller.getSnapshot().notice, /暂无美式录音，播放英式词典录音/);
+});
+
+test('API requests carry the synthesis policy and preserve missing-recording codes', async context => {
+  const { client, calls } = await pronunciationAPI(context, () => new Response(JSON.stringify({ detail: { code: 'recording_not_found', message: '暂无所选口音的词典录音，请切换口音重试。' } }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
+  await assert.rejects(client.requestPronunciation('eye', 'en-US', undefined, true), error => error.status === 404 && error.code === 'recording_not_found' && /暂无.*词典录音/.test(error.message));
+  const posted = calls.find(call => call.url.endsWith('/pronunciation'));
+  assert.deepEqual(JSON.parse(posted.init.body), { text: 'eye', accent: 'en-US', allow_word_synthesis: true });
+});
+
+test('API audio metadata validates actual accents and supports the previous response without an accent header', async context => {
+  let accent = 'en-GB';
+  const { client } = await pronunciationAPI(context, () => {
+    const response = pronunciationResponse();
+    if (accent !== null) response.headers.set('X-Pronunciation-Accent', accent);
+    return response;
+  });
+  assert.equal((await client.requestPronunciation('headmaster', 'en-US')).accent, 'en-GB');
+  accent = null;
+  assert.equal((await client.requestPronunciation('eye', 'en-US')).accent, 'en-US');
+  accent = 'zh-CN';
+  await assert.rejects(client.requestPronunciation('eye', 'en-US'), /口音信息不完整/);
 });

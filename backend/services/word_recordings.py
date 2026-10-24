@@ -37,8 +37,9 @@ MAX_BODY_BYTES = 1024 * 1024
 MAX_CACHE_ENTRY_BYTES = 2 * 1024 * 1024
 MAX_CACHE_BYTES = 128 * 1024 * 1024
 CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
-# Allow the three HTTPS requests to finish on a cold connection before falling
-# back; warmed requests are usually faster, and successful recordings are local.
+MAX_RECORDING_CANDIDATES = 3
+# Keep filename lookup, batched metadata and at most three audio downloads within
+# one budget; warmed requests are faster, and successful recordings stay local.
 LOOKUP_SECONDS = 9.0
 CACHE_VERSION = "commons-english-pcm22050-v1"
 WIKTIONARY_API = "https://en.wiktionary.org/w/api.php"
@@ -48,8 +49,8 @@ MAX_LOOKUP_CACHE_ENTRIES = 128
 _negative: dict[str, float] = {}
 _lookup_lock = Lock()
 _inflight: dict[str, Future[Recording | None]] = {}
-_word_choices: dict[str, tuple[float, dict[str, str | None]]] = {}
-_word_inflight: dict[str, Future[dict[str, str | None] | None]] = {}
+_word_choices: dict[str, tuple[float, dict[str, tuple[str, ...]]]] = {}
+_word_inflight: dict[str, Future[dict[str, tuple[str, ...]] | None]] = {}
 _client_condition = Condition()
 _shared_client: httpx.Client | None = None
 _client_users = 0
@@ -134,10 +135,11 @@ def _fetch(client: httpx.Client, url: str, deadline: float, *, params=None) -> b
         return b"".join(parts)
 
 
-def _recording_filename(wikitext: str, accent: str) -> str | None:
+def _recording_filenames(wikitext: str, accent: str) -> tuple[str, ...]:
     english = re.search(r"(?ms)^==\s*English\s*==[ \t]*\r?\n(.*?)(?=^==[^=]|\Z)", wikitext)
     if english is None:
-        return None
+        return ()
+    choices: list[str] = []
     for match in re.finditer(r"\{\{\s*audio\s*\|\s*en\s*\|\s*([^{}\n]+?)\s*\}\}", english.group(1), re.I):
         fields = [part.strip() for part in match.group(1).split("|")]
         filename = fields[0]
@@ -158,11 +160,14 @@ def _recording_filename(wikitext: str, accent: str) -> str | None:
                 if variant in {"uk", "gb", "rp", "received pronunciation", "southern england", "british", "england"}:
                     inferred.add("en-GB")
         if inferred == {accent}:
-            return filename
-    return None
+            if filename not in choices:
+                choices.append(filename)
+            if len(choices) >= MAX_RECORDING_CANDIDATES:
+                break
+    return tuple(choices)
 
 
-def _recording_choices(client: httpx.Client, word: str, key: str, deadline: float) -> dict[str, str | None]:
+def _recording_choices(client: httpx.Client, word: str, key: str, deadline: float) -> dict[str, tuple[str, ...]]:
     """Share one small, short-lived lookup between the two requested accents."""
     with _lookup_lock:
         now = monotonic()
@@ -186,7 +191,7 @@ def _recording_choices(client: httpx.Client, word: str, key: str, deadline: floa
         entry = json.loads(_fetch(client, WIKTIONARY_API, deadline, params={
             "action": "parse", "page": word, "prop": "wikitext", "format": "json", "formatversion": "2", "redirects": "1"}))
         text = entry.get("parse", {}).get("wikitext", "")
-        choices = {accent: _recording_filename(text, accent) for accent in ("en-US", "en-GB")}
+        choices = {accent: _recording_filenames(text, accent) for accent in ("en-US", "en-GB")}
         with _lookup_lock:
             # Only validated filenames are retained, rather than entire articles.
             for expired in [name for name, value in _word_choices.items() if value[0] <= monotonic()]:
@@ -258,11 +263,19 @@ def _licensed_attribution(author: str, license_name: str, source_url: str, licen
     if not source_url or not license_url:
         return None
     path = urlsplit(license_url).path
-    if re.fullmatch(r"CC BY(?:-SA)? (?:1\.0|2\.0|2\.5|3\.0|4\.0)", license_name, re.I):
-        kind = "by-sa" if "-sa" in license_name.casefold() else "by"
-        version = license_name.rsplit(" ", 1)[1]
-        if not re.fullmatch(rf"/licenses/{kind}/{re.escape(version)}(?:/[a-z-]+)?/?", path):
+    cc_license = re.fullmatch(r"CC BY(?P<sa>-SA)? (?P<version>1\.0|2\.0|2\.5|3\.0|4\.0)(?: (?P<jurisdiction>[a-z]{2}))?", license_name, re.I)
+    if cc_license:
+        kind = "by-sa" if cc_license["sa"] else "by"
+        jurisdiction = cc_license["jurisdiction"]
+        directory = f"/licenses/{kind}/{cc_license['version']}/"
+        if jurisdiction:
+            directory += jurisdiction.casefold() + "/"
+        # Commons also returns links to translated deeds. Keep the exact license
+        # version and jurisdiction, but use its stable canonical directory URL.
+        if (path not in {directory, directory.rstrip("/")}
+                and not re.fullmatch(rf"{re.escape(directory)}deed(?:\.[a-z-]+)?", path)):
             return None
+        license_url = "https://creativecommons.org" + directory
     elif license_name.casefold() in {"cc0", "cc0 1.0", "public domain", "pd"}:
         if path not in {"/publicdomain/zero/1.0/", "/publicdomain/mark/1.0/"}:
             return None
@@ -271,19 +284,40 @@ def _licensed_attribution(author: str, license_name: str, source_url: str, licen
     return {"author": author, "license": license_name, "source_url": source_url, "license_url": license_url}
 
 
-def _file_metadata(data: dict) -> tuple[str, dict[str, str]] | None:
+def _file_title(value: str) -> str:
+    """Only apply Commons' space and initial-letter file-title normalization."""
+    if not isinstance(value, str) or not value.startswith("File:"):
+        return ""
+    name = " ".join(value[5:].replace("_", " ").split())
+    return "File:" + name[:1].upper() + name[1:]
+
+
+def _file_metadata(data: dict, filename: str | None = None) -> tuple[str, dict[str, str]] | None:
     pages = data.get("query", {}).get("pages", [])
     if not isinstance(pages, list) or not pages:
         return None
-    infos = pages[0].get("imageinfo", [])
+    page = next((page for page in pages if isinstance(page, dict)
+                 and _file_title(page.get("title", "")) == _file_title(f"File:{filename}")), None) if filename is not None else pages[0]
+    if not isinstance(page, dict):
+        return None
+    infos = page.get("imageinfo", [])
     if not infos:
         return None
     info = infos[0]
     audio_url = _safe_url(info.get("url", ""), "upload.wikimedia.org", "/wikipedia/commons/", strip_query=True)
     metadata = info.get("extmetadata", {})
     value = lambda key: metadata.get(key, {}).get("value", "")
+    license_url = value("LicenseUrl")
+    if (not license_url and value("LicenseShortName").strip().casefold() == "public domain"
+            and value("License").strip().casefold() == "pd"
+            and value("Copyrighted").strip().casefold() == "false"
+            and value("AttributionRequired").strip().casefold() == "false"
+            and not value("Restrictions").strip()):
+        # The Public Domain Mark identifies public-domain status; it is not a
+        # substitute CC0 license. Accept it only with the corroborating fields.
+        license_url = "https://creativecommons.org/publicdomain/mark/1.0/"
     attribution = _licensed_attribution(value("Artist"), value("LicenseShortName"),
-                                        info.get("descriptionurl", ""), value("LicenseUrl"))
+                                        info.get("descriptionurl", ""), license_url)
     if not audio_url or not attribution:
         return None
     return audio_url, attribution
@@ -404,7 +438,7 @@ def _cache_save(path: Path, word: str, accent: str, recording: Recording) -> Non
                 pass
 
 
-def record_word(text: str, accent: str, storage_dir: Path) -> Recording | None:
+def record_word(text: str, accent: str, storage_dir: Path, *, deadline: float | None = None) -> Recording | None:
     word = _word(text)
     if word is None or accent not in {"en-US", "en-GB"}:
         return None
@@ -413,6 +447,9 @@ def record_word(text: str, accent: str, storage_dir: Path) -> Recording | None:
     cached = _cache_read(path, word, accent)
     if cached is not None:
         return cached
+    deadline = min(monotonic() + LOOKUP_SECONDS, deadline) if deadline is not None else monotonic() + LOOKUP_SECONDS
+    if monotonic() >= deadline:
+        return None
     key = f"{storage_dir}:{digest}"
     with _lookup_lock:
         if _negative.get(key, 0) > monotonic():
@@ -424,7 +461,7 @@ def record_word(text: str, accent: str, storage_dir: Path) -> Recording | None:
             _inflight[key] = pending
     if not leader:
         try:
-            return pending.result(timeout=LOOKUP_SECONDS)
+            return pending.result(timeout=max(0, deadline - monotonic()))
         except FutureTimeoutError:
             return None
     try:
@@ -432,24 +469,34 @@ def record_word(text: str, accent: str, storage_dir: Path) -> Recording | None:
         # in-flight check. Recheck locally before starting another remote lookup.
         recording = _cache_read(path, word, accent)
         if recording is None:
-            deadline = monotonic() + LOOKUP_SECONDS
             try:
                 with _client() as client:
                     choices = _recording_choices(client, word, f"{storage_dir}:{word}", deadline)
-                    filename = choices[accent]
-                    if filename is None:
+                    filenames = choices[accent]
+                    if not filenames:
                         raise ValueError("No recording for the requested accent")
                     metadata = json.loads(_fetch(client, COMMONS_API, deadline, params={
-                        "action": "query", "titles": f"File:{filename}", "prop": "imageinfo", "iiprop": "url|extmetadata",
+                        "action": "query", "titles": "|".join(f"File:{name}" for name in filenames), "prop": "imageinfo", "iiprop": "url|extmetadata",
                         "format": "json", "formatversion": "2"}))
-                    selected = _file_metadata(metadata)
-                    if selected is None:
-                        raise ValueError("No eligible openly licensed recording")
-                    audio_url, attribution = selected
-                    audio = _decode_audio(_fetch(client, audio_url, deadline), deadline=deadline)
-                    if monotonic() > deadline or not _valid_audio(audio):
-                        raise ValueError("Recording lookup exceeds limits")
-                recording = Recording(audio, attribution)
+                    for filename in filenames:
+                        if monotonic() >= deadline:
+                            break
+                        try:
+                            selected = _file_metadata(metadata, filename)
+                            if selected is None:
+                                continue
+                            audio_url, attribution = selected
+                            audio = _decode_audio(_fetch(client, audio_url, deadline), deadline=deadline)
+                            if monotonic() > deadline or not _valid_audio(audio):
+                                continue
+                            recording = Recording(audio, attribution)
+                            break
+                        except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError, KeyError, TypeError, AttributeError, ImportError, TimeoutError, RecursionError):
+                            # A damaged or unavailable file must not hide a later
+                            # eligible recording for this exact requested accent.
+                            continue
+                if recording is None:
+                    raise ValueError("No eligible openly licensed recording")
                 _cache_save(path, word, accent, recording)
             except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError, KeyError, TypeError, AttributeError, ImportError, TimeoutError, RecursionError):
                 # Short-lived misses prevent a bad connection from delaying every replay.

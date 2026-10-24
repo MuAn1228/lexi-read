@@ -10,6 +10,9 @@
 .speech-settings-controls { display: flex; flex-wrap: wrap; gap: 9px 16px; }
 .speech-settings-controls label { display: inline-flex; align-items: center; gap: 7px; color: #6b7e65; font-size: 11px; }
 .speech-settings-controls select { appearance: auto; min-height: 30px; max-width: 140px; padding: 4px 6px; border: 1px solid #dfe7da; border-radius: 5px; background: #fffef9; color: #4f6549; font: inherit; cursor: pointer; }
+.speech-fallback-option { display: flex; align-items: center; gap: 7px; margin-top: 9px; color: #6b7e65; font-size: 11px; line-height: 1.7; cursor: pointer; }
+.speech-fallback-option input { margin: 0; accent-color: #618a51; }
+.speech-fallback-option input:focus-visible { outline: 2px solid #618a51; outline-offset: 3px; }
 .speech-status { margin: 8px 0 0; color: #8a7050; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
 .speech-source { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 8px 0 0; color: #6b7e65; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .speech-hint, .speech-attribution { margin: 8px 0 0; color: #6b7e65; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }

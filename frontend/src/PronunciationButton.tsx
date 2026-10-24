@@ -38,7 +38,7 @@ export default function PronunciationButton({ text, label = '朗读', speechKey,
       if (timer !== null) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility); cancelPreparation(key);
     };
-  }, [prepareOnMount, neuralAvailable, prepare, cancelPreparation, key, text, speech.accent, speech.rate]);
+  }, [prepareOnMount, neuralAvailable, prepare, cancelPreparation, key, text, speech.accent, speech.rate, speech.wordFallback]);
   return <button type="button" className={`pronunciation-button${active ? ' is-speaking' : ''}${compact ? ' pronunciation-button--compact' : ''} ${className}`}
     disabled={!speech.isSupported || !speech.voiceAvailable || Boolean(problem)} aria-pressed={active}
     aria-label={active ? `停止${label}` : label} title={title}
@@ -56,11 +56,12 @@ export function SpeechSettings() {
   const accentId = useId(); const rateId = useId();
   return <div className="speech-settings">
     <div className="speech-settings-controls">
-      <label htmlFor={accentId}>发音<select id={accentId} aria-label="发音口音" disabled={!speech.isSupported} value={speech.accent} onChange={event => speech.setAccent(event.target.value as SpeechAccent)}><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></label>
+      <label htmlFor={accentId}>首选口音<select id={accentId} aria-label="首选发音口音" disabled={!speech.isSupported} value={speech.accent} onChange={event => speech.setAccent(event.target.value as SpeechAccent)}><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></label>
       <label htmlFor={rateId}>语速<select id={rateId} aria-label="朗读语速" disabled={!speech.isSupported} value={speech.rate} onChange={event => speech.setRate(Number(event.target.value) as SpeechRate)}><option value={0.8}>慢速 · 0.8×</option><option value={1}>正常 · 1×</option><option value={1.2}>快速 · 1.2×</option></select></label>
       {speech.rate !== 1 && <button type="button" className="speech-rate-reset" onClick={() => speech.setRate(1)}>恢复正常语速</button>}
     </div>
-    <p className="speech-hint" title="单词优先词典录音，句子在本机朗读。只准备当前单词，不会自动播放。">当前单词会提前准备录音，点击后播放。</p>
+    <label className="speech-fallback-option"><input type="checkbox" checked={speech.wordFallback} onChange={event => speech.setWordFallback(event.target.checked)} />无录音时使用合成朗读</label>
+    <p className="speech-hint" title="只准备当前单词，不会自动播放。句子在本机朗读。">{speech.wordFallback ? '首选口音缺录音时尝试另一口音，均无录音时使用合成朗读。' : '单词仅播放词典录音；首选口音缺录音时尝试另一口音。'}</p>
     {speech.voiceName && <p className="speech-source" title={speech.engine === 'system' ? undefined : '已加首尾缓冲'}>{speech.engine === 'dictionary' ? '词典录音' : speech.engine === 'neural' ? '本机合成' : '系统语音'}<span>·</span>{speech.voiceName}</p>}
     {speech.engine === 'dictionary' && speech.attribution && <p className="speech-attribution">
       <span>{speech.attribution.author} · {speech.attribution.license}</span>

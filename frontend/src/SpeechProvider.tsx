@@ -56,5 +56,6 @@ export function useSpeech() {
   if (!controller) throw new Error('Speech components require SpeechProvider.');
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   return { ...snapshot, speak: controller.speak, stop: controller.stop, prepare: controller.prepare,
-    cancelPreparation: controller.cancelPreparation, setAccent: controller.setAccent, setRate: controller.setRate };
+    cancelPreparation: controller.cancelPreparation, setAccent: controller.setAccent, setRate: controller.setRate,
+    setWordFallback: controller.setWordFallback };
 }

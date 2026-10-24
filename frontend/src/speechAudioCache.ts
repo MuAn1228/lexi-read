@@ -1,6 +1,7 @@
 import type { PronunciationAudio, SpeechAccent } from './speech';
+import { isSpeechWord } from './speech';
 
-type AudioLoader = (text: string, accent: SpeechAccent, signal: AbortSignal) => Promise<PronunciationAudio>;
+type AudioLoader = (text: string, accent: SpeechAccent, signal: AbortSignal, wordFallback: boolean) => Promise<PronunciationAudio>;
 type CacheOptions = {
   load: AudioLoader;
   getScope: () => Promise<string>;
@@ -67,14 +68,14 @@ export function createPronunciationCache({ load, getScope, now = Date.now, maxEn
   });
   return {
     clear,
-    load: async (text: string, accent: SpeechAccent, signal: AbortSignal): Promise<PronunciationAudio> => {
+    load: async (text: string, accent: SpeechAccent, signal: AbortSignal, wordFallback = false): Promise<PronunciationAudio> => {
       signal.throwIfAborted();
       const identity = await getScope();
       signal.throwIfAborted();
       if (scope !== identity) { clear(); scope = identity; }
       purge();
       const normalized = text.trim();
-      const key = JSON.stringify([accent, normalized]);
+      const key = JSON.stringify([accent, normalized, wordFallback]);
       const cached = cache.get(key);
       if (cached) {
         cache.delete(key); cache.set(key, cached);
@@ -86,9 +87,12 @@ export function createPronunciationCache({ load, getScope, now = Date.now, maxEn
         const currentGeneration = generation;
         const fresh: PendingAudio = { controller, consumers: new Set(), promise: Promise.resolve().then(() => {
           controller.signal.throwIfAborted();
-          return load(normalized, accent, controller.signal);
+          return load(normalized, accent, controller.signal, wordFallback);
         }).then(audio => {
           controller.signal.throwIfAborted();
+          if (!wordFallback && isSpeechWord(normalized) && audio.source !== 'dictionary') {
+            throw Object.assign(new Error('No dictionary recording available'), { code: 'recording_not_found' });
+          }
           if (!audio.blob.size || !['dictionary', 'piper'].includes(audio.source)
             || audio.source === 'dictionary' && !audio.attribution) throw new Error('Invalid pronunciation audio');
           if (currentGeneration !== generation) throw abortError();
