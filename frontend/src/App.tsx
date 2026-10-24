@@ -51,7 +51,7 @@ const titles: Record<View, { title: string; subtitle: string }> = {
   practice: { title: '短文练习', subtitle: '用需要巩固的单词生成英文短文，在新语境中练习。' },
   history: { title: '学习记录', subtitle: '按日复盘，找出没记牢的词，接着学。' },
   dashboard: { title: '学习概览', subtitle: '查看词汇掌握情况和学习统计。' },
-  relations: { title: '词汇关联', subtitle: '查看保存的关联词和推荐反馈。' },
+  relations: { title: '词汇关联', subtitle: '从一个词出发，理解联系与区别，再试着回想。' },
   data: { title: '数据管理', subtitle: '导入墨墨单词，导出或恢复学习数据备份。' },
 };
 function rememberDocument(id: number) { try { localStorage.setItem(browserStorageKey('document'), String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
@@ -637,7 +637,7 @@ export default function App() {
       {view === 'data' && health?.auth_mode === 'local' && <><MaimemoPanel disabled={saving || isLoading || restorationLocked} onImported={refreshLearning} onBusyChange={setMaimemoBusy} /><DataManagementView disabled={saving || isLoading || maimemoBusy} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} /></>}
       {view === 'history' && <HistoryView revision={events[0]?.id ?? 0} disabled={saving || isLoading || restorationLocked || proofread !== null || readerBlocked} onReview={() => navigateFromMenu('review')} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} />}
       {view === 'dashboard' && <DashboardView vocabulary={vocabulary} />}
-      {view === 'relations' && <RelationsView vocabulary={vocabulary} />}
+      {view === 'relations' && <RelationsView vocabulary={vocabulary} revision={events[0]?.id ?? 0} disabled={saving || isLoading || restorationLocked || proofread !== null || readerBlocked} onBusyChange={vocabularyOperationBusy} onLearningChanged={refreshLearning} onOpenDocument={(documentId, occurrenceId) => void openDocument(documentId, occurrenceId)} onReview={() => navigateFromMenu('review')} />}
       <footer className="app-footer"><span><LexiMark className="footer-mark" />词间 · 英语阅读与词汇学习</span><span>{health ? `${health.llm_provider === 'offline' ? '离线学习模式' : 'AI 语境服务已配置'} · ${health.auth_mode === 'guest' ? '学习记录保存在服务器' : '学习记录保存在本机'}` : '正在连接学习空间'}</span></footer>
     </main>
     <StudyDock items={navigation.filter(item => item.value !== 'data' || health?.auth_mode === 'local')} view={view} disabled={restorationLocked || initializing || vocabularyBusy} onNavigate={navigateFromMenu} vocabularyCount={vocabulary.filter(word => word.status !== null).length} navigationRef={navigationElement} />
