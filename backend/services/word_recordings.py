@@ -6,7 +6,10 @@ source, and is never presented as a recording if retrieval or validation fails.
 from __future__ import annotations
 
 from array import array
+import atexit
 import base64
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
+from contextlib import contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
 from html.parser import HTMLParser
@@ -18,6 +21,7 @@ from pathlib import Path
 import re
 import sys
 from tempfile import NamedTemporaryFile
+from threading import Condition, Lock
 from time import monotonic, time
 import unicodedata
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -39,7 +43,17 @@ LOOKUP_SECONDS = 9.0
 CACHE_VERSION = "commons-english-pcm22050-v1"
 WIKTIONARY_API = "https://en.wiktionary.org/w/api.php"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+LOOKUP_CACHE_SECONDS = 5 * 60
+MAX_LOOKUP_CACHE_ENTRIES = 128
 _negative: dict[str, float] = {}
+_lookup_lock = Lock()
+_inflight: dict[str, Future[Recording | None]] = {}
+_word_choices: dict[str, tuple[float, dict[str, str | None]]] = {}
+_word_inflight: dict[str, Future[dict[str, str | None] | None]] = {}
+_client_condition = Condition()
+_shared_client: httpx.Client | None = None
+_client_users = 0
+_client_closing = False
 
 
 @dataclass(frozen=True)
@@ -55,9 +69,51 @@ def _word(text: str) -> str | None:
     return text
 
 
-def _client() -> httpx.Client:
+def _new_client() -> httpx.Client:
     return httpx.Client(follow_redirects=False,
+                        limits=httpx.Limits(max_connections=8, max_keepalive_connections=6, keepalive_expiry=60.0),
                         headers={"User-Agent": "LexiRead/0.1 (personal English study; https://github.com/MuAn1228/lexi-read)"})
+
+
+@contextmanager
+def _client():
+    """Lease the thread-safe pool without serializing independent requests."""
+    global _shared_client, _client_users
+    with _client_condition:
+        while _client_closing:
+            _client_condition.wait()
+        if _shared_client is None:
+            _shared_client = _new_client()
+        client = _shared_client
+        _client_users += 1
+    try:
+        yield client
+    finally:
+        with _client_condition:
+            _client_users -= 1
+            _client_condition.notify_all()
+
+
+def close_recording_client() -> None:
+    """Close idle connections at application shutdown, after active leases end."""
+    global _shared_client, _client_closing
+    with _client_condition:
+        while _client_closing:
+            _client_condition.wait()
+        _client_closing = True
+        while _client_users:
+            _client_condition.wait()
+        client, _shared_client = _shared_client, None
+    try:
+        if client is not None:
+            client.close()
+    finally:
+        with _client_condition:
+            _client_closing = False
+            _client_condition.notify_all()
+
+
+atexit.register(close_recording_client)
 
 
 def _fetch(client: httpx.Client, url: str, deadline: float, *, params=None) -> bytes:
@@ -104,6 +160,48 @@ def _recording_filename(wikitext: str, accent: str) -> str | None:
         if inferred == {accent}:
             return filename
     return None
+
+
+def _recording_choices(client: httpx.Client, word: str, key: str, deadline: float) -> dict[str, str | None]:
+    """Share one small, short-lived lookup between the two requested accents."""
+    with _lookup_lock:
+        now = monotonic()
+        cached = _word_choices.get(key)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+        pending = _word_inflight.get(key)
+        leader = pending is None
+        if leader:
+            pending = Future()
+            _word_inflight[key] = pending
+    if not leader:
+        try:
+            choices = pending.result(timeout=max(0, deadline - monotonic()))
+        except FutureTimeoutError:
+            raise TimeoutError("Recording lookup deadline exceeded") from None
+        if choices is None:
+            raise ValueError("Recording lookup failed")
+        return choices
+    try:
+        entry = json.loads(_fetch(client, WIKTIONARY_API, deadline, params={
+            "action": "parse", "page": word, "prop": "wikitext", "format": "json", "formatversion": "2", "redirects": "1"}))
+        text = entry.get("parse", {}).get("wikitext", "")
+        choices = {accent: _recording_filename(text, accent) for accent in ("en-US", "en-GB")}
+        with _lookup_lock:
+            # Only validated filenames are retained, rather than entire articles.
+            for expired in [name for name, value in _word_choices.items() if value[0] <= monotonic()]:
+                _word_choices.pop(expired, None)
+            _word_choices.pop(key, None)
+            if len(_word_choices) >= MAX_LOOKUP_CACHE_ENTRIES:
+                _word_choices.pop(next(iter(_word_choices)))
+            _word_choices[key] = (monotonic() + LOOKUP_CACHE_SECONDS, choices)
+        pending.set_result(choices)
+        return choices
+    finally:
+        if not pending.done():
+            pending.set_result(None)
+        with _lookup_lock:
+            _word_inflight.pop(key, None)
 
 
 class _PlainText(HTMLParser):
@@ -315,33 +413,54 @@ def record_word(text: str, accent: str, storage_dir: Path) -> Recording | None:
     cached = _cache_read(path, word, accent)
     if cached is not None:
         return cached
-    negative_key = f"{storage_dir}:{digest}"
-    if _negative.get(negative_key, 0) > monotonic():
-        return None
-    deadline = monotonic() + LOOKUP_SECONDS
+    key = f"{storage_dir}:{digest}"
+    with _lookup_lock:
+        if _negative.get(key, 0) > monotonic():
+            return None
+        pending = _inflight.get(key)
+        leader = pending is None
+        if leader:
+            pending = Future()
+            _inflight[key] = pending
+    if not leader:
+        try:
+            return pending.result(timeout=LOOKUP_SECONDS)
+        except FutureTimeoutError:
+            return None
     try:
-        with _client() as client:
-            entry = json.loads(_fetch(client, WIKTIONARY_API, deadline, params={
-                "action": "parse", "page": word, "prop": "wikitext", "format": "json", "formatversion": "2", "redirects": "1"}))
-            filename = _recording_filename(entry.get("parse", {}).get("wikitext", ""), accent)
-            if filename is None:
-                raise ValueError("No recording for the requested accent")
-            metadata = json.loads(_fetch(client, COMMONS_API, deadline, params={
-                "action": "query", "titles": f"File:{filename}", "prop": "imageinfo", "iiprop": "url|extmetadata",
-                "format": "json", "formatversion": "2"}))
-            selected = _file_metadata(metadata)
-            if selected is None:
-                raise ValueError("No eligible openly licensed recording")
-            audio_url, attribution = selected
-            audio = _decode_audio(_fetch(client, audio_url, deadline), deadline=deadline)
-            if monotonic() > deadline or not _valid_audio(audio):
-                raise ValueError("Recording lookup exceeds limits")
-        recording = Recording(audio, attribution)
-        _cache_save(path, word, accent, recording)
+        # A preceding writer may have completed between our first read and the
+        # in-flight check. Recheck locally before starting another remote lookup.
+        recording = _cache_read(path, word, accent)
+        if recording is None:
+            deadline = monotonic() + LOOKUP_SECONDS
+            try:
+                with _client() as client:
+                    choices = _recording_choices(client, word, f"{storage_dir}:{word}", deadline)
+                    filename = choices[accent]
+                    if filename is None:
+                        raise ValueError("No recording for the requested accent")
+                    metadata = json.loads(_fetch(client, COMMONS_API, deadline, params={
+                        "action": "query", "titles": f"File:{filename}", "prop": "imageinfo", "iiprop": "url|extmetadata",
+                        "format": "json", "formatversion": "2"}))
+                    selected = _file_metadata(metadata)
+                    if selected is None:
+                        raise ValueError("No eligible openly licensed recording")
+                    audio_url, attribution = selected
+                    audio = _decode_audio(_fetch(client, audio_url, deadline), deadline=deadline)
+                    if monotonic() > deadline or not _valid_audio(audio):
+                        raise ValueError("Recording lookup exceeds limits")
+                recording = Recording(audio, attribution)
+                _cache_save(path, word, accent, recording)
+            except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError, KeyError, TypeError, AttributeError, ImportError, TimeoutError, RecursionError):
+                # Short-lived misses prevent a bad connection from delaying every replay.
+                with _lookup_lock:
+                    if len(_negative) >= 256:
+                        _negative.clear()
+                    _negative[key] = monotonic() + 60
+        pending.set_result(recording)
         return recording
-    except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError, KeyError, TypeError, AttributeError, ImportError, TimeoutError, RecursionError):
-        # Short-lived misses prevent a bad connection from delaying every replay.
-        if len(_negative) >= 256:
-            _negative.clear()
-        _negative[negative_key] = monotonic() + 60
-        return None
+    finally:
+        if not pending.done():
+            pending.set_result(None)
+        with _lookup_lock:
+            _inflight.pop(key, None)

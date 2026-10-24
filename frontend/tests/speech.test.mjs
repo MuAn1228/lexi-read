@@ -575,3 +575,46 @@ test('a canceled pronunciation request cannot fetch audio or recover external me
   await assert.rejects(client.requestPronunciation('example', 'en-US', abort.signal), error => error.name === 'AbortError');
   assert.equal(calls.some(call => call.url.endsWith('/pronunciation')), false);
 });
+
+test('preparing one word is silent and does not change the active source or playback state', async context => {
+  const response = deferred();
+  const { controller, requests, players, synth, urls } = naturalEngine(context, { load: () => response.promise });
+  const before = controller.getSnapshot();
+  controller.prepare('example', { key: 'current-word' });
+  assert.equal(requests.length, 1);
+  assert.equal(controller.getSnapshot(), before);
+  response.resolve(recorded()); await flush();
+  assert.equal(players.length, 0); assert.equal(urls.length, 0); assert.equal(synth.utterances.length, 0);
+  assert.equal(controller.getSnapshot(), before);
+});
+
+test('preparation only accepts single words and never scans a sentence or calls an unavailable audio service', async context => {
+  const { controller, requests } = naturalEngine(context);
+  for (const text of ['', 'two words', 'A public example sentence.', '123', 'a'.repeat(81), '你好']) controller.prepare(text);
+  assert.equal(requests.length, 0);
+  controller.setNeuralAvailable(false); controller.prepare('example');
+  assert.equal(requests.length, 0);
+  controller.setNeuralAvailable(true); controller.prepare('well-known'); await flush();
+  assert.equal(requests.length, 1);
+});
+
+test('new word preparation, stop, hidden-page cleanup and disconnect abort old work without allowing late playback', async context => {
+  const response = deferred();
+  const { controller, requests, players, synth } = naturalEngine(context, { load: () => response.promise });
+  const disconnect = controller.connect();
+  controller.prepare('first', { key: 'first' }); controller.prepare('second', { key: 'second' });
+  assert.equal(requests[0].signal.aborted, true);
+  controller.cancelPreparation('first'); assert.equal(requests[1].signal.aborted, false);
+  controller.stop('second'); assert.equal(requests[1].signal.aborted, true);
+  controller.prepare('third'); controller.stop(); assert.equal(requests[2].signal.aborted, true);
+  controller.prepare('fourth'); disconnect(); assert.equal(requests[3].signal.aborted, true);
+  response.resolve(recorded()); await flush();
+  assert.equal(players.length, 0); assert.equal(synth.utterances.length, 0);
+});
+
+test('preparation failure is silent and never falls back to a system voice', async context => {
+  const { controller, players, synth } = naturalEngine(context, { load: () => Promise.reject(new Error('offline')) });
+  controller.prepare('example'); await flush();
+  assert.equal(controller.getSnapshot().status, 'idle'); assert.equal(controller.getSnapshot().error, '');
+  assert.equal(players.length, 0); assert.equal(synth.utterances.length, 0);
+});

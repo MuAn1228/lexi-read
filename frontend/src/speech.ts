@@ -81,6 +81,7 @@ export function createSpeechController({ synthesis, createUtterance, preferences
   let audio: SpeechAudio | null = null;
   let audioURL: string | null = null;
   let pending: AbortController | null = null;
+  let preparation: { key: string; text: string; accent: SpeechAccent; controller: AbortController } | null = null;
   let sequence = 0;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   let snapshot: SpeechSnapshot = {
@@ -111,8 +112,13 @@ export function createSpeechController({ synthesis, createUtterance, preferences
   };
   const preferredVoice = () => naturalReady ? { engine: 'neural' as const, voiceName: '', attribution: null }
     : { engine: 'system' as const, voiceName: selectSpeechVoice(voices, snapshot.accent)?.name ?? '', attribution: null };
+  const cancelPreparation = (key?: string) => {
+    if (!preparation || key !== undefined && preparation.key !== key) return;
+    preparation.controller.abort(); preparation = null;
+  };
   const stop = (key?: string) => {
-    if (key !== undefined && key !== snapshot.activeKey) return;
+    if (key !== undefined && key !== snapshot.activeKey) { cancelPreparation(key); return; }
+    cancelPreparation();
     cancel(); update({ activeKey: null, status: 'idle', error: '', notice: naturalReady ? '' : systemNotice, ...preferredVoice() });
   };
   const refreshVoices = () => {
@@ -222,8 +228,22 @@ export function createSpeechController({ synthesis, createUtterance, preferences
       return () => { synthesis?.removeEventListener('voiceschanged', refreshVoices); stop(); };
     },
     stop,
+    cancelPreparation,
+    prepare: (text: string, options: { key?: string } = {}) => {
+      const word = text.trim();
+      if (!naturalReady || !loadAudio || word.length > 80 || !/^[A-Za-z]+(?:['’\-][A-Za-z]+)*$/.test(word)) return;
+      const key = options.key ?? word;
+      if (preparation?.key === key && preparation.text === word && preparation.accent === snapshot.accent) return;
+      cancelPreparation();
+      const request = { key, text: word, accent: snapshot.accent, controller: new AbortController() };
+      preparation = request;
+      // Preparation never changes playback state, creates an audio element, or falls back to system speech.
+      void loadAudio(word, request.accent, request.controller.signal).catch(() => undefined)
+        .finally(() => { if (preparation === request) preparation = null; });
+    },
     setNeuralAvailable: (available: boolean, reason?: string | null) => {
       naturalReady = available && audioSupported;
+      if (!naturalReady) cancelPreparation();
       systemNotice = reason ? reason + ' ' + SYSTEM_NOTICE : SYSTEM_NOTICE;
       refreshVoices();
       if (snapshot.activeKey === null) update({ notice: naturalReady ? '' : systemNotice });
@@ -240,6 +260,7 @@ export function createSpeechController({ synthesis, createUtterance, preferences
       const problem = speechTextProblem(text);
       if (problem) { fail(problem); return; }
       refreshVoices(); cancel();
+      if (preparation && (preparation.text !== text.trim() || preparation.accent !== snapshot.accent)) cancelPreparation();
       const key = options.key ?? text;
       if (naturalReady) void startNatural(text.trim(), key, sequence);
       else startSystem(text.trim(), key, sequence);

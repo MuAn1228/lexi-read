@@ -1,7 +1,9 @@
 """Public word fixtures, mocked HTTP and temporary caches; never access live APIs."""
 from array import array
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import json
+from threading import Barrier, Event
 from types import SimpleNamespace
 import wave
 
@@ -38,10 +40,18 @@ def metadata(**overrides):
 
 
 @pytest.fixture(autouse=True)
-def clear_negative():
+def clear_lookup_state():
+    recordings.close_recording_client()
     recordings._negative.clear()
+    recordings._word_choices.clear()
+    recordings._inflight.clear()
+    recordings._word_inflight.clear()
     yield
+    recordings.close_recording_client()
     recordings._negative.clear()
+    recordings._word_choices.clear()
+    recordings._inflight.clear()
+    recordings._word_inflight.clear()
 
 
 @pytest.fixture
@@ -73,7 +83,7 @@ def runtime(monkeypatch):
             return httpx.Response(200, json=responses["metadata"])
         assert request.url.host == "upload.wikimedia.org"
         return httpx.Response(200, content=responses["audio"])
-    monkeypatch.setattr(recordings, "_client", lambda: httpx.Client(transport=httpx.MockTransport(handle), follow_redirects=False))
+    monkeypatch.setattr(recordings, "_new_client", lambda: httpx.Client(transport=httpx.MockTransport(handle), follow_redirects=False))
     return requests, responses, decoder, decoded_pcm
 
 
@@ -220,7 +230,151 @@ def test_invalid_cache_is_never_used_and_success_is_regenerated(runtime, tmp_pat
     elif damage == "deep": path.write_text("[" * 2000 + "0" + "]" * 2000, "utf8")
     else: path.write_text(json.dumps(payload), "utf8")
     assert recordings.record_word("curious", "en-US", tmp_path) == initial
+    # A corrupt audio cache still revalidates license metadata and downloads the
+    # audio, while retaining the short-lived, already validated filename lookup.
+    assert len(requests) == 5
+
+
+def test_switching_accent_reuses_only_requested_words_filename_lookup(runtime, tmp_path):
+    requests, _, _, _ = runtime
+    assert recordings.record_word("curious", "en-US", tmp_path) is not None
+    assert recordings.record_word("curious", "en-GB", tmp_path) is not None
+    assert len(requests) == 5
+    assert sum(request.url.host == "en.wiktionary.org" for request in requests) == 1
+    assert [request.url.params["titles"] for request in requests if request.url.host == "commons.wikimedia.org"] == [
+        "File:En-us-curious.ogg", "File:LL-Q1860 (eng)-Reader-curious.wav"]
+    choices = next(iter(recordings._word_choices.values()))[1]
+    assert choices == {"en-US": "En-us-curious.ogg", "en-GB": "LL-Q1860 (eng)-Reader-curious.wav"}
+
+
+def test_filename_cache_expires_and_is_bounded(runtime, tmp_path, monkeypatch):
+    requests, _, _, _ = runtime
+    monkeypatch.setattr(recordings, "MAX_LOOKUP_CACHE_ENTRIES", 2)
+    assert recordings.record_word("curious", "en-US", tmp_path) is not None
+    key = next(iter(recordings._word_choices))
+    _, choices = recordings._word_choices[key]
+    recordings._word_choices[key] = (recordings.monotonic() - 1, choices)
+    assert recordings.record_word("curious", "en-GB", tmp_path) is not None
+    assert sum(request.url.host == "en.wiktionary.org" for request in requests) == 2
+    assert recordings.record_word("hello", "en-US", tmp_path) is not None
+    assert recordings.record_word("vocabulary", "en-US", tmp_path) is not None
+    assert len(recordings._word_choices) == 2
+    assert key not in recordings._word_choices
+
+
+def test_concurrent_requests_for_same_word_share_one_recording_lookup(runtime, tmp_path, monkeypatch):
+    requests, _, _, _ = runtime
+    original_fetch = recordings._fetch
+    entered, release, start = Event(), Event(), Barrier(8)
+    def fetch(client, url, deadline, **kwargs):
+        if url == recordings.WIKTIONARY_API:
+            entered.set()
+            assert release.wait(3)
+        return original_fetch(client, url, deadline, **kwargs)
+    monkeypatch.setattr(recordings, "_fetch", fetch)
+    def request():
+        start.wait(timeout=3)
+        return recordings.record_word("curious", "en-US", tmp_path)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        pending = [executor.submit(request) for _ in range(8)]
+        assert entered.wait(3)
+        release.set()
+        results = [item.result(timeout=5) for item in pending]
+    assert results[0] is not None and all(item == results[0] for item in results)
+    assert len(requests) == 3
+    assert not recordings._inflight and not recordings._word_inflight
+
+
+def test_concurrent_accents_share_word_lookup_but_fetch_their_own_recording(runtime, tmp_path, monkeypatch):
+    requests, _, _, _ = runtime
+    original_fetch = recordings._fetch
+    entered, release, start = Event(), Event(), Barrier(2)
+    def fetch(client, url, deadline, **kwargs):
+        if url == recordings.WIKTIONARY_API:
+            entered.set()
+            assert release.wait(3)
+        return original_fetch(client, url, deadline, **kwargs)
+    monkeypatch.setattr(recordings, "_fetch", fetch)
+    def request(accent):
+        start.wait(timeout=3)
+        return recordings.record_word("curious", accent, tmp_path)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = [executor.submit(request, accent) for accent in ("en-US", "en-GB")]
+        assert entered.wait(3)
+        release.set()
+        assert all(item.result(timeout=5) is not None for item in pending)
+    assert len(requests) == 5
+    assert sum(request.url.host == "en.wiktionary.org" for request in requests) == 1
+    assert len(list((tmp_path / "dictionary-audio").glob("*.json"))) == 2
+
+
+def test_failure_releases_concurrent_waiters_without_success_cache(runtime, tmp_path, monkeypatch):
+    requests, responses, _, _ = runtime
+    responses["wikitext"] = "==English==\nNo recording.\n"
+    start = Barrier(6)
+    def request():
+        start.wait(timeout=3)
+        return recordings.record_word("curious", "en-US", tmp_path)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        assert list(executor.map(lambda _: request(), range(6))) == [None] * 6
+    assert len(requests) == 1 and not recordings._inflight and not recordings._word_inflight
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_shared_http_pool_reuses_client_until_explicit_close(runtime, tmp_path, monkeypatch):
+    factory, clients = recordings._new_client, []
+    def new_client():
+        client = factory()
+        clients.append(client)
+        return client
+    requests, _, _, _ = runtime
+    monkeypatch.setattr(recordings, "_new_client", new_client)
+    assert recordings.record_word("curious", "en-US", tmp_path) is not None
+    assert recordings.record_word("hello", "en-US", tmp_path) is not None
+    assert len(clients) == 1 and not clients[0].is_closed and len(requests) == 6
+    recordings.close_recording_client()
+    assert clients[0].is_closed
+    assert recordings.record_word("vocabulary", "en-US", tmp_path) is not None
+    assert len(clients) == 2 and not clients[1].is_closed and len(requests) == 9
+
+
+def test_shared_client_does_not_serialize_independent_words(runtime, tmp_path, monkeypatch):
+    requests, _, _, _ = runtime
+    original_fetch, both_started = recordings._fetch, Barrier(2)
+    def fetch(client, url, deadline, **kwargs):
+        if url == recordings.WIKTIONARY_API:
+            both_started.wait(timeout=3)
+        return original_fetch(client, url, deadline, **kwargs)
+    monkeypatch.setattr(recordings, "_fetch", fetch)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = [executor.submit(recordings.record_word, word, "en-US", tmp_path) for word in ("curious", "hello")]
+        assert all(item.result(timeout=5) is not None for item in pending)
     assert len(requests) == 6
+
+
+def test_shutdown_waits_for_active_lease_before_closing(monkeypatch):
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    monkeypatch.setattr(recordings, "_new_client", lambda: client)
+    entered, release, closing, closed = Event(), Event(), Event(), Event()
+    def use():
+        with recordings._client() as leased:
+            assert leased is client
+            entered.set()
+            assert release.wait(3)
+            assert not leased.is_closed
+    def close():
+        closing.set()
+        recordings.close_recording_client()
+        closed.set()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reader = executor.submit(use)
+        assert entered.wait(3)
+        closer = executor.submit(close)
+        assert closing.wait(3) and not closed.wait(.05)
+        release.set()
+        reader.result(timeout=3)
+        closer.result(timeout=3)
+    assert client.is_closed and closed.is_set()
 
 
 def test_unavailable_dictionary_has_short_negative_cache_and_no_success_cache(runtime, tmp_path):

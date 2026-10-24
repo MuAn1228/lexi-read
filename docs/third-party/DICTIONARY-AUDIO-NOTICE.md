@@ -1,6 +1,9 @@
 # Optional dictionary recordings
 
-An explicitly requested English word may be looked up on English Wiktionary:
+A selected English word may be prepared after it remains in the current context
+or open dictionary for 600 ms. Other word buttons prepare on hover, focus or
+press. Preparation never plays audio automatically or scans word lists. The
+requested word may be looked up on English Wiktionary:
 https://en.wiktionary.org/w/api.php
 The selected audio file and its license metadata are obtained from Wikimedia
 Commons: https://commons.wikimedia.org/w/api.php
@@ -21,6 +24,10 @@ Downloaded recordings and their credits are cached together in
 They are fetched on demand and are not bundled as repository assets. The local
 Piper and browser system voices are separate fallbacks, clearly identified in
 the interface, and are not represented as dictionary recordings.
+
+The browser may retain up to 64 successful audio responses and their credits,
+within an 8 MB memory limit, scoped to the current backend and learning space.
+Recording entries expire after 30 minutes and are released on page reload.
 
 The optional decoder is miniaudio 1.71 (Python bindings, MIT):
 https://github.com/irmen/pyminiaudio

@@ -103,7 +103,7 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
     }}>
     <header className="dictionary-heading"><div><p className="dictionary-eyebrow"><BookOpen size={13} /> YOUR WORD COMPANION</p><h2 id={titleId}>{word}</h2>{entry?.phonetic && <p className="dictionary-phonetic">/{entry.phonetic.replace(/^\/+|\/+$/g, '')}/</p>}{entry && entry.headword.toLowerCase() !== word.toLowerCase() && <p className="dictionary-headword">词典词形 · {entry.headword}</p>}</div><button className="icon-button" type="button" ref={closeButton} aria-label="关闭中文释义" onClick={onClose}><X size={20} /></button></header>
     <p id={descriptionId} className="dictionary-intro">先读中文释义，再从义项、例句和搭配中理解用法。这里展示通用词义，文章中的具体含义可在“语境学习”中查看。</p>
-    <div className="dictionary-speech"><PronunciationButton text={word} label="朗读单词" /><SpeechSettings /></div>
+    <div className="dictionary-speech"><PronunciationButton text={word} label="朗读单词" prepareOnMount /><SpeechSettings /></div>
     <div className="dictionary-body" aria-busy={loading}>
       {loading && <p className="dictionary-loading" role="status"><LoaderCircle size={18} className="spin" />正在读取本地释义…</p>}
       {error && <div className="dictionary-error" role="alert"><p>{error}</p>{!result && <button type="button" className="text-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} />重新读取释义</button>}</div>}

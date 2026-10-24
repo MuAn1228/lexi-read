@@ -78,7 +78,7 @@ export default function ContextPanel({ word, onMark, saving, onNext, vocabulary,
     <div className="panel-heading"><div><Sparkles size={16} /><h2>语境学习</h2></div><button className="text-button" onClick={onNext}>下一个 <ArrowRight size={14} /></button></div>
     <div className="context-content">
       <div className="context-word-heading"><span className="overline">IN THIS CONTEXT</span><StatusBadge status={word.status} /></div>
-      <div className="pronunciation-word-heading"><h2 className="current-word">{word.word}</h2><PronunciationButton text={word.word} label="朗读单词" speechKey={`context-word:${word.id}`} compact /></div><p className="lemma-line">{explanation?.part_of_speech || '英文词汇'}<span>·</span>词元 {explanation?.lemma || word.lemma}</p>
+      <div className="pronunciation-word-heading"><h2 className="current-word">{word.word}</h2><PronunciationButton text={word.word} label="朗读单词" speechKey={`context-word:${word.id}`} prepareOnMount compact /></div><p className="lemma-line">{explanation?.part_of_speech || '英文词汇'}<span>·</span>词元 {explanation?.lemma || word.lemma}</p>
       <SpeechSettings />
       <button type="button" className="button secondary context-dictionary-button" onClick={event => openDictionary(word.word, event.currentTarget)}><BookOpen size={15} />中文词典与详细讲解</button>
       <WordControls word={word.word} status={word.status} disabled={saving} onMark={onMark} />

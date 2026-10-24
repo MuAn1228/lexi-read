@@ -23,13 +23,17 @@ from backend.api.vocabulary_operations import router as vocabulary_operations_ro
 from backend.api.vocabulary_groups import router as vocabulary_groups_router
 from backend.api.pronunciation_routes import router as pronunciation_router
 from backend.services.maintenance import MaintenanceMiddleware
+from backend.services.word_recordings import close_recording_client
 from backend.ocr.service import OCRUnavailable
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     initialize_database()
-    yield
+    try:
+        yield
+    finally:
+        close_recording_client()
 
 
 app = FastAPI(title="LexiRead API", version="0.1.0", lifespan=lifespan)
