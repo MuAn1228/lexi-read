@@ -1,10 +1,11 @@
 import type { MascotEvent } from './mascotEvents';
-import type { MascotBubbleValue, MascotConfig, MascotGestureKind, MascotState } from './mascotTypes';
-import { chooseMascotMessage } from './mascotMessages';
+import type { MascotBubbleValue, MascotConfig, MascotGestureKind, MascotScene, MascotState } from './mascotTypes';
+import { chooseMascotMessage, mascotSceneMessageGroup } from './mascotMessages';
 import type { MascotMessageGroup } from './mascotMessages';
 
 export const MASCOT_STORAGE_KEY = 'lexi:mascot:config';
 export const MASCOT_BUBBLE_COOLDOWN = 2500;
+export const MASCOT_REQUESTED_LINE_COOLDOWN = 1200;
 export const defaultMascotConfig: MascotConfig = {
   x: null, y: null, anchor: 'right', side: 'right', scale: 1, hidden: false, idleBubbleEnabled: true, interactionEnabled: true,
 };
@@ -39,7 +40,9 @@ export type MascotRuntime = {
   reactionId: number;
   sequence: number;
   lastOrdinaryBubbleAt: number;
+  lastRequestedBubbleAt: number;
   lastMessage: string | null;
+  recentMessages: Partial<Record<MascotMessageGroup, string[]>>;
   feedbackIds: string[];
 };
 
@@ -48,12 +51,13 @@ export type MascotAction = EventAction
   | { type: 'cancel'; operationId: string; now: number }
   | { type: 'tick'; now: number }
   | { type: 'dismiss'; now: number }
-  | { type: 'gestureLine'; kind: MascotGestureKind; now: number; choice: number; enabled: boolean }
-  | { type: 'interact'; now: number; choice: number; enabled: boolean };
+  | { type: 'gestureLine'; kind: MascotGestureKind; now: number; choice: number; enabled: boolean; scene?: MascotScene }
+  | { type: 'interact'; now: number; choice: number; enabled: boolean; scene?: MascotScene }
+  | { type: 'requestLine'; now: number; choice: number; scene?: MascotScene };
 
 export function createMascotRuntime(): MascotRuntime {
   return { pending: [], transient: null, bubble: null, reactionId: 0, sequence: 0,
-    lastOrdinaryBubbleAt: -Infinity, lastMessage: null, feedbackIds: [] };
+    lastOrdinaryBubbleAt: -Infinity, lastRequestedBubbleAt: -Infinity, lastMessage: null, recentMessages: {}, feedbackIds: [] };
 }
 
 export function mascotCurrentState(runtime: MascotRuntime): MascotState {
@@ -83,12 +87,14 @@ function react(runtime: MascotRuntime, state: MascotState, priority: number, now
   return { ...next, transient: { state, priority, until: now + duration } };
 }
 
-function speak(runtime: MascotRuntime, group: MascotMessageGroup, priority: number, now: number, choice: number, count = 0, operationId?: string): MascotRuntime {
+function speak(runtime: MascotRuntime, group: MascotMessageGroup, priority: number, now: number, choice: number, count = 0, operationId?: string, bypassOrdinaryCooldown = false): MascotRuntime {
   if ((runtime.bubble?.priority ?? -1) > priority || (runtime.transient?.priority ?? -1) > priority || (runtime.pending.length && priority < 2)) return runtime;
-  if (priority < 2 && now - runtime.lastOrdinaryBubbleAt < MASCOT_BUBBLE_COOLDOWN) return runtime;
-  const text = chooseMascotMessage(group, runtime.lastMessage, choice, count);
+  if (!bypassOrdinaryCooldown && priority < 2 && now - runtime.lastOrdinaryBubbleAt < MASCOT_BUBBLE_COOLDOWN) return runtime;
+  const recent = runtime.recentMessages[group] ?? [];
+  const text = chooseMascotMessage(group, runtime.lastMessage, choice, count, recent);
   const id = runtime.sequence + 1;
   return { ...runtime, sequence: id, lastMessage: text,
+    recentMessages: { ...runtime.recentMessages, [group]: [...recent, text].slice(-3) },
     lastOrdinaryBubbleAt: priority < 2 ? now : runtime.lastOrdinaryBubbleAt,
     bubble: { id, text, priority, until: now + (priority === 3 ? 7000 : 4000), operationId } };
 }
@@ -106,11 +112,19 @@ export function reduceMascot(runtime: MascotRuntime, action: MascotAction): Masc
   }
   if (action.type === 'interact') {
     const next = { ...current, reactionId: current.reactionId + 1 };
-    return action.enabled ? speak(next, 'idle', 0, action.now, action.choice) : next;
+    return action.enabled ? speak(next, mascotSceneMessageGroup(action.scene), 0, action.now, action.choice) : next;
+  }
+  if (action.type === 'requestLine') {
+    // Explicitly asking for a line can replace ordinary chatter, but it never
+    // outranks a pending request, an AI result or an error. No gesture is started.
+    if (action.now - current.lastRequestedBubbleAt < MASCOT_REQUESTED_LINE_COOLDOWN) return current;
+    const next = speak(current, mascotSceneMessageGroup(action.scene), 1, action.now, action.choice, 0, undefined, true);
+    return next === current ? current : { ...next, lastRequestedBubbleAt: action.now };
   }
   if (action.type === 'gestureLine') {
     const groups: Record<MascotGestureKind, MascotMessageGroup> = {
       nod: 'gestureNod', tilt: 'gestureTilt', hop: 'gestureHop', stretch: 'gestureStretch', pet: 'gesturePet',
+      wave: 'gestureWave', clap: 'gestureClap', read: 'gestureRead', yawn: 'gestureYawn', think: 'gestureThink',
     };
     return action.enabled ? speak(current, groups[action.kind], 0, action.now, action.choice) : current;
   }

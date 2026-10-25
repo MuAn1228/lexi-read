@@ -1,0 +1,18 @@
+Use case: identity-preserve.
+Asset type: production game animation sprite atlas for the existing Lexi reading companion.
+Input image 1 is the approved character reference and must remain the same identity: blue long hair, blue eyes, white frilled headband, little blue hair bow, modest navy-and-white maid-style dress, white apron, navy shoes, rounded chibi proportions and soft anime illustration. Match the EXACT character, line art quality, palette, head-to-body proportions and costume in that supplied sheet. Create new poses; do not reproduce the sheet's existing layout of poses.
+
+Deliver ONE transparent-alpha PNG animation atlas, ideally 1536x1024, EXACTLY FOUR equal columns by TWO equal rows (8 equal 384x512 cells). Each cell contains one complete full-body character. No text, no labels, no grid, no panels, no backdrop, no floor shadows, no particles or floating symbols. GENUINE TRANSPARENCY between and around sprites, not a painted checkerboard.
+CRITICAL GAME REQUIREMENTS: leave at least 28 pixels of transparent padding on ALL FOUR SIDES INSIDE EACH CELL. No strand, hand, prop, foot or accessory may cross a cell boundary. Use identical head size/body scale and identical feet baseline across every frame. The character occupies about 82% of the cell height; keep the entire hair and both shoes visible. Adjacent frame pairs must be consistent enough to animate without the face or body jumping.
+
+Eight cells read left to right on the top row, then left to right on the bottom row:
+0 Wave A: standing with a warm smile, right forearm raised, open palm tilted slightly outward; no book.
+1 Wave B: SAME pose and SAME body/head position as frame0, rotate only the raised wrist/palm gently inward to produce an actual friendly waving motion.
+2 Clap A: happy standing character, two hands held slightly apart at chest height, eyes pleasantly smiling; no book.
+3 Clap B: SAME head/body/feet placement as frame2, hands now gently together in a clap at the same chest height.
+4 Read A: holding an open sage-green reading book in both hands, attentive expression, one page begins to lift.
+5 Read B: SAME head/body/feet and book position as frame4, the lifted page is visibly on the other side, a small satisfied smile; a subtle true page-turn pair.
+6 Yawn A: standing with a relaxed sleepy face and one hand approaching the mouth, mouth only slightly open; no book.
+7 Yawn B: SAME body/head/feet placement as frame6, hand gently covering a small yawn, eyes softly closed.
+
+Preserve costume, face and blue-haired identity across all eight cells. Make pairs differ mainly in hands/expression/book page rather than changing body position or character scale. Keep compact, readable silhouette for 72–96px-wide widget use. No duplicate characters inside a cell. Do not crop anything. Do not add large furniture, combat, weapons, text or sound symbols. True transparent background is mandatory.

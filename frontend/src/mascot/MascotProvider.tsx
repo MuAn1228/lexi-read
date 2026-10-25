@@ -5,7 +5,7 @@ import { createMascotRuntime, defaultMascotConfig, mascotCurrentState, mascotInt
 import type { MascotAction } from './mascotState';
 import { createMascotInteraction, reduceMascotInteraction } from './mascotInteraction';
 import type { MascotInteractionAction } from './mascotInteraction';
-import type { MascotApi, MascotConfig, MascotSnapshot } from './mascotTypes';
+import type { MascotApi, MascotConfig, MascotScene, MascotSnapshot } from './mascotTypes';
 import type { AssistantReadingContext } from './mascotAssistant';
 
 const emptyReadingContext: AssistantReadingContext = { key: 'general', documentId: null, occurrenceId: null, word: null, title: null, sentence: null };
@@ -24,6 +24,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
   const configRef = useRef(config);
   const [suppressed, setSuppressed] = useState(false);
   const suppressedRef = useRef(suppressed);
+  const sceneRef = useRef<MascotScene>('reader');
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [readingContext, setReadingContext] = useState(emptyReadingContext);
   const readingContextRef = useRef(readingContext);
@@ -92,6 +93,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
       },
       cancelOperation: operationId => sendRuntime({ type: 'cancel', operationId, now: Date.now() }),
       setEnvironment: value => {
+        if (value.scene) sceneRef.current = value.scene;
         suppressedRef.current = value.suppressed;
         setSuppressed(value.suppressed);
         if (value.suppressed) { sendInteraction({ type: 'cancel' }); setAssistantOpen(false); setAssistantContext(null); }
@@ -102,8 +104,14 @@ export function MascotProvider({ children }: { children: ReactNode }) {
       hide: () => updateConfig({ hidden: true }),
       interact: () => {
         const now = Date.now();
-        sendRuntime({ type: 'interact', now, choice: Math.random(), enabled: configRef.current.idleBubbleEnabled });
+        sendRuntime({ type: 'interact', now, choice: Math.random(), enabled: configRef.current.idleBubbleEnabled, scene: sceneRef.current });
         sendInteraction({ type: 'click', now, choice: Math.random(), enabled: canInteract(now), blocked: mascotInteractionBlocked(runtimeRef.current, now) });
+      },
+      speak: () => {
+        if (configRef.current.hidden || suppressedRef.current) return;
+        // A deliberate request is independent of the click-dialogue and motion
+        // preferences; it only presents an authored line, never a learning action.
+        sendRuntime({ type: 'requestLine', now: Date.now(), choice: Math.random(), scene: sceneRef.current });
       },
       dismissBubble: () => sendRuntime({ type: 'dismiss', now: Date.now() }),
       playGesture: kind => {
@@ -111,7 +119,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
         const previousId = interactionRef.current.gesture?.id;
         const next = sendInteraction({ type: 'play', kind, now, enabled: canInteract(now), blocked: mascotInteractionBlocked(runtimeRef.current, now) });
         if (next.gesture && next.gesture.id !== previousId) {
-          sendRuntime({ type: 'gestureLine', kind, now, choice: Math.random(), enabled: configRef.current.idleBubbleEnabled });
+          sendRuntime({ type: 'gestureLine', kind, now, choice: Math.random(), enabled: configRef.current.idleBubbleEnabled, scene: sceneRef.current });
         }
       },
       cancelGesture: () => { sendInteraction({ type: 'cancel' }); },

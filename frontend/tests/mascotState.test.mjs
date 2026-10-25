@@ -12,7 +12,7 @@ const stateJs = transpile(await readFile(new URL('../src/mascot/mascotState.ts',
   .replace("'./mascotMessages'", JSON.stringify(dataUrl(messagesJs)));
 const { createMascotRuntime, reduceMascot, mascotCurrentState, mascotNextExpiry, parseMascotConfig,
   normalizeMascotConfig, defaultMascotConfig, MASCOT_STORAGE_KEY } = await import(dataUrl(stateJs));
-const { chooseMascotMessage } = await import(dataUrl(messagesJs));
+const { chooseMascotMessage, mascotMessages } = await import(dataUrl(messagesJs));
 
 const event = (runtime, value, now = 10000, sample = 0, choice = 0) => reduceMascot(runtime,
   { type: 'event', event: value, now, sample, choice });
@@ -166,4 +166,106 @@ test('expiry and dismiss do not clear a newer result and leave pending requests 
   assert.equal(state.bubble, null);
   assert.equal(mascotCurrentState(state), 'explaining');
   assert.equal(mascotNextExpiry(state), 16000);
+});
+
+test('explicit clicks choose the current page context without starting a learning operation', () => {
+  for (const scene of ['reader', 'library', 'vocabulary', 'review', 'practice', 'history', 'dashboard', 'relations', 'data']) {
+    const initial = createMascotRuntime();
+    const state = reduceMascot(initial, { type: 'interact', scene, now: 1000, choice: 0, enabled: true });
+    assert.ok(mascotMessages[scene].includes(state.bubble.text));
+    assert.equal(state.bubble.priority, 0);
+    assert.equal(mascotCurrentState(state), 'idle');
+    assert.equal(state.pending, initial.pending);
+    assert.equal(state.feedbackIds, initial.feedbackIds);
+    assert.equal(initial.bubble, null);
+  }
+});
+
+test('requesting a line is separate from a gesture or ordinary click reaction', () => {
+  const initial = createMascotRuntime();
+  const state = reduceMascot(initial, { type: 'requestLine', scene: 'review', now: 1000, choice: 0 });
+  assert.ok(mascotMessages.review.includes(state.bubble.text));
+  assert.equal(state.reactionId, initial.reactionId);
+  assert.equal(state.transient, initial.transient);
+  assert.equal(state.pending, initial.pending);
+  assert.equal(state.feedbackIds, initial.feedbackIds);
+  assert.equal(state.lastRequestedBubbleAt, 1000);
+  assert.equal(mascotCurrentState(state), 'idle');
+});
+
+test('deliberate lines have a short independent cooldown while ordinary speech keeps 2500 ms', () => {
+  let state = reduceMascot(createMascotRuntime(), { type: 'interact', now: 1000, choice: 0, enabled: true });
+  const ordinary = state.bubble;
+  state = reduceMascot(state, { type: 'requestLine', scene: 'vocabulary', now: 1001, choice: 0 });
+  assert.notEqual(state.bubble, ordinary);
+  assert.equal(reduceMascot(state, { type: 'requestLine', now: 2200, choice: 0 }), state);
+  state = reduceMascot(state, { type: 'requestLine', scene: 'vocabulary', now: 2201, choice: 0 });
+  state = reduceMascot(state, { type: 'dismiss', now: 2202 });
+  state = reduceMascot(state, { type: 'interact', now: 4700, choice: 0, enabled: true });
+  assert.equal(state.bubble, null);
+  state = reduceMascot(state, { type: 'interact', now: 4701, choice: 0, enabled: true });
+  assert.ok(state.bubble);
+});
+
+test('explicit lines may replace ordinary word chatter without modifying its visual state', () => {
+  const ordinary = event(createMascotRuntime(), { type: 'WORD_SELECTED', word: 'adapt' }, 1000);
+  const next = reduceMascot(ordinary, { type: 'requestLine', scene: 'reader', now: 1001, choice: 0 });
+  assert.notEqual(next.bubble, ordinary.bubble);
+  assert.equal(next.transient, ordinary.transient);
+  assert.equal(next.reactionId, ordinary.reactionId);
+  assert.equal(mascotCurrentState(next), 'reading');
+});
+
+test('pending AI, confirmed AI results and errors keep priority over deliberate chatter', () => {
+  let state = event(createMascotRuntime(), start(), 1000);
+  assert.equal(reduceMascot(state, { type: 'requestLine', scene: 'reader', now: 1001, choice: 0 }), state);
+  assert.equal(state.lastRequestedBubbleAt, -Infinity, 'blocked speech must not consume a later chance');
+  state = event(state, success(), 2000);
+  assert.equal(reduceMascot(state, { type: 'requestLine', now: 2001, choice: 0 }), state);
+  let failed = event(createMascotRuntime(), start(), 1000);
+  failed = event(failed, { type: 'ANALYSIS_ERROR', operationId: 'a', word: 'adapt' }, 2000);
+  assert.equal(reduceMascot(failed, { type: 'requestLine', now: 8999, choice: 0 }), failed);
+  const recovered = reduceMascot(failed, { type: 'requestLine', scene: 'reader', now: 9000, choice: 0 });
+  assert.equal(mascotCurrentState(recovered), 'idle');
+  assert.equal(recovered.bubble.priority, 1);
+  assert.equal(recovered.lastRequestedBubbleAt, 9000);
+});
+
+test('per-group dialogue remembers recent lines across scene changes without mutating earlier runtimes', () => {
+  let state = createMascotRuntime();
+  const readerLines = [];
+  for (let index = 0; index < 4; index++) {
+    const before = state;
+    const priorRecent = JSON.stringify(before.recentMessages);
+    state = reduceMascot(state, { type: 'requestLine', scene: 'reader', now: index * 6000, choice: 0 });
+    readerLines.push(state.bubble.text);
+    assert.equal(JSON.stringify(before.recentMessages), priorRecent);
+    state = reduceMascot(state, { type: 'requestLine', scene: 'library', now: index * 6000 + 3000, choice: 0 });
+  }
+  assert.equal(new Set(readerLines).size, 4);
+  assert.equal(state.recentMessages.reader.length, 3);
+  assert.ok(state.recentMessages.library.length <= 3);
+});
+
+test('the ten manual gesture groups all provide dialogue without changing learning state', () => {
+  const groups = { nod: 'gestureNod', tilt: 'gestureTilt', hop: 'gestureHop', stretch: 'gestureStretch', pet: 'gesturePet',
+    wave: 'gestureWave', clap: 'gestureClap', read: 'gestureRead', yawn: 'gestureYawn', think: 'gestureThink' };
+  for (const [kind, group] of Object.entries(groups)) {
+    const initial = createMascotRuntime();
+    const state = reduceMascot(initial, { type: 'gestureLine', kind, scene: 'reader', now: 1000, choice: 0, enabled: true });
+    assert.ok(mascotMessages[group].includes(state.bubble.text));
+    assert.equal(state.reactionId, initial.reactionId);
+    assert.equal(state.transient, null);
+    assert.equal(state.pending, initial.pending);
+    assert.equal(state.feedbackIds, initial.feedbackIds);
+  }
+});
+
+test('time alone never creates chatter, including after an explicit line expires', () => {
+  const initial = createMascotRuntime();
+  assert.equal(tick(initial, 1000000), initial);
+  const requested = reduceMascot(initial, { type: 'requestLine', scene: 'practice', now: 1000, choice: 0 });
+  const expired = tick(requested, 5000);
+  assert.equal(expired.bubble, null);
+  assert.equal(tick(expired, 1000000), expired);
 });

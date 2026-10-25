@@ -5,9 +5,10 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/mascot/mascotArtwork.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { MASCOT_ATLAS_POSES, mascotArtworkPose, mascotAtlasFrame, resolveMascotArtwork } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { MASCOT_ATLAS_POSES, MASCOT_ACTION_FRAMES, mascotArtworkPose, mascotAtlasFrame, mascotActionFrame, resolveMascotArtwork } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const atlas = { src: '/study.png', columns: 4, rows: 2, cellWidth: 384, cellHeight: 512, poses: MASCOT_ATLAS_POSES };
 const assets = { idle: '/idle.png', fallback: '/fallback.png', pixelated: false, atlas };
+const actions = { src: '/actions.png', columns: 4, rows: 2, cellWidth: 384, cellHeight: 512, actions: MASCOT_ACTION_FRAMES };
 const gesture = kind => ({ id: 1, kind, until: 1000 });
 const resolve = patch => resolveMascotArtwork({ assets, state: 'idle', gesture: null, interactionEnabled: true,
   dragging: false, reducedMotion: false, failedSources: [], fallbackSource: '/bundled.png', ...patch });
@@ -46,12 +47,54 @@ test('source-pixel corrections keep complete explaining hair and exclude its ove
 
 test('learning states retain their expression while a low priority gesture is finishing', () => {
   for (const state of ['thinking', 'explaining', 'searching', 'success', 'uncertain', 'error']) {
-    for (const kind of ['nod', 'tilt', 'hop', 'stretch', 'pet']) assert.equal(mascotArtworkPose(state, gesture(kind), true, false), state);
+    for (const kind of ['nod', 'tilt', 'hop', 'stretch', 'pet', 'wave', 'clap', 'read', 'yawn', 'think']) assert.equal(mascotArtworkPose(state, gesture(kind), true, false), state);
   }
   assert.equal(mascotArtworkPose('idle', gesture('tilt'), true, false), 'uncertain');
   assert.equal(mascotArtworkPose('reading', gesture('pet'), true, false), 'success');
   assert.equal(mascotArtworkPose('idle', gesture('hop'), false, false), 'idle');
   assert.equal(mascotArtworkPose('reading', gesture('hop'), true, true), 'reading');
+});
+
+test('four explicit actions alternate only within their own frames and stop at their duration', () => {
+  for (const [kind, action] of Object.entries(MASCOT_ACTION_FRAMES)) {
+    assert.equal(mascotActionFrame(actions, kind, 0, false).index, action.frames[0]);
+    assert.equal(mascotActionFrame(actions, kind, action.frameDuration - 1, false).index, action.frames[0]);
+    assert.equal(mascotActionFrame(actions, kind, action.frameDuration, false).index, action.frames[1]);
+    assert.equal(mascotActionFrame(actions, kind, action.frameDuration * 2, false).index, action.frames[0]);
+    assert.ok(action.frames.includes(mascotActionFrame(actions, kind, action.duration - 1, false).index));
+    assert.equal(mascotActionFrame(actions, kind, action.duration, false), null);
+    assert.equal(mascotActionFrame(actions, kind, action.duration + 1000, false), null);
+  }
+});
+
+test('reduced motion keeps the initial action frame and invalid sequences never animate', () => {
+  for (const [kind, action] of Object.entries(MASCOT_ACTION_FRAMES)) {
+    assert.equal(mascotActionFrame(actions, kind, action.frameDuration, true).index, action.frames[0]);
+  }
+  for (const change of [{frames:[]}, {frames:[0,8]}, {frames:[0,NaN]}, {frameDuration:0}, {frameDuration:99}, {duration:Infinity}, {duration:6000}]) {
+    const invalid={...actions,actions:{wave:{...MASCOT_ACTION_FRAMES.wave,...change}}};
+    assert.equal(mascotActionFrame(invalid,'wave',0,false),null);
+  }
+  for (const elapsed of [-1,NaN,Infinity]) assert.equal(mascotActionFrame(actions,'wave',elapsed,false),null);
+  assert.equal(mascotActionFrame(actions,'think',0,false),null);
+});
+
+test('action artwork requires a deliberate eligible gesture and remembers failed source fallback', () => {
+  const animated={...assets,actions};
+  assert.equal(resolve({assets:animated}).source,'/study.png');
+  const second=resolve({assets:animated,gesture:gesture('wave'),elapsedMs:400});
+  assert.equal(second.source,'/actions.png'); assert.equal(second.asset,'action');
+  assert.equal(second.pose,'wave'); assert.equal(second.frame.index,1);
+  for (const patch of [{dragging:true},{interactionEnabled:false},{state:'thinking'},{state:'success'}]) {
+    assert.equal(resolve({assets:animated,gesture:gesture('wave'),...patch}).source,'/study.png');
+  }
+  const failedSources=['/actions.png'];
+  for (const kind of ['wave','clap','read','yawn']) {
+    assert.equal(resolve({assets:animated,gesture:gesture(kind),failedSources}).source,'/study.png');
+  }
+  assert.deepEqual(failedSources,['/actions.png']);
+  assert.equal(resolve({assets:animated,gesture:gesture('think')}).pose,'thinking');
+  assert.equal(resolve({assets:animated,gesture:gesture('think')}).asset,'atlas');
 });
 
 test('new artwork uses a static atlas for pet and reduced motion instead of loading a legacy GIF', () => {

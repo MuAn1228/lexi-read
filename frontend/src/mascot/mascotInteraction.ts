@@ -6,10 +6,15 @@ export const MASCOT_GESTURES: readonly { kind: MascotGestureKind; label: string;
   { kind: 'hop', label: '轻轻跳', description: '原地轻跳一次', duration: 900 },
   { kind: 'stretch', label: '伸个懒腰', description: '安静地伸展一下', duration: 1100 },
   { kind: 'pet', label: '摸摸头', description: '轻轻摸摸头', duration: 1000 },
+  { kind: 'wave', label: '挥挥手', description: '向你挥手打个招呼', duration: 1600 },
+  { kind: 'clap', label: '拍拍手', description: '为你的努力鼓掌', duration: 1600 },
+  { kind: 'read', label: '翻翻书', description: '一起读上一小段', duration: 2200 },
+  { kind: 'yawn', label: '打个哈欠', description: '短暂放松一下', duration: 2000 },
+  { kind: 'think', label: '认真思考', description: '停下来想一想', duration: 1600 },
 ];
 export const MASCOT_DOUBLE_CLICK_MS = 320;
 export const MASCOT_GESTURE_COOLDOWN_MS = 450;
-const randomGestures: readonly MascotGestureKind[] = ['nod', 'tilt', 'hop'];
+const randomGestures: readonly MascotGestureKind[] = ['nod', 'tilt', 'hop', 'wave', 'clap', 'think'];
 
 export type MascotInteractionRuntime = {
   gesture: MascotGesture | null;
@@ -64,6 +69,8 @@ export function reduceMascotInteraction(runtime: MascotInteractionRuntime, actio
 
   if (action.now - current.lastGestureAt < MASCOT_GESTURE_COOLDOWN_MS
     || (action.kind === 'pet' && current.gesture?.kind === 'pet')) return current;
-  return { ...play(current, action.kind, action.now), lastClickAt: null,
+  const next = play(current, action.kind, action.now);
+  if (next === current) return current;
+  return { ...next, lastClickAt: null,
     lastRandomKind: randomGestures.includes(action.kind) ? action.kind : current.lastRandomKind };
 }

@@ -1,0 +1,53 @@
+{
+  "created_date": "2026-10-26",
+  "tool": "built-in image_gen.imagegen",
+  "reference_filename": "lexi-study-atlas-v2.png",
+  "reference_sha256": "f09b98baad0dd9ca4d0041381eae6b882707362b3a7328c1eaf08039fc0f3a19",
+  "file": "lexi-actions-v1.png",
+  "file_sha256": "cc8e1c03322195275b7f1afa44bb224c56f533e9fa2bdc0730e53cb886a0fbb4",
+  "bytes": 2585730,
+  "width": 1536,
+  "height": 1024,
+  "mode": "RGBA",
+  "columns": 4,
+  "rows": 2,
+  "cell_width": 384,
+  "cell_height": 512,
+  "actions": {
+    "wave": {
+      "frames": [
+        0,
+        1
+      ],
+      "duration_ms": 1600,
+      "frame_duration_ms": 400
+    },
+    "clap": {
+      "frames": [
+        2,
+        3
+      ],
+      "duration_ms": 1600,
+      "frame_duration_ms": 200
+    },
+    "read": {
+      "frames": [
+        4,
+        5
+      ],
+      "duration_ms": 2200,
+      "frame_duration_ms": 550
+    },
+    "yawn": {
+      "frames": [
+        6,
+        7
+      ],
+      "duration_ms": 2000,
+      "frame_duration_ms": 500
+    }
+  },
+  "controls_safe_area_px": 24,
+  "reduced_motion": "One static representative frame; no frame timer",
+  "postprocessing": "No raster editing after generation; original PNG copied into project"
+}

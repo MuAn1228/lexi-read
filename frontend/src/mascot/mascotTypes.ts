@@ -2,7 +2,8 @@ import type { MascotEvent } from './mascotEvents';
 import type { AssistantReadingContext } from './mascotAssistant';
 
 export type MascotState = 'idle' | 'reading' | 'thinking' | 'explaining' | 'searching' | 'success' | 'uncertain' | 'error';
-export type MascotGestureKind = 'nod' | 'tilt' | 'hop' | 'stretch' | 'pet';
+export type MascotGestureKind = 'nod' | 'tilt' | 'hop' | 'stretch' | 'pet' | 'wave' | 'clap' | 'read' | 'yawn' | 'think';
+export type MascotScene = 'reader' | 'library' | 'vocabulary' | 'review' | 'practice' | 'history' | 'dashboard' | 'relations' | 'data';
 export type MascotGesture = { id: number; kind: MascotGestureKind; until: number };
 
 export type MascotAtlas = {
@@ -16,6 +17,16 @@ export type MascotAtlas = {
   poseAdjustments?: Partial<Record<MascotState, { sourceOffsetX?: number; clipRight?: number }>>;
 };
 
+export type MascotActionAtlas = {
+  src: string;
+  columns: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  actions: Partial<Record<MascotGestureKind, { frames: readonly number[]; frameDuration: number; duration: number }>>;
+  frameAdjustments?: Partial<Record<number, { sourceOffsetX?: number; clipRight?: number }>>;
+};
+
 export type MascotAssets = {
   idle: string;
   fallback?: string;
@@ -25,6 +36,7 @@ export type MascotAssets = {
   error?: string;
   pet?: string;
   atlas?: MascotAtlas;
+  actions?: MascotActionAtlas;
 };
 
 export type MascotConfig = {
@@ -55,12 +67,13 @@ export type MascotSnapshot = {
 export type MascotApi = {
   emit: (event: MascotEvent) => void;
   cancelOperation: (operationId: string) => void;
-  setEnvironment: (environment: { suppressed: boolean }) => void;
+  setEnvironment: (environment: { suppressed: boolean; scene?: MascotScene }) => void;
   updateConfig: (patch: Partial<MascotConfig>) => void;
   resetPosition: () => void;
   show: () => void;
   hide: () => void;
   interact: () => void;
+  speak: () => void;
   dismissBubble: () => void;
   playGesture: (kind: MascotGestureKind) => void;
   cancelGesture: () => void;

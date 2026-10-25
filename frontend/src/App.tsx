@@ -141,9 +141,9 @@ export default function App() {
   const focusReading = useFocusReading(view === 'reader' && !uploadOpen && proofread === null && !readerBlocked && !restorationLocked, document?.id ?? null);
   const { stop: stopSpeech } = useSpeech();
   useEffect(() => {
-    mascot.setEnvironment({ suppressed: focusReading.active || uploadOpen || proofread !== null || restorationLocked });
+    mascot.setEnvironment({ suppressed: focusReading.active || uploadOpen || proofread !== null || restorationLocked, scene: view });
     return () => mascot.setEnvironment({ suppressed: false });
-  }, [mascot, focusReading.active, uploadOpen, proofread, restorationLocked]);
+  }, [mascot, view, focusReading.active, uploadOpen, proofread, restorationLocked]);
   useEffect(() => { stopSpeech(); }, [stopSpeech, view, document?.id, selectedId, articleTextRevision, uploadOpen, proofread, focusReading.active, focusReading.lookupOpen]);
 
   const vocabularyOperationBusy = useCallback((value: boolean) => {

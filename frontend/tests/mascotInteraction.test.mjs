@@ -26,8 +26,8 @@ const event = (state, value, now) => reduceMascot(state,
 const line = (state, kind, now, enabled = true) => reduceMascot(state,
   { type: 'gestureLine', kind, now, choice: 0, enabled });
 
-test('gesture metadata defines five finite actions with an initially empty overlay', () => {
-  assert.deepEqual(MASCOT_GESTURES.map(({ kind, duration }) => [kind, duration]),
+test('existing gesture durations stay stable with an initially empty overlay', () => {
+  assert.deepEqual(MASCOT_GESTURES.slice(0,5).map(({ kind, duration }) => [kind, duration]),
     [['nod', 600], ['tilt', 800], ['hop', 900], ['stretch', 1100], ['pet', 1000]]);
   assert.equal(MASCOT_DOUBLE_CLICK_MS, 320);
   assert.equal(MASCOT_GESTURE_COOLDOWN_MS, 450);
@@ -152,4 +152,30 @@ test('old configurations enable interactions and explicit disabled preference is
   assert.equal(normalizeMascotConfig({ idleBubbleEnabled: false }).interactionEnabled, true);
   assert.equal(normalizeMascotConfig({ interactionEnabled: 'false' }).interactionEnabled, true);
   assert.equal(normalizeMascotConfig({ interactionEnabled: false }).interactionEnabled, false);
+});
+
+test('all ten catalogued gestures are finite, cancel without queueing, and reject invalid actions', () => {
+  assert.equal(MASCOT_GESTURES.length,10);
+  assert.equal(new Set(MASCOT_GESTURES.map(g=>g.kind)).size,10);
+  for (const gesture of MASCOT_GESTURES) {
+    const active=play(createMascotInteraction(),gesture.kind,1000);
+    assert.equal(active.gesture.kind,gesture.kind);
+    assert.equal(active.gesture.until,1000+gesture.duration);
+    assert.ok(gesture.duration<=2200);
+    assert.equal(tick(active,1000+gesture.duration).gesture,null);
+    const cancelled=reduceMascotInteraction(active,{type:'cancel'});
+    assert.equal(cancelled.gesture,null);
+    assert.equal(tick(cancelled,10000).gesture,null);
+  }
+  const idle=createMascotInteraction();
+  assert.equal(play(idle,'unknown',1000),idle);
+});
+
+test('random clicks reach the new social actions without repeating consecutive selections', () => {
+  const kinds=new Set();
+  for(const choice of [0,.2,.4,.6,.8,.999999]) kinds.add(click(createMascotInteraction(),1000,{choice}).gesture.kind);
+  assert.ok(kinds.has('wave')); assert.ok(kinds.has('clap')); assert.ok(kinds.has('think'));
+  const first=click(createMascotInteraction(),1000,{choice:.6});
+  const next=click(first,4000,{choice:.6});
+  assert.notEqual(first.gesture.kind,next.gesture.kind);
 });
