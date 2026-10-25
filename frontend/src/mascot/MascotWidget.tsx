@@ -112,7 +112,7 @@ export function MascotWidget() {
   const characterButton = useRef<HTMLButtonElement>(null);
   const visible = !config.hidden && !suppressed && !layout.modal;
   const mobile = viewport.width <= 620;
-  const width = Math.min(viewport.width * .3, mobile ? Math.max(90, Math.min(116, 96 * config.scale)) : Math.max(130, Math.min(180, 144 * config.scale)));
+  const width = Math.min(viewport.width * .3, mobile ? Math.max(54, Math.min(90, 72 * config.scale)) : Math.max(72, Math.min(120, 96 * config.scale)));
   const fullSize = { width, height: Math.round(width * 1.18) };
   const defaultPoint = { x: viewport.x + viewport.width - fullSize.width - 24, y: viewport.y + viewport.height - fullSize.height - 24 };
   const preferred = { x: config.x ?? defaultPoint.x, y: config.y ?? defaultPoint.y };
