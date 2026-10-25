@@ -4,7 +4,9 @@ import { createPortal } from 'react-dom';
 import { MoreHorizontal } from 'lucide-react';
 import { useMascot, useMascotSnapshot } from './useMascot';
 import { MascotCharacter } from './MascotCharacter';
-import { MascotBubble } from './MascotBubble';
+import { MascotBubble, MascotBubbleMeasure } from './MascotBubble';
+import type { MascotBubbleMeasurements } from './MascotBubble';
+import { findMascotBubblePlacement } from './mascotBubblePosition';
 import { MascotMenu } from './MascotMenu';
 import { clampMascot, findMascotPlacement, snapMascot } from './mascotPosition';
 import type { MascotPoint, MascotRect, MascotSize, MascotViewport } from './mascotPosition';
@@ -95,9 +97,16 @@ export function MascotWidget() {
   const [dragging, setDragging] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [dragSize, setDragSize] = useState<MascotSize | null>(null);
+  const [clickPosition, setClickPosition] = useState<MascotRect | null>(null);
+  const [bubbleMeasurements, setBubbleMeasurements] = useState<MascotBubbleMeasurements | null>(null);
+  const measureBubble = useCallback((value: MascotBubbleMeasurements) => setBubbleMeasurements(previous =>
+    previous?.text === value.text && previous.widths === value.widths && previous.maxHeight === value.maxHeight
+      && previous.sizes.every((size, i) => size.width === value.sizes[i]?.width && size.height === value.sizes[i]?.height)
+      ? previous : value), []);
   const drag = useRef<Drag | null>(null);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clickHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const characterButton = useRef<HTMLButtonElement>(null);
   const visible = !config.hidden && !suppressed && !layout.modal;
   const mobile = viewport.width <= 620;
@@ -119,14 +128,42 @@ export function MascotWidget() {
   const restingSize = fullPosition ? fullSize : miniPosition ? miniSize : compactSize;
   const edgePreferred = { x: config.side === 'left' ? viewport.x + 2 : viewport.x + viewport.width - compactSize.width - 2, y: preferred.y };
   const compactPosition = findMascotPlacement(edgePreferred, compactSize, viewport, layout.obstacles, 2);
-  const position = dragPosition ?? fullPosition ?? miniPosition ?? compactPosition ?? clampMascot(edgePreferred, compactSize, viewport, 2);
-  const size = dragSize ?? restingSize;
+  const restingPosition = dragPosition ?? clickPosition ?? fullPosition ?? miniPosition ?? compactPosition ?? clampMascot(edgePreferred, compactSize, viewport, 2);
+  const baseSize = dragSize ?? (clickPosition ? { width: clickPosition.width, height: clickPosition.height } : restingSize);
+  const bubbleWidths = [...new Set((mobile ? [220, 168, 148, 120] : [280, 220, 176, 148, 120]).map(value => Math.max(48, Math.min(value, viewport.width - 24))))];
+  const bubbleMaxHeight = Math.max(48, Math.min(180, viewport.height - 24));
+  const measuredSizes = bubble && bubbleMeasurements?.text === bubble.text && bubbleMeasurements.widths === bubbleWidths.join(',')
+    && bubbleMeasurements.maxHeight === bubbleMaxHeight ? bubbleMeasurements.sizes : [];
+  // Keep the bubble attached. When a narrower bubble is enough, keep the character in place;
+  // otherwise temporarily find a clear spot for the pair without saving that adjustment.
+  const dialogueSizes = baseSize.width > 56 && baseSize.width <= 80 && !edge
+    ? [baseSize, { width: 56, height: 66 }, { width: 48, height: 57 }, { width: 32, height: 38 }] : [baseSize];
+  const bubbleLayouts = bubble && !menuOpen && !dragPosition ? dialogueSizes.flatMap(characterSize => measuredSizes.map(bubbleSize => ({ characterSize, bubbleSize, placement: findMascotBubblePlacement({
+    character: restingPosition, characterSize, bubbleSize, viewport, obstacles: layout.obstacles, inset: 8,
+  }) }))).filter(value => value.placement !== null && (!clickPosition
+    || (value.characterSize === baseSize && value.placement.character.x === restingPosition.x && value.placement.character.y === restingPosition.y))) : [];
+  const bubbleLayout = bubbleLayouts.find(value => value.characterSize === baseSize && value.placement!.character.x === restingPosition.x && value.placement!.character.y === restingPosition.y) ?? bubbleLayouts[0];
+  const size = bubbleLayout?.characterSize ?? baseSize;
+  const position = bubbleLayout?.placement?.character ?? restingPosition;
   const actualSide = position.x + size.width / 2 < viewport.x + viewport.width / 2 ? 'left' : 'right';
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const clearLongPress = useCallback(() => { if (longPress.current) clearTimeout(longPress.current); longPress.current = null; }, []);
+  const clearClickHold = useCallback(() => {
+    if (clickHoldTimer.current) clearTimeout(clickHoldTimer.current);
+    clickHoldTimer.current = null;
+    setClickPosition(null);
+  }, []);
+  const interactAt = useCallback((point: MascotPoint, heldSize: MascotSize) => {
+    if (clickHoldTimer.current) clearTimeout(clickHoldTimer.current);
+    // A bubble may need to move the pair, but never move the next double-click target away.
+    setClickPosition({ ...point, ...heldSize });
+    clickHoldTimer.current = setTimeout(() => { clickHoldTimer.current = null; setClickPosition(null); }, 360);
+    mascot.interact();
+  }, [mascot]);
   const cancelDrag = useCallback(() => {
     clearLongPress();
+    clearClickHold();
     mascot.cancelGesture();
     if (snapTimer.current) clearTimeout(snapTimer.current);
     snapTimer.current = null; setSnapping(false);
@@ -134,12 +171,12 @@ export function MascotWidget() {
     drag.current = null;
     if (pointerId !== undefined && characterButton.current?.hasPointerCapture(pointerId)) characterButton.current.releasePointerCapture(pointerId);
     setDragging(false); setPressed(false); setDragPosition(null); setDragSize(null);
-  }, [clearLongPress, mascot]);
+  }, [clearLongPress, clearClickHold, mascot]);
   useEffect(() => {
     const onVisibility = () => { if (document.hidden) cancelDrag(); };
     window.addEventListener('blur', cancelDrag);
     document.addEventListener('visibilitychange', onVisibility);
-    return () => { window.removeEventListener('blur', cancelDrag); document.removeEventListener('visibilitychange', onVisibility); clearLongPress(); if (snapTimer.current) clearTimeout(snapTimer.current); };
+    return () => { window.removeEventListener('blur', cancelDrag); document.removeEventListener('visibilitychange', onVisibility); clearLongPress(); if (snapTimer.current) clearTimeout(snapTimer.current); if (clickHoldTimer.current) clearTimeout(clickHoldTimer.current); };
   }, [cancelDrag, clearLongPress]);
   useEffect(() => { if (!visible) { cancelDrag(); setMenuOpen(false); } }, [visible, cancelDrag]);
 
@@ -153,6 +190,7 @@ export function MascotWidget() {
     // rather than its CSS transition target, so the character never jumps.
     const painted = event.currentTarget.parentElement!.getBoundingClientRect();
     const origin = { x: painted.left, y: painted.top };
+    clearClickHold();
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { id: event.pointerId, origin, pointer: { x: event.clientX, y: event.clientY }, current: origin, moved: false, longPressed: false, size };
     setDragPosition(origin); setDragSize(size);
@@ -187,29 +225,26 @@ export function MascotWidget() {
       setSnapping(true);
       snapTimer.current = setTimeout(() => { setSnapping(false); snapTimer.current = null; }, 240);
       mascot.updateConfig(snapped);
-    } else if (!active.longPressed) mascot.interact();
+    } else if (!active.longPressed) interactAt(active.origin, active.size);
     setDragPosition(null); setDragSize(null);
   };
 
-  const bubbleSize = { width: Math.min(mobile ? 220 : 280, viewport.width - 24), height: 82 };
-  const bubblePreferred = { x: actualSide === 'right' ? position.x + size.width - bubbleSize.width : position.x, y: position.y - bubbleSize.height - 12 };
-  // If no clear rectangle exists, keep the announcement accessible without covering reading.
-  const bubblePoint = findMascotPlacement(bubblePreferred, bubbleSize, viewport, [...layout.obstacles, { ...position, ...size }], 12);
   const menuHeight = Math.min(560, Math.max(60, viewport.height - 24));
   const menuPoint = clampMascot({ x: actualSide === 'right' ? position.x + size.width - 224 : position.x, y: position.y - menuHeight - 8 }, { width: 224, height: menuHeight }, viewport, 12);
 
   // Even a tiny handle must not sit on a critical action. The header remains a restore entry.
   if (!visible || (!dragPosition && !fullPosition && !miniPosition && !compactPosition)) return null;
   return createPortal(<div className="mascot-portal" data-mascot-root="true" onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()}>
-    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}${edge ? ' is-edge' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-compact={compact} data-mode={edge ? 'edge' : compact ? 'mini' : 'full'} data-dragging={dragging} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
-      <button ref={characterButton} type="button" className="mascot-character-button" data-testid="mascot-drag-handle" aria-label={compact ? 'Lexi 阅读助手，点击打招呼，拖动调整位置' : '和 Lexi 打招呼，拖动调整位置'} title="Lexi · 拖动调整位置，右键打开设置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelDrag} onLostPointerCapture={() => { if (drag.current) cancelDrag(); }} onContextMenu={event => { event.preventDefault(); cancelDrag(); setMenuOpen(true); }} onClick={event => { if (event.detail === 0) mascot.interact(); }} onDragStart={event => event.preventDefault()}>
+    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}${edge ? ' is-edge' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-compact={compact} data-mode={edge ? 'edge' : compact ? 'mini' : 'full'} data-dragging={dragging} data-small-dialogue={size.width < 48} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
+      <button ref={characterButton} type="button" className="mascot-character-button" data-testid="mascot-drag-handle" aria-label={compact ? 'Lexi 阅读助手，点击打招呼，拖动调整位置' : '和 Lexi 打招呼，拖动调整位置'} title="Lexi · 拖动调整位置，右键打开设置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelDrag} onLostPointerCapture={() => { if (drag.current) cancelDrag(); }} onContextMenu={event => { event.preventDefault(); cancelDrag(); setMenuOpen(true); }} onClick={event => { if (event.detail === 0) { const rect = event.currentTarget.parentElement!.getBoundingClientRect(); interactAt({ x: rect.left, y: rect.top }, { width: rect.width, height: rect.height }); } }} onDragStart={event => event.preventDefault()}>
         <MascotCharacter state={state} reactionId={reactionId} gesture={gesture} interactionEnabled={config.interactionEnabled} side={actualSide} pressed={pressed} dragging={dragging} compact={edge} />
         {edge && <span className="mascot-edge-label" aria-hidden="true">Lexi</span>}
       </button>
       <button type="button" className="mascot-menu-toggle" aria-label="Lexi 助手设置" aria-expanded={menuOpen} data-testid="mascot-menu-toggle" onPointerDown={event => event.stopPropagation()} onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={14} aria-hidden="true" /></button>
     </div>
-    {bubble && !menuOpen && (bubblePoint
-      ? <MascotBubble {...bubble} x={bubblePoint.x} y={bubblePoint.y} width={bubbleSize.width} dismiss={mascot.dismissBubble} />
+    {bubble && <MascotBubbleMeasure text={bubble.text} widths={bubbleWidths} maxHeight={bubbleMaxHeight} onMeasure={measureBubble} />}
+    {bubble && !menuOpen && !pressed && !dragging && (bubbleLayout?.placement
+      ? <MascotBubble {...bubble} {...bubbleLayout.placement.bubble} width={bubbleLayout.bubbleSize.width} maxHeight={bubbleMaxHeight} side={bubbleLayout.placement.side} tailOffset={bubbleLayout.placement.tailOffset} dismiss={mascot.dismissBubble} />
       : <span className="mascot-accessible-status" role="status" aria-live="polite">{bubble.text}</span>)}
     {menuOpen && <MascotMenu x={menuPoint.x} y={menuPoint.y} maxHeight={menuHeight} scale={config.scale} idleBubbleEnabled={config.idleBubbleEnabled} interactionEnabled={config.interactionEnabled} interactionBlocked={interactionBlocked} onScale={scale => mascot.updateConfig({ scale })} onIdle={idleBubbleEnabled => mascot.updateConfig({ idleBubbleEnabled })} onInteraction={interactionEnabled => mascot.updateConfig({ interactionEnabled })} onGesture={kind => { mascot.playGesture(kind); closeMenu(); }} onReset={mascot.resetPosition} onHide={() => { closeMenu(); mascot.hide(); }} onClose={closeMenu} />}
   </div>, document.body);
