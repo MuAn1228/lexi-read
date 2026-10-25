@@ -31,6 +31,18 @@ def session(monkeypatch):
     Base.metadata.create_all(engine)
     monkeypatch.setattr(RelationWorkspaceService, "_meaning", lambda _self, _word, _lemma: None)
     monkeypatch.setattr("backend.services.relation_workspace.utcnow", lambda: NOW)
+    # Freeze real feedback's write clock too. Assign explicitly rather than
+    # patching a column default that SQLAlchemy may have cached earlier.
+    # Direct events with explicit future created_at remain untouched.
+    original_event = VocabularyRepository.event
+
+    def event_at_fixture_time(repository, *args, **kwargs):
+        record = original_event(repository, *args, **kwargs)
+        if record.created_at is None:
+            record.created_at = NOW
+        return record
+
+    monkeypatch.setattr(VocabularyRepository, "event", event_at_fixture_time)
     with Session(engine, expire_on_commit=False) as db:
         db.add_all([User(id=1), User(id=2), User(id=3)])
         db.commit()

@@ -543,6 +543,20 @@ export default function App() {
     } finally { savingRef.current = false; setSaving(false); busyRef.current = false; setBusy(''); }
   }, [health?.auth_mode, clearRestoredBrowserState]);
   const selected = document?.words.find(word => word.id === selectedId) ?? null;
+  const assistantTextIdentity = useMemo(() => {
+    const text = document?.ocr_text ?? '';
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    return `${text.length}:${hash >>> 0}`;
+  }, [document?.ocr_text]);
+  useEffect(() => {
+    const reading = view === 'reader' && document && !readerBlocked && !restorationLocked;
+    mascot.setReadingContext(reading ? {
+      key: `reader:${document.id}:${selected?.id ?? 'article'}:${assistantTextIdentity}:${articleTextRevision}:${documentEpoch.current}`,
+      documentId: document.id, occurrenceId: selected?.id ?? null, word: selected?.word ?? null,
+      title: document.title, sentence: selected?.sentence ?? null,
+    } : { key: `general:${view}:${restorationLocked}`, documentId: null, occurrenceId: null, word: null, title: null, sentence: null });
+  }, [mascot, view, document?.id, document?.title, selected?.id, selected?.word, selected?.sentence, assistantTextIdentity, articleTextRevision, readerBlocked, restorationLocked]);
   const sentencePage = document?.source === 'pdf' ? document.pages?.find(page => selected?.text_start != null && selected.text_start >= page.text_start && selected.text_start < page.text_end) : undefined;
   const sentencePageStart = sentencePage?.text_start ?? 0;
   const sentenceKey = document && selected ? sentenceOccurrenceKey(document.ocr_text, selected, sentencePageStart, sentencePage?.text_end) : undefined;

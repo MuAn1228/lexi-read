@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreHorizontal } from 'lucide-react';
+import { MessageCircle, MoreHorizontal } from 'lucide-react';
 import { useMascot, useMascotSnapshot } from './useMascot';
 import { MascotCharacter } from './MascotCharacter';
 import { MascotBubble, MascotBubbleMeasure } from './MascotBubble';
@@ -11,6 +11,8 @@ import { MascotMenu } from './MascotMenu';
 import { clampMascot, snapMascot } from './mascotPosition';
 import { resolveMascotDock } from './mascotRestingPosition';
 import type { MascotPoint, MascotRect, MascotSize, MascotViewport } from './mascotPosition';
+
+const MascotAssistantPanel = lazy(() => import('./MascotAssistantPanel'));
 
 type Layout = { viewport: MascotViewport; obstacles: MascotRect[]; controls: MascotRect[]; navigation: MascotRect[]; sidebarRight: number; modal: boolean };
 type Drag = { id: number; origin: MascotPoint; pointer: MascotPoint; current: MascotPoint; moved: boolean; longPressed: boolean; size: MascotSize };
@@ -92,7 +94,7 @@ function useLayoutMeasurements(): Layout {
 
 export function MascotWidget() {
   const mascot = useMascot();
-  const { state, reactionId, bubble, config, suppressed, gesture, interactionBlocked } = useMascotSnapshot();
+  const { state, reactionId, bubble, config, suppressed, gesture, interactionBlocked, assistantOpen, readingContext } = useMascotSnapshot();
   const layout = useLayoutMeasurements();
   const { viewport } = layout;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -128,7 +130,7 @@ export function MascotWidget() {
     && bubbleMeasurements.maxHeight === bubbleMaxHeight ? bubbleMeasurements.sizes : [];
   // Only the speech bubble adapts: try clear whitespace, then a floating callout above
   // non-interactive content. Neither pass is allowed to move or shrink the character.
-  const bubbleLayouts = bubble && !menuOpen && !dragPosition ? [layout.obstacles, layout.controls].flatMap(obstacles => measuredSizes.map(bubbleSize => ({ bubbleSize, placement: findMascotBubblePlacement({
+  const bubbleLayouts = bubble && !menuOpen && !assistantOpen && !dragPosition ? [layout.obstacles, layout.controls].flatMap(obstacles => measuredSizes.map(bubbleSize => ({ bubbleSize, placement: findMascotBubblePlacement({
     character: position, characterSize: size, bubbleSize, viewport, obstacles, characterObstacles: layout.navigation, fixedCharacter: true, inset: 8,
   }) }))) : [];
   const bubbleLayout = bubbleLayouts.find(value => value.placement !== null);
@@ -153,6 +155,7 @@ export function MascotWidget() {
     return () => { window.removeEventListener('blur', cancelDrag); document.removeEventListener('visibilitychange', onVisibility); clearLongPress(); if (snapTimer.current) clearTimeout(snapTimer.current); };
   }, [cancelDrag, clearLongPress]);
   useEffect(() => { if (!visible) { cancelDrag(); setMenuOpen(false); } }, [visible, cancelDrag]);
+  useEffect(() => { if (assistantOpen) setMenuOpen(false); }, [assistantOpen]);
 
   const pointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!event.isPrimary || event.button !== 0 || drag.current) return;
@@ -209,17 +212,19 @@ export function MascotWidget() {
 
   if (!visible) return null;
   return createPortal(<div className="mascot-portal" data-mascot-root="true" onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()}>
-    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-mode="full" data-dragging={dragging} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
+    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-mode="full" data-dragging={dragging} data-small={size.width < 90} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
       <button ref={characterButton} type="button" className="mascot-character-button" data-testid="mascot-drag-handle" aria-label="和 Lexi 打招呼，拖动调整位置" title="Lexi · 拖动调整位置，右键打开设置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelDrag} onLostPointerCapture={() => { if (drag.current) cancelDrag(); }} onContextMenu={event => { event.preventDefault(); cancelDrag(); setMenuOpen(true); }} onClick={event => { if (event.detail === 0) mascot.interact(); }} onDragStart={event => event.preventDefault()}>
         <MascotCharacter state={state} reactionId={reactionId} gesture={gesture} interactionEnabled={config.interactionEnabled} side={actualSide} pressed={pressed} dragging={dragging} />
       </button>
-      <button type="button" className="mascot-menu-toggle" aria-label="Lexi 助手设置" aria-expanded={menuOpen} data-testid="mascot-menu-toggle" onPointerDown={event => event.stopPropagation()} onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={14} aria-hidden="true" /></button>
+      <button type="button" className="mascot-ask-toggle" style={{ width: Math.max(24, Math.min(54, size.width - 28)) }} aria-label="打开 Lexi AI 学习助手" title="和 Lexi 一起学 · Agnes" aria-expanded={assistantOpen} data-testid="mascot-ask-toggle" onPointerDown={event => event.stopPropagation()} onClick={() => assistantOpen ? mascot.closeAssistant() : mascot.openAssistant()}><MessageCircle size={12} aria-hidden="true" /><span>问 Lexi</span></button>
+      <button type="button" className="mascot-menu-toggle" aria-label="Lexi 助手设置" aria-expanded={menuOpen} data-testid="mascot-menu-toggle" onPointerDown={event => event.stopPropagation()} onClick={() => { if (assistantOpen) mascot.closeAssistant(); setMenuOpen(value => !value); }}><MoreHorizontal size={14} aria-hidden="true" /></button>
     </div>
-    {bubble && <MascotBubbleMeasure text={bubble.text} widths={bubbleWidths} maxHeight={bubbleMaxHeight} onMeasure={measureBubble} />}
-    {bubble && !menuOpen && !pressed && !dragging && (bubbleLayout?.placement
+    {bubble && !assistantOpen && <MascotBubbleMeasure text={bubble.text} widths={bubbleWidths} maxHeight={bubbleMaxHeight} onMeasure={measureBubble} />}
+    {bubble && !menuOpen && !assistantOpen && !pressed && !dragging && (bubbleLayout?.placement
       ? <MascotBubble {...bubble} {...bubbleLayout.placement.bubble} width={bubbleLayout.bubbleSize.width} maxHeight={bubbleMaxHeight} side={bubbleLayout.placement.side} tailOffset={bubbleLayout.placement.tailOffset} dismiss={mascot.dismissBubble} />
       : <span className="mascot-accessible-status" role="status" aria-live="polite">{bubble.text}</span>)}
-    {menuOpen && <MascotMenu x={menuPoint.x} y={menuPoint.y} maxHeight={menuHeight} scale={config.scale} idleBubbleEnabled={config.idleBubbleEnabled} interactionEnabled={config.interactionEnabled} interactionBlocked={interactionBlocked} onScale={scale => mascot.updateConfig({ scale })} onIdle={idleBubbleEnabled => mascot.updateConfig({ idleBubbleEnabled })} onInteraction={interactionEnabled => mascot.updateConfig({ interactionEnabled })} onGesture={kind => { mascot.playGesture(kind); closeMenu(); }} onReset={mascot.resetPosition} onHide={() => { closeMenu(); mascot.hide(); }} onClose={closeMenu} />}
+    {menuOpen && <MascotMenu x={menuPoint.x} y={menuPoint.y} maxHeight={menuHeight} scale={config.scale} idleBubbleEnabled={config.idleBubbleEnabled} interactionEnabled={config.interactionEnabled} interactionBlocked={interactionBlocked} onAssistant={() => { closeMenu(); mascot.openAssistant(); }} onScale={scale => mascot.updateConfig({ scale })} onIdle={idleBubbleEnabled => mascot.updateConfig({ idleBubbleEnabled })} onInteraction={interactionEnabled => mascot.updateConfig({ interactionEnabled })} onGesture={kind => { mascot.playGesture(kind); closeMenu(); }} onReset={mascot.resetPosition} onHide={() => { closeMenu(); mascot.hide(); }} onClose={closeMenu} />}
+    {assistantOpen && <Suspense fallback={<div className="mascot-accessible-status" role="status">正在打开学习助手…</div>}><MascotAssistantPanel key={readingContext.key} context={readingContext} disabled={false} onClose={mascot.closeAssistant} anchor={{ ...position, ...size }} viewport={viewport} /></Suspense>}
   </div>, document.body);
 }
 

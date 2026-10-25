@@ -2,6 +2,8 @@
 .app-shell .topbar .profile { display: flex; }
 .mascot-header-toggle.text-button { min-height: 32px; padding: 5px 8px; gap: 5px; font-size: 11px; white-space: nowrap; }
 .mascot-header-toggle[aria-pressed='true'] { color: #3f6857; }
+.mascot-header-controls { display: inline-flex; align-items: center; gap: 2px; }
+.mascot-header-visibility.text-button { min-width: 28px; min-height: 32px; justify-content: center; padding: 5px; }
 .mascot-portal { position: fixed; inset: 0; z-index: 15; pointer-events: none; color: #273f46; font-family: 'Microsoft YaHei',sans-serif; }
 .mascot-portal *, .mascot-portal *::before, .mascot-portal *::after { box-sizing: border-box; }
 .mascot-safe-area-probe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
@@ -40,6 +42,12 @@
 .mascot-state-light[data-state='error'], .mascot-state-light[data-state='uncertain'] { background: #bd879a; }
 .mascot-menu-toggle { position: absolute; bottom: 0; right: 1px; display: grid; place-items: center; width: 24px; height: 20px; border: 1px solid #b9c7be; border-radius: 3px; padding: 0; background: #fffdf4; color: #4b6760; pointer-events: auto; opacity: .72; }
 .mascot-menu-toggle:hover, .mascot-menu-toggle:focus-visible { opacity: 1; background: #eaf0e7; }
+.mascot-ask-toggle { position: absolute; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; gap: 4px; height: 22px; border: 1px solid #a9bba1; border-radius: 4px; padding: 0 3px; background: #eef5e4; color: #315c43; pointer-events: auto; font: 10px/1 'Microsoft YaHei',sans-serif; cursor: pointer; white-space: nowrap; }
+.mascot-ask-toggle:hover, .mascot-ask-toggle[aria-expanded='true'] { background: #dceacb; border-color: #6d925e; }
+.mascot-widget[data-small='true'] .mascot-ask-toggle span { display: none; }
+.mascot-ask-toggle:focus-visible { outline: 2px solid #668f67; outline-offset: 2px; }
+.mascot-menu-assistant { width: 100%; display: flex; align-items: center; gap: 9px; border: 1px solid #cfdec5; border-radius: 5px; background: #edf4e4; color: #375d3f; padding: 10px 8px; text-align: left; font: inherit; }
+.mascot-menu-assistant small { display: block; color: #78896f; margin-top: 4px; font-size: 9px; }
 .mascot-bubble { position: absolute; top: 0; left: 0; min-height: 40px; max-height: var(--mascot-bubble-max-height, 180px); padding: 6px 28px 6px 10px; border: 2px solid #405e58; border-radius: 2px; background: #fffdf3; box-shadow: 3px 3px 0 #3b59551a; pointer-events: auto; font-size: 12px; line-height: 1.6; animation: mascot-bubble-appear 150ms ease-out; }
 .mascot-bubble::after { content: ''; position: absolute; width: 8px; height: 8px; background: #fffdf3; transform: rotate(45deg); }
 .mascot-bubble[data-side='top']::after { left: calc(var(--mascot-tail-offset) - 4px); bottom: -6px; border-right: 2px solid #405e58; border-bottom: 2px solid #405e58; }
@@ -88,5 +96,5 @@
 @keyframes mascot-gesture-stretch { 0%,100% { transform: translateY(0) scale(1); } 38%,62% { transform: translateY(-4px) scale(1.035,1.06); } 80% { transform: translateY(1px) scale(1,.99); } }
 @keyframes mascot-gesture-pet { 0%,100% { transform: translateY(0) rotate(0); } 25%,65% { transform: translateY(2px) rotate(-2deg); } 45%,80% { transform: translateY(1px) rotate(2deg); } }
 @keyframes mascot-emotion-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-@media (max-width: 620px) { .app-shell .topbar .profile > span { display: none; } }
+@media (max-width: 620px) { .app-shell .topbar .profile > span:not(.mascot-header-controls) { display: none; } }
 @media (prefers-reduced-motion: reduce) { .mascot-widget, .mascot-character { transition: none !important; } .mascot-character-gesture, .mascot-character-breath, .mascot-character-reaction, .mascot-emotion-badge, .mascot-bubble { animation: none !important; } .mascot-character.is-pressed { transform: none; } }

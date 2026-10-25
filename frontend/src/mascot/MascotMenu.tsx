@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { EyeOff, RotateCcw, X } from 'lucide-react';
+import { EyeOff, MessageCircle, RotateCcw, X } from 'lucide-react';
 import { MASCOT_GESTURES } from './mascotInteraction';
 import type { MascotGestureKind } from './mascotTypes';
 
-export function MascotMenu({ x, y, maxHeight, scale, idleBubbleEnabled, interactionEnabled, interactionBlocked, onScale, onIdle, onInteraction, onGesture, onReset, onHide, onClose }: {
+export function MascotMenu({ x, y, maxHeight, scale, idleBubbleEnabled, interactionEnabled, interactionBlocked, onAssistant, onScale, onIdle, onInteraction, onGesture, onReset, onHide, onClose }: {
   x: number; y: number; maxHeight: number; scale: number; idleBubbleEnabled: boolean;
   interactionEnabled: boolean; interactionBlocked: boolean; onGesture: (kind: MascotGestureKind) => void;
   onScale: (scale: number) => void; onIdle: (enabled: boolean) => void; onInteraction: (enabled: boolean) => void;
   onReset: () => void; onHide: () => void; onClose: () => void;
+  onAssistant: () => void;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -41,6 +42,7 @@ export function MascotMenu({ x, y, maxHeight, scale, idleBubbleEnabled, interact
   }, [onClose]);
   return <div ref={menu} className="mascot-menu" data-testid="mascot-menu" role="group" aria-label="Lexi 助手设置" style={{ transform: `translate3d(${x}px, ${y}px, 0)`, maxHeight }} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') onClose(); }} onKeyUp={event => event.stopPropagation()}>
     <div className="mascot-menu-heading"><span>Lexi · 阅读助手</span><button type="button" aria-label="关闭助手设置" onClick={onClose}><X size={14} /></button></div>
+    <button type="button" className="mascot-menu-assistant" onClick={onAssistant}><MessageCircle size={16} /><span>和 Lexi 一起学<small>Agnes · 讲解、记忆、随堂练习</small></span></button>
     <section className="mascot-interaction-settings" aria-label="角色互动">
       <label className="mascot-interaction-setting"><input type="checkbox" data-testid="mascot-interaction-toggle" checked={interactionEnabled} onChange={event => onInteraction(event.target.checked)} /><span>角色动作与表情</span></label>
       <fieldset><legend>和 Lexi 互动</legend><div className="mascot-gesture-options">

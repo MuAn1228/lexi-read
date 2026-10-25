@@ -6,6 +6,9 @@ import type { MascotAction } from './mascotState';
 import { createMascotInteraction, reduceMascotInteraction } from './mascotInteraction';
 import type { MascotInteractionAction } from './mascotInteraction';
 import type { MascotApi, MascotConfig, MascotSnapshot } from './mascotTypes';
+import type { AssistantReadingContext } from './mascotAssistant';
+
+const emptyReadingContext: AssistantReadingContext = { key: 'general', documentId: null, occurrenceId: null, word: null, title: null, sentence: null };
 
 function readConfig(): MascotConfig {
   try { return parseMascotConfig(window.localStorage.getItem(MASCOT_STORAGE_KEY)); }
@@ -21,6 +24,11 @@ export function MascotProvider({ children }: { children: ReactNode }) {
   const configRef = useRef(config);
   const [suppressed, setSuppressed] = useState(false);
   const suppressedRef = useRef(suppressed);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [readingContext, setReadingContext] = useState(emptyReadingContext);
+  const readingContextRef = useRef(readingContext);
+  const [assistantContext, setAssistantContext] = useState<AssistantReadingContext | null>(null);
+  const assistantOpener = useRef<HTMLElement | null>(null);
 
   // Update refs before React commits so rapid clicks and a START followed by a
   // click in the same event always see the latest state, without changing API identity.
@@ -68,6 +76,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
       configRef.current = next;
       setConfig(next);
       if (next.hidden || !next.interactionEnabled) sendInteraction({ type: 'cancel' });
+      if (next.hidden) { setAssistantOpen(false); setAssistantContext(null); }
     };
     const canInteract = (now: number) => !configRef.current.hidden && !suppressedRef.current
       && configRef.current.interactionEnabled && !mascotInteractionBlocked(runtimeRef.current, now);
@@ -85,7 +94,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
       setEnvironment: value => {
         suppressedRef.current = value.suppressed;
         setSuppressed(value.suppressed);
-        if (value.suppressed) sendInteraction({ type: 'cancel' });
+        if (value.suppressed) { sendInteraction({ type: 'cancel' }); setAssistantOpen(false); setAssistantContext(null); }
       },
       updateConfig,
       resetPosition: () => updateConfig({ x: null, y: null, anchor: 'right', side: 'right' }),
@@ -106,13 +115,39 @@ export function MascotProvider({ children }: { children: ReactNode }) {
         }
       },
       cancelGesture: () => { sendInteraction({ type: 'cancel' }); },
+      setReadingContext: context => {
+        const previous = readingContextRef.current;
+        readingContextRef.current = context;
+        if (previous.key !== context.key) setAssistantContext(null);
+        setReadingContext(current => current.key === context.key && current.word === context.word
+          && current.title === context.title && current.sentence === context.sentence ? current : context);
+      },
+      openAssistant: context => {
+        if (suppressedRef.current) return;
+        assistantOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        updateConfig({ hidden: false });
+        sendInteraction({ type: 'cancel' });
+        setAssistantContext(context ?? null);
+        setAssistantOpen(true);
+      },
+      closeAssistant: () => {
+        setAssistantOpen(false); setAssistantContext(null);
+        queueMicrotask(() => {
+          if (suppressedRef.current || document.querySelector('dialog[open],[aria-modal="true"]')) return;
+          const opener = assistantOpener.current;
+          const target = opener?.isConnected && opener.getClientRects().length && !opener.matches(':disabled')
+            ? opener : document.querySelector<HTMLElement>('[data-testid="mascot-ask-toggle"]');
+          target?.focus({ preventScroll: true });
+        });
+      },
     };
   }, []);
 
   const snapshot = useMemo<MascotSnapshot>(() => ({ state: mascotCurrentState(runtime), reactionId: runtime.reactionId,
     bubble: runtime.bubble ? { id: runtime.bubble.id, text: runtime.bubble.text, priority: runtime.bubble.priority } : null,
-    config, suppressed, gesture: interactionVisible ? interaction.gesture : null, interactionBlocked }),
-  [runtime, config, suppressed, interaction, interactionVisible, interactionBlocked]);
+    config, suppressed, gesture: interactionVisible ? interaction.gesture : null, interactionBlocked,
+    assistantOpen, readingContext: assistantContext ?? readingContext }),
+  [runtime, config, suppressed, interaction, interactionVisible, interactionBlocked, assistantOpen, readingContext, assistantContext]);
 
   return <MascotApiContext.Provider value={api}>
     <MascotSnapshotContext.Provider value={snapshot}>{children}</MascotSnapshotContext.Provider>

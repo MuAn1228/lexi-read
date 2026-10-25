@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, Check, LoaderCircle, RefreshCw, Sparkles, X } from 'lucide-react';
+import { BookOpen, Check, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
+import { useMascot, useMascotSnapshot } from './mascot/useMascot';
 import { errorMessage, request } from './api';
 import { dictionaryGenerationLabel, dictionaryPath } from './dictionary';
 import type { DictionaryResult } from './dictionary';
@@ -37,6 +38,8 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
   word: string; opener: HTMLElement; onClose: () => void; onGenerated?: (result: DictionaryResult) => void;
   expansionCache: WordExpansionCache; vocabulary?: Vocabulary[]; onLearningChanged?: () => Promise<void>;
 }) {
+  const mascot = useMascot();
+  const { suppressed: assistantSuppressed } = useMascotSnapshot();
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const titleId = useId(); const descriptionId = useId();
@@ -124,6 +127,6 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
         </section>
       </>}
     </div>
-    <footer className="dictionary-footer">查看词典不会改变掌握状态或复习安排。<button type="button" className="text-button" onClick={onClose}>返回学习</button></footer>
+    <footer className="dictionary-footer">查看词典不会改变掌握状态或复习安排。<button type="button" className="text-button" disabled={assistantSuppressed} title={assistantSuppressed ? '退出专注阅读或完成当前操作后可使用学习助手' : undefined} onClick={() => { onClose(); mascot.openAssistant({ key: `word:${word.toLowerCase()}`, documentId: null, occurrenceId: null, word, title: null, sentence: null }); }}><MessageCircle size={14} />{assistantSuppressed ? '当前模式下助手已收起' : '和 Lexi 学这个词'}</button><button type="button" className="text-button" onClick={onClose}>返回学习</button></footer>
   </dialog>, document.body);
 }

@@ -16,6 +16,7 @@ from backend.api.backup_routes import router as backup_router
 from backend.api.sentence_routes import router as sentence_router
 from backend.api.review_routes import router as review_router
 from backend.api.question_routes import router as question_router
+from backend.api.assistant_routes import router as assistant_router
 from backend.api.practice_routes import router as practice_router
 from backend.api.maimemo_routes import router as maimemo_router
 from backend.api.dictionary_routes import router as dictionary_router
@@ -89,6 +90,7 @@ app.include_router(backup_router)
 app.include_router(sentence_router)
 app.include_router(review_router)
 app.include_router(question_router)
+app.include_router(assistant_router)
 app.include_router(practice_router)
 app.include_router(maimemo_router)
 app.include_router(dictionary_router)

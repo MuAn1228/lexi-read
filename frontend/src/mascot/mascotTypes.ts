@@ -1,4 +1,5 @@
 import type { MascotEvent } from './mascotEvents';
+import type { AssistantReadingContext } from './mascotAssistant';
 
 export type MascotState = 'idle' | 'reading' | 'thinking' | 'explaining' | 'searching' | 'success' | 'uncertain' | 'error';
 export type MascotGestureKind = 'nod' | 'tilt' | 'hop' | 'stretch' | 'pet';
@@ -35,6 +36,8 @@ export type MascotSnapshot = {
   suppressed: boolean;
   gesture: MascotGesture | null;
   interactionBlocked: boolean;
+  assistantOpen: boolean;
+  readingContext: AssistantReadingContext;
 };
 
 export type MascotApi = {
@@ -49,6 +52,9 @@ export type MascotApi = {
   dismissBubble: () => void;
   playGesture: (kind: MascotGestureKind) => void;
   cancelGesture: () => void;
+  setReadingContext: (context: AssistantReadingContext) => void;
+  openAssistant: (context?: AssistantReadingContext) => void;
+  closeAssistant: () => void;
 };
 
 export type { MascotEvent } from './mascotEvents';
