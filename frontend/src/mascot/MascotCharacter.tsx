@@ -2,16 +2,21 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Check, CircleAlert, Heart, HelpCircle, MessageCircle, MoreHorizontal, Music2, Search, Smile } from 'lucide-react';
 import idle from './assets/idle.png';
+import studyAtlas from './assets/lexi-study-atlas-v2.png';
 import type { MascotAssets, MascotGesture, MascotState } from './mascotTypes';
+import { MASCOT_ATLAS_POSES, resolveMascotArtwork } from './mascotArtwork';
 import { useMascotReducedMotion } from './useMascotReducedMotion';
 
-// The upstream portrait is deliberately local-only, outside the public source tree.
-// Fresh checkouts keep a small original sprite as a self-contained fallback.
+// One transparent sheet supplies eight static learning poses. Gestures remain
+// finite CSS motions, and the original bundled sprite is the missing-file fallback.
 const defaultAssets: MascotAssets = {
-  idle: `${import.meta.env.BASE_URL}local-mascot/DSniang1.png`,
-  pet: `${import.meta.env.BASE_URL}local-mascot/rua.gif`,
+  idle,
   fallback: idle,
   pixelated: false,
+  atlas: {
+    src: studyAtlas, columns: 4, rows: 2, cellWidth: 384, cellHeight: 512, poses: MASCOT_ATLAS_POSES,
+    poseAdjustments: { thinking: { clipRight: 12 }, explaining: { sourceOffsetX: -12 } },
+  },
 };
 
 const gestureMoods = { nod: 'smile', tilt: 'curious', hop: 'heart', stretch: 'music', pet: 'heart' } as const;
@@ -25,28 +30,24 @@ export function MascotCharacter({ state, reactionId, gesture, interactionEnabled
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const reducedMotion = useMascotReducedMotion();
   const activeGesture = interactionEnabled && !dragging ? gesture : null;
-  const stateSource = state === 'thinking' || state === 'searching' || state === 'uncertain' ? assets.thinking
-    : state === 'success' || state === 'explaining' ? assets.happy : state === 'error' ? assets.error : assets.idle;
-  const fallback = assets.fallback ?? idle;
-  // A failed optional GIF is remembered across reactions, then the portrait and bundled sprite remain available.
-  // Reduced motion never places the GIF in an image src, so it never starts loading.
-  const petSource = activeGesture?.kind === 'pet' && !reducedMotion ? assets.pet : undefined;
-  const candidates = [petSource, stateSource, assets.idle, fallback, idle];
-  const source = candidates.find((candidate): candidate is string => Boolean(candidate) && !failedSources.includes(candidate!)) ?? idle;
+  const artwork = resolveMascotArtwork({ assets, state, gesture: activeGesture, interactionEnabled, dragging,
+    reducedMotion, failedSources, fallbackSource: idle });
   const stateMood = state in stateMoods ? stateMoods[state as keyof typeof stateMoods] : null;
   const mood = interactionEnabled && !dragging ? stateMood ?? (activeGesture ? gestureMoods[activeGesture.kind] : null) : null;
   const MoodIcon = mood ? moodIcons[mood] : null;
+  const image = <img src={artwork.source} alt="Lexi 阅读助手" draggable={false}
+    className={artwork.frame ? 'mascot-atlas-image' : undefined} style={artwork.frame?.style}
+    data-pixelated={artwork.pixelated} data-asset={artwork.asset}
+    data-pose={artwork.pose} data-pose-index={artwork.frame?.index}
+    onError={() => {
+      if (artwork.source !== idle) setFailedSources(values => values.includes(artwork.source) ? values : [...values, artwork.source]);
+    }} />;
   return <span className={`mascot-character${pressed && !dragging ? ' is-pressed' : ''}`} data-testid="mascot-character" data-side={side}>
     <span key={activeGesture?.id ?? 'rest'} className="mascot-character-gesture" data-testid="mascot-gesture-layer" data-gesture={activeGesture?.kind ?? 'none'}>
       <span className="mascot-character-facing" style={{ '--mascot-facing': side === 'left' ? -1 : 1 } as CSSProperties}>
         <span className="mascot-character-breath">
           <span key={reactionId} className={`mascot-character-reaction is-${state}`}>
-            <img src={source} alt="Lexi 阅读助手" draggable={false}
-              data-pixelated={source === fallback || source === idle || assets.pixelated !== false}
-              data-asset={source === petSource ? 'pet' : source === idle ? 'fallback' : 'portrait'}
-              onError={() => {
-                if (source !== idle) setFailedSources(values => values.includes(source) ? values : [...values, source]);
-              }} />
+            {artwork.frame ? <span className="mascot-atlas-frame" style={{ aspectRatio: artwork.frame.aspectRatio, clipPath: artwork.frame.clipPath }}>{image}</span> : image}
           </span>
         </span>
       </span>

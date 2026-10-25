@@ -1,0 +1,36 @@
+{
+  "created_date": "2026-10-26",
+  "tool": "built-in image_gen.imagegen",
+  "reference_filename": "codex-clipboard-4a3be22e-88fe-4d49-b4fc-47ea19075271.png",
+  "reference_sha256": "64a6758413a966d07c7b585d1a0ababc940ebc9a649d9799233d71f4e83d4194",
+  "file": "lexi-study-atlas-v2.png",
+  "file_sha256": "f09b98baad0dd9ca4d0041381eae6b882707362b3a7328c1eaf08039fc0f3a19",
+  "bytes": 2667987,
+  "width": 1536,
+  "height": 1024,
+  "mode": "RGBA",
+  "columns": 4,
+  "rows": 2,
+  "cell_width": 384,
+  "cell_height": 512,
+  "poses": {
+    "idle": 0,
+    "reading": 1,
+    "thinking": 2,
+    "explaining": 3,
+    "searching": 4,
+    "success": 5,
+    "uncertain": 6,
+    "error": 7
+  },
+  "source_adjustments": {
+    "thinking": {
+      "clip_right": 12
+    },
+    "explaining": {
+      "source_offset_x": -12
+    }
+  },
+  "controls_safe_area_px": 24,
+  "motion": "Static poses with existing finite CSS gestures; not a walking or running frame sequence."
+}

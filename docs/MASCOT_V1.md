@@ -1,5 +1,13 @@
 # Lexi 阅读助手 V1 · 2026-10-25
 
+## 参考图形象改造（2026-10-26）
+
+默认角色已改为参考用户图片生成的蓝发 Q 版学习形象，保留白色发饰与蓝色丝带，用书本、笔记和面部表情区分学习情境。素材是带真实透明通道的 4×2 图集，八格对应 `idle / reading / thinking / explaining / searching / success / uncertain / error`；不是逐帧行走动画。真实学习事件驱动姿态切换，点击/摸头仍用有限 CSS 动作，减少动态效果模式只保留静态换姿态。
+
+角色图集保持 3:4 原始比例，底部预留 24px 给「问 Lexi」与菜单按钮，避免遮住脚部。沿用固定桌面/手机尺寸、停靠、拖动与气泡逻辑。默认不再请求旧原图或摸头 GIF，坏图只失败一次后回到原有手绘兜底。
+
+素材、生成提示词和来源记录见 `frontend/src/mascot/assets/lexi-study-atlas-v2.*`；`mascotArtwork.ts` 集中处理姿态、源图裁切、业务反馈优先和缺图回退。下方保留 V1 发展记录，涉及原项目立绘的描述属于历史版本。
+
 ## 使用
 
 刷新本机词间页面即可看到阅读助手。拖动角色调整位置；点击显示一句短提示；右键、长按约 500ms 或点击 `…` 打开设置。支持三档大小、关闭点击台词、恢复位置和隐藏。页头眼睛按钮可隐藏/恢复角色，「问 Lexi」及角色下方对话按钮可打开 Agnes 学习助手。
@@ -14,7 +22,7 @@
 
 新增「角色动作与表情」设置，默认开启，旧配置自动兼容。关闭后保留原学习提示、状态灯和按压反馈。动作与原学习状态分层，AI 等待、重要结果和错误优先；拖动、取消、窗口失焦、切到后台、隐藏和专注模式会立即清理动作及双击计时。菜单在焦点落到页面时仍隔离标记快捷键，并支持 Escape 关闭。角色绘制裁切在原避让矩形内。
 
-摸头临时显示原项目 `rua.gif`，约 1 秒后恢复原图；动图缺失时回到原图，再使用仓库原创兜底，不反复请求失败素材。系统减少动态效果偏好会阻止 GIF 加载和 CSS 动画，只显示静态反馈，运行中切换偏好也会立即停止 GIF。没有新增声音、模型调用、学习写入或依赖。
+当前改造版摸头显示新图集的开心姿态，并沿用约 1 秒的有限动作后恢复；不再切回原项目 `rua.gif`。系统减少动态效果偏好关闭 CSS 动画，只显示静态反馈。旧 GIF 的历史来源记录保留在素材说明中。没有新增声音、模型调用、学习写入或依赖。
 
 ### 台词定位修复（2026-10-25）
 
@@ -38,7 +46,7 @@
 
 ## 素材与参考
 
-按用户最后的选择，本机暂用参考项目的原角色 `DSniang1.png`，原图保持不变；此图是平滑插画，当前不将它伪装成像素画。图片位于 Git 忽略的 `frontend/public/local-mascot/`，本机 Vite 构建会复制到同样忽略的 `frontend/dist/`。本次没有发布到 GitHub 或公网。
+当前默认使用 `lexi-study-atlas-v2.png`，由内置图像工具根据用户本次参考图生成，属于平滑 Q 版插画，不伪装成像素画。改造前本机使用参考项目的原角色 `DSniang1.png`；历史文件仍在 Git 忽略的 `frontend/public/local-mascot/`，默认组件已不再请求它。本次没有发布到 GitHub 或公网。
 
 参考项目的[素材声明](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget/blob/5247dd6813d6e4430728f39ccc63d43cda046022/PROVENANCE.md)明确将美术素材排除在 MIT 之外，不提供跨项目再分发授权。当前仅用于用户要求的本机预览，公开构建或安装包需先替换图片或取得授权。固定版本、原图 SHA-256 和来源见 `frontend/src/mascot/assets/README.md` 与本机 `source.json`。
 
@@ -56,7 +64,7 @@
 | `mascotState.ts`、`mascotMessages.ts` | 纯状态机、并发请求归属、优先级、冷却与集中台词 |
 | `mascotInteraction.ts`、`useMascotReducedMotion.ts` | 独立有限动作、双击/冷却/取消、实时低动态偏好 |
 | `MascotWidget.tsx`、`mascotPosition.ts`、`mascotRestingPosition.ts` | Portal、pointer 拖拽、吸附、测量、固定停靠与导航边界 |
-| `MascotCharacter.tsx` | 素材选择与失败兜底、朝向、按压、反应层 |
+| `MascotCharacter.tsx`、`mascotArtwork.ts` | 图集姿态、透明裁切、素材选择与失败兜底、朝向、按压、反应层 |
 | `MascotBubble.tsx`、`MascotMenu.tsx` | 对话框、关闭、轻量设置和键盘隔离 |
 | `MascotControls.tsx`、`mascot.css` | 页头恢复入口及所有挂件样式 |
 | `frontend/tests/mascotState.test.mjs`、`mascotPosition.test.mjs` | 状态、配置与位置边界检查 |

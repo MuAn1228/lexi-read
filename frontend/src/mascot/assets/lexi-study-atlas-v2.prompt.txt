@@ -1,0 +1,14 @@
+Use case: identity-preserve.
+Asset type: production-ready transparent sprite atlas for the Lexi English-reading companion in an existing web app.
+Input image 1 is a CHARACTER DESIGN AND STYLE REFERENCE, not a layout to preserve. Use its blue-haired chibi girl, white frilled headband, blue ribbon, navy-and-white modest outfit, rounded expressive face and rich hair silhouette as the design basis. Redesign it into a coherent polished study companion; keep it instantly recognizable from the reference. Match the appealing small chibi proportions in the lower rows of the reference, NOT the cropped large portraits. Clean compact anime game-sprite illustration, crisp readable edges, controlled fine detail, warm expressive faces. Make it readable when displayed at 72–96 pixels wide.
+Produce ONE sprite atlas on a genuinely transparent alpha background, ideally 1536x1024 pixels, with EXACTLY FOUR equal columns and TWO equal rows, eight equal cells. No labels, no text, no borders, no grid lines, no blue artifacts, no contact-sheet background. One complete isolated full-body character per cell, with generous transparent margins. No cropped hair, hands, feet or props. Same character identity, same scale, same head size and same feet baseline within each cell. Art must stay wholly within its own cell. No scenery, no large furniture, no weapons, no combat effects.
+Cell order, left to right, top row then bottom row:
+1 idle: relaxed standing, gentle little smile, hands together;
+2 reading: holding and reading a small open sage-green book, attentive eyes;
+3 thinking: a finger near the cheek, thoughtful gaze, subtle tiny ellipsis-free expression;
+4 explaining: holding the book with one hand and presenting with the other, friendly speaking smile;
+5 searching: consulting a small notebook, curious concentrated face;
+6 success: cheerful closed-eye smile, both hands making a small celebratory gesture;
+7 uncertain: slight head tilt, puzzled but calm expression;
+8 error: mildly embarrassed apologetic expression, one hand at the back of the head, reassuring rather than crying.
+Keep the original reference's blue-haired identity, white hair trim, ribbon and dress consistent across every cell. Subtle sage-green book accents connect to Lexi's green UI. High quality final usable game art. Transparent background is mandatory, including between all sprites.

@@ -5,6 +5,17 @@ export type MascotState = 'idle' | 'reading' | 'thinking' | 'explaining' | 'sear
 export type MascotGestureKind = 'nod' | 'tilt' | 'hop' | 'stretch' | 'pet';
 export type MascotGesture = { id: number; kind: MascotGestureKind; until: number };
 
+export type MascotAtlas = {
+  src: string;
+  columns: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  poses: Record<MascotState, number>;
+  /** Corrections measured in original sheet pixels, without resizing a pose. */
+  poseAdjustments?: Partial<Record<MascotState, { sourceOffsetX?: number; clipRight?: number }>>;
+};
+
 export type MascotAssets = {
   idle: string;
   fallback?: string;
@@ -13,6 +24,7 @@ export type MascotAssets = {
   happy?: string;
   error?: string;
   pet?: string;
+  atlas?: MascotAtlas;
 };
 
 export type MascotConfig = {
