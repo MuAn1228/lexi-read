@@ -1,11 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, StrictBool
 from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user_id
+from backend.config import get_settings
 from backend.database import get_session
-from backend.services.dictionary import DictionaryResult, explain_dictionary, read_dictionary
+from backend.services.dictionary import (DictionaryResult, explain_dictionary, read_dictionary,
+                                         fetch_dictionary_annotations)
 
 router = APIRouter(prefix="/api/dictionary")
+
+
+class AnnotationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    refresh: StrictBool = False
 
 
 @router.get("/{word}", response_model=DictionaryResult)
@@ -13,6 +21,18 @@ def dictionary(word: str, response: Response, user_id: int = Depends(get_current
     response.headers["Cache-Control"] = "private, no-store"
     try:
         return read_dictionary(word, user_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/{word}/annotations", response_model=DictionaryResult)
+def annotations(word: str, response: Response, payload: AnnotationRequest | None = None,
+                user_id: int = Depends(get_current_user_id)):
+    response.headers["Cache-Control"] = "private, no-store"
+    if get_settings().app_mode != "local":
+        raise HTTPException(404, "个人墨墨注解仅在本地版开放。")
+    try:
+        return fetch_dictionary_annotations(word, user_id, refresh=payload.refresh if payload else False)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

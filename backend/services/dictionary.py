@@ -24,6 +24,8 @@ from backend.public_limits import require_llm_budget
 from backend.services.lemmatization import normalize_word
 from backend.services.llm import LLMService
 from backend.services.offline_dictionary import lookup, OfflineDictionaryUnavailable
+from backend.services import maimemo_annotations
+from backend.services.maimemo_annotations import MaimemoAnnotations
 
 logger = logging.getLogger(__name__)
 _locks = [Lock() for _ in range(64)]
@@ -117,8 +119,10 @@ class OfflineEntry(BaseModel):
     chinese: list[str]
     english: list[str]
     forms: list[WordForm]
-    source: Literal["ecdict"]
+    source: Literal["ecdict", "lexi_supplement"]
     source_url: str
+    examples: list[BilingualExample] = Field(default_factory=list)
+    usage_notes: list[str] = Field(default_factory=list)
 
 
 class DictionaryResult(BaseModel):
@@ -129,6 +133,8 @@ class DictionaryResult(BaseModel):
     cached: bool = False
     can_generate: bool
     warning: str | None = None
+    maimemo: MaimemoAnnotations | None = None
+    can_fetch_annotations: bool = False
 
 
 def identity(word: str, user_id: int) -> tuple[dict, Path]:
@@ -183,12 +189,20 @@ def _result(value: dict, path: Path) -> DictionaryResult:
     if not can_generate and not detail:
         warning = (warning + " " if warning else "") + "当前未启用 AI 详细讲解，离线词义仍可查阅。"
     return DictionaryResult(word=value["word"], lemma=value["lemma"], dictionary=offline,
-                            detail=detail, cached=detail is not None, can_generate=can_generate, warning=warning)
+                            detail=detail, cached=detail is not None, can_generate=can_generate, warning=warning,
+                            maimemo=maimemo_annotations.read_annotations(value["word"], value["user"], settings=settings),
+                            can_fetch_annotations=maimemo_annotations.configured(settings))
 
 
 def read_dictionary(word: str, user_id: int) -> DictionaryResult:
     value, path = identity(word, user_id)
     return _result(value, path)
+
+
+def fetch_dictionary_annotations(word: str, user_id: int, *, refresh=False) -> DictionaryResult:
+    value, path = identity(word, user_id)
+    annotations = maimemo_annotations.fetch_annotations(value["word"], user_id, refresh=refresh, settings=get_settings())
+    return _result(value, path).model_copy(update={"maimemo": annotations})
 
 
 def cached_summary(word: str, user_id: int) -> str | None:

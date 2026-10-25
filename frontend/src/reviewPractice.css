@@ -30,4 +30,15 @@
 .review-revealed .review-context { margin-bottom: 0; }
 .review-revealed .review-context .text-button { margin-top: 16px; }
 .review-rating-hint { margin: 19px 0 0; }
+.review-annotations { margin-top: 25px; text-align: left; min-width: 0; }
+.review-annotation-preference { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 7px 15px; padding-bottom: 14px; font-size: 12px; line-height: 1.8; color: #68796f; }
+.review-annotation-preference label { display: inline-flex; align-items: center; gap: 7px; color: #385849; cursor: pointer; flex-shrink: 0; }
+.review-annotation-preference input { accent-color: #527c56; width: 15px; height: 15px; }
+.review-annotation-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; }
+.review-annotation-actions > p { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 1.8; color: #68796f; margin: 0; }
+.review-annotation-actions svg { flex-shrink: 0; }
+.review-annotation-detail-action > p, .review-annotation-summary > p { font-size: 13px; line-height: 1.9; color: #68796f; margin: 9px 0 14px; overflow-wrap: anywhere; }
+.review-annotation-summary { border: 1px solid #dfe6d8; border-radius: 8px; padding: 16px; background: #fffef9; white-space: pre-wrap; }
+.review-annotations .inline-error { margin-bottom: 14px; }
+.review-revealed > .text-button { margin-bottom: 16px; }
 @media (max-width: 620px) { .review-mode { width: 100%; }.review-mode button { flex: 1; padding: 10px 8px; }.review-cloze { padding: 17px 15px; }.review-cloze blockquote { font-size: 17px; }.review-cloze-heading { font-size: 23px; }.review-meaning { padding: 17px 15px; }.review-meaning h4 { font-size: 17px; } }

@@ -1,14 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, Check, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
+import { BookOpen, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import { useMascot, useMascotSnapshot } from './mascot/useMascot';
 import { errorMessage, request } from './api';
-import { dictionaryGenerationLabel, dictionaryPath } from './dictionary';
+import { dictionaryAnnotationsPath, dictionaryGenerationLabel, dictionaryPath } from './dictionary';
 import type { DictionaryResult } from './dictionary';
 import { ThoughtLine } from './components/StudyInteractions';
 import PronunciationButton, { SpeechSettings } from './PronunciationButton';
 import WordExpansion from './WordExpansionPanel';
+import WordAnnotations from './WordAnnotations';
 import type { Vocabulary } from './types';
 import type { WordExpansionCache } from './wordExpansion';
 import './dictionary.css';
@@ -46,9 +47,11 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
   const [result, setResult] = useState<DictionaryResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [readingAnnotations, setReadingAnnotations] = useState(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const generation = useRef<AbortController | null>(null);
+  const annotationRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const modal = dialog.current;
@@ -59,6 +62,7 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
     modal.showModal(); closeButton.current?.focus();
     return () => {
       generation.current?.abort(); generation.current = null;
+      annotationRequest.current?.abort(); annotationRequest.current = null;
       modal.close(); document.body.style.overflow = overflow;
       if (opener.isConnected && !opener.matches(':disabled')) opener.focus();
     };
@@ -75,7 +79,7 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
   }, [word, retry]);
 
   const generate = async () => {
-    if (!result?.can_generate || result.detail || generation.current) return;
+    if (!result?.can_generate || result.detail || generation.current || annotationRequest.current) return;
     const controller = new AbortController(); generation.current = controller;
     setGenerating(true); setError('');
     try {
@@ -86,8 +90,21 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
       if (!controller.signal.aborted) { setGenerating(false); generation.current = null; }
     }
   };
+  const readAnnotations = async () => {
+    if (!result?.can_fetch_annotations || generation.current || annotationRequest.current) return;
+    const controller = new AbortController(); annotationRequest.current = controller;
+    setReadingAnnotations(true); setError('');
+    try {
+      const value = await request<DictionaryResult>(dictionaryAnnotationsPath(word), {
+        method: 'POST', body: JSON.stringify({ refresh: Boolean(result.maimemo) }), signal: controller.signal,
+      });
+      if (!controller.signal.aborted) setResult(value);
+    } catch (reason) { if (!controller.signal.aborted) setError(errorMessage(reason)); }
+    finally {
+      if (!controller.signal.aborted) { setReadingAnnotations(false); annotationRequest.current = null; }
+    }
+  };
   const entry = result?.dictionary;
-  const detail = result?.detail;
 
   return createPortal(<dialog ref={dialog} className="dictionary-dialog" data-dictionary-dialog="" aria-labelledby={titleId} aria-describedby={descriptionId} tabIndex={-1}
     onKeyDown={event => {
@@ -110,22 +127,11 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
     <div className="dictionary-body" aria-busy={loading}>
       {loading && <p className="dictionary-loading" role="status"><LoaderCircle size={18} className="spin" />正在读取本地释义…</p>}
       {error && <div className="dictionary-error" role="alert"><p>{error}</p>{!result && <button type="button" className="text-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} />重新读取释义</button>}</div>}
-      {result && <>
-        <section className="dictionary-section dictionary-offline"><div className="dictionary-section-heading"><h3>中文释义</h3><span className="dictionary-badge">离线词典 · ECDICT</span></div>
-          {entry ? <><ol className="dictionary-definitions">{entry.chinese.map((meaning, index) => <li key={index}>{meaning}</li>)}</ol>{entry.forms.length > 0 && <div className="dictionary-forms">{entry.forms.map((form, index) => <span key={index}><small>{form.label}</small>{form.word}</span>)}</div>}{entry.english.length > 0 && <details className="dictionary-english"><summary>展开英文释义（{entry.english.length}）</summary><ol>{entry.english.map((meaning, index) => <li key={index}>{meaning}</li>)}</ol></details>}<a className="dictionary-source-link" href="https://github.com/skywind3000/ECDICT" target="_blank" rel="noreferrer">词典来源与说明 ↗</a></> : <p className="dictionary-empty">离线词典暂未收录这个词。可以尝试生成 AI 详细讲解。</p>}
-        </section>
-        <WordExpansion word={word} cache={expansionCache} vocabulary={vocabulary} onLearningChanged={onLearningChanged} />
-        <section className="dictionary-section dictionary-ai"><div className="dictionary-section-heading"><h3><Sparkles size={17} />详细讲解</h3>{detail && <span className="dictionary-badge dictionary-badge--ai">AI 生成{result.cached ? ' · 已缓存' : ''}</span>}</div>
-          {!detail && <div className="dictionary-generate"><p>补充常见义项、词性、双语例句、常用搭配和易混辨析。点击后调用 AI，成功后保存在本地，方便下次查看。</p><button type="button" className="button primary" disabled={generating || !result.can_generate} onClick={() => void generate()}>{generating ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}{generating ? '正在生成详细讲解…' : dictionaryGenerationLabel(result)}</button>{generating && <ThoughtLine label="正在整理义项和双语例句，关闭窗口可停止等待。" />}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；离线词典仍可正常查看。</p>}</div>}
-          {result.warning && <p className="dictionary-warning" role="status">{result.warning}</p>}
-          {detail && <><p className="dictionary-summary">{detail.summary}</p><div className="dictionary-senses">{detail.senses.map((sense, index) => <article className="dictionary-sense" key={index}><div className="dictionary-sense-heading"><span className="dictionary-sense-number">{String(index + 1).padStart(2, '0')}</span><div><span className="dictionary-pos">{sense.part_of_speech}</span><h4>{sense.meaning}</h4></div></div><p className="dictionary-explanation">{sense.explanation}</p>{sense.examples.map((example, exampleIndex) => <blockquote className="dictionary-example" key={exampleIndex}><p lang="en">{example.english}</p><p>{example.chinese}</p></blockquote>)}</article>)}</div>
-            {detail.collocations.length > 0 && <div className="dictionary-detail-group"><h4>常用搭配</h4><div className="dictionary-collocations">{detail.collocations.map((item, index) => <article key={index}><strong lang="en">{item.phrase}</strong><span>{item.meaning}</span><p lang="en">{item.example}</p><p>{item.translation}</p></article>)}</div></div>}
-            {detail.usage_notes.length > 0 && <div className="dictionary-detail-group"><h4>用法提示</h4><ul className="dictionary-usage">{detail.usage_notes.map((note, index) => <li key={index}><Check size={14} /><span>{note}</span></li>)}</ul></div>}
-            {detail.confusables.length > 0 && <div className="dictionary-detail-group"><h4>易混辨析</h4><dl className="dictionary-confusables">{detail.confusables.map((item, index) => <div key={index}><dt lang="en">{item.word}</dt><dd>{item.distinction}</dd></div>)}</dl></div>}
-            <p className="dictionary-ai-note">例句与讲解由 AI 生成，具体用法请结合原文判断。</p>
-          </>}
-        </section>
-      </>}
+      {result && <WordAnnotations result={result}
+        annotationAction={result.can_fetch_annotations ? <div className="dictionary-annotation-actions"><button type="button" className="text-button" disabled={readingAnnotations || generating} onClick={() => void readAnnotations()}>{readingAnnotations ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}{readingAnnotations ? '正在读取墨墨个人注解…' : result.maimemo ? '更新墨墨个人注解' : '读取墨墨个人注解'}</button>{readingAnnotations && <p className="dictionary-empty" role="status">先看本地词义，墨墨个人注解稍后补充。</p>}</div> : undefined}
+        afterDefinitions={<WordExpansion word={word} cache={expansionCache} vocabulary={vocabulary} onLearningChanged={onLearningChanged} />}
+        detailAction={<div className="dictionary-generate"><p>补充常见义项、词性、双语例句、常用搭配和易混辨析。点击后调用 AI，成功后保存在本地，方便下次查看。</p><button type="button" className="button primary" disabled={generating || readingAnnotations || !result.can_generate} onClick={() => void generate()}>{generating ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}{generating ? '正在生成详细讲解…' : dictionaryGenerationLabel(result)}</button>{generating && <ThoughtLine label="正在整理义项和双语例句，关闭窗口可停止等待。" />}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；离线词典仍可正常查看。</p>}</div>}
+      />}
     </div>
     <footer className="dictionary-footer">查看词典不会改变掌握状态或复习安排。<button type="button" className="text-button" disabled={assistantSuppressed} title={assistantSuppressed ? '退出专注阅读或完成当前操作后可使用学习助手' : undefined} onClick={() => { onClose(); mascot.openAssistant({ key: `word:${word.toLowerCase()}`, documentId: null, occurrenceId: null, word, title: null, sentence: null }); }}><MessageCircle size={14} />{assistantSuppressed ? '当前模式下助手已收起' : '和 Lexi 学这个词'}</button><button type="button" className="text-button" onClick={onClose}>返回学习</button></footer>
   </dialog>, document.body);

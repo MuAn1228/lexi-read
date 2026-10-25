@@ -18,6 +18,29 @@
 .dictionary-section-heading h3 { display: flex; align-items: center; gap: 7px; font-size: 17px; font-weight: 600; }
 .dictionary-badge { padding: 4px 8px; font-size: 10px; border: 1px solid #e2e6d5; background: #f3f5e9; border-radius: 7px; color: #778665; }
 .dictionary-badge--ai { border-color: #dedcef; background: #f4f1fa; color: #817291; }
+.dictionary-badge--maimemo { border-color: #dce7d2; background: #eef5e7; color: #58784a; }
+.word-annotations { min-width: 0; text-align: left; }
+.word-annotations p, .word-annotations li, .word-annotations dd { overflow-wrap: anywhere; }
+.annotation-word-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; color: #49654c; font-size: 13px; }
+.annotation-source-status { padding: 12px 0; font-size: 11px; color: #7a876e; line-height: 1.9; }
+.annotation-source-status:empty { display: none; }
+.annotation-source-status .text-button { margin-top: 5px; }
+.annotation-source-note { font-size: 11px; line-height: 1.9; color: #7a876e; margin-bottom: 12px; }
+.annotation-personal-group + .annotation-personal-group { margin-top: 19px; }
+.annotation-personal-group h4 { font-size: 13px; color: #527048; margin-bottom: 8px; }
+.annotation-personal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.annotation-personal-list li { border-left: 2px solid #b6cda3; padding: 9px 12px; background: #f4f7ee; border-radius: 0 7px 7px 0; }
+.annotation-personal-list p { font-size: 13px; line-height: 1.9; white-space: pre-wrap; }
+.annotation-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.annotation-tags span { font-size: 10px; padding: 2px 6px; border: 1px solid #dfe7d5; border-radius: 5px; color: #7e8d6e; }
+.dictionary-maimemo .dictionary-example cite { display: block; margin-top: 7px; font-size: 10px; font-style: normal; color: #8c977f; }
+.dictionary-annotation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+.dictionary-annotation-actions p { flex-basis: 100%; margin: 0; }
+.word-annotations--compact .dictionary-section { padding: 19px 0; }
+.word-annotations--compact .dictionary-section-heading h3 { font-size: 15px; }
+.word-annotations--compact .dictionary-definitions li { font-size: 14px; }
+.word-annotations--compact .dictionary-sense { padding: 15px; }
+.word-annotations--compact .dictionary-collocations { grid-template-columns: 1fr; }
 .dictionary-definitions { margin: 0; padding-left: 25px; }
 .dictionary-definitions li { padding: 4px 0 7px 4px; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; white-space: pre-line; }
 .dictionary-definitions li::marker { color: #93a57b; font-size: 12px; }

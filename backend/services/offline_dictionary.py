@@ -18,6 +18,7 @@ import tempfile
 import threading
 
 from backend.services.lemmatization import normalize_word
+from backend.services.supplemental_dictionary import lookup_supplement
 
 
 SOURCE_URL = "https://github.com/skywind3000/ECDICT"
@@ -201,7 +202,7 @@ def lookup(word: str, lemma: str | None = None) -> dict | None:
         if row is None and canonical != key:
             row = _row(canonical)
     if row is None:
-        return None
+        return lookup_supplement(key)
     return {
         "headword": row[0], "phonetic": row[1],
         "chinese": _senses(row[2]), "english": _senses(row[3]), "forms": _forms(row[4]),

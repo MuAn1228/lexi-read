@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/dictionary.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { matchesVocabularyQuery, dictionaryPath, dictionaryGenerationLabel } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { matchesVocabularyQuery, dictionaryPath, dictionaryAnnotationsPath, dictionaryGenerationLabel, hasMaimemoAnnotations } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 const word = { word: 'Banks', lemma: 'bank', meaning_summary: 'n. 银行；河岸\nv. 将钱存入银行' };
 
@@ -32,4 +32,24 @@ test('generation labels distinguish a cached explanation from an unavailable AI 
   assert.equal(dictionaryGenerationLabel({ detail: null, can_generate: false, cached: false }), 'AI 详细讲解暂不可用');
   assert.equal(dictionaryGenerationLabel({ detail: {}, can_generate: false, cached: true }), '已保存详细讲解');
   assert.equal(dictionaryGenerationLabel({ detail: {}, can_generate: true, cached: false }), '详细讲解已生成');
+});
+
+test('personal annotation endpoints keep punctuation inside the word segment', () => {
+  assert.equal(dictionaryAnnotationsPath(' Bank '), '/dictionary/Bank/annotations');
+  for (const value of ['a/b', 'a?token=1#more', 'a%2Fb']) {
+    const path = dictionaryAnnotationsPath(value);
+    assert.equal(path.split('/').length, 4);
+    assert.equal(path.split('/')[3], 'annotations');
+    assert.equal(decodeURIComponent(path.split('/')[2]), value);
+  }
+});
+
+test('Maimemo personal content is separate from connection status or an empty built-in dictionary assumption', () => {
+  const empty = { interpretations: [], phrases: [], notes: [], status: 'available' };
+  assert.equal(hasMaimemoAnnotations(null), false);
+  assert.equal(hasMaimemoAnnotations(undefined), false);
+  assert.equal(hasMaimemoAnnotations(empty), false);
+  for (const kind of ['interpretations', 'phrases', 'notes']) {
+    assert.equal(hasMaimemoAnnotations({ ...empty, status: 'unavailable', stale: true, [kind]: [{ text: '上次保存的个人注解' }] }), true);
+  }
 });

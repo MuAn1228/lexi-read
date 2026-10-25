@@ -34,6 +34,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
   const [failedStatus, setFailedStatus] = useState<WordStatus | null>(null);
   const [canDismiss, setCanDismiss] = useState(false);
   const [mode, setMode] = useState<ReviewMode>('recall');
+  const [autoExplain, setAutoExplain] = useState(true);
   const [revealedCard, setRevealedCard] = useState('');
   const [confirmedAssessments, setConfirmedAssessments] = useState(0);
   const sessionRef = useRef<ReviewSession | null>(null);
@@ -45,6 +46,7 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
   const enabledRef = useRef(false);
   const lastCheck = useRef(0);
   const wordHeading = useRef<HTMLHeadingElement>(null);
+  const ratingControls = useRef<HTMLFieldSetElement>(null);
   const summaryHeading = useRef<HTMLHeadingElement>(null);
   const previousCard = useRef<string | null>(null);
   activeRef.current = active;
@@ -182,9 +184,9 @@ export default function ReviewView({ active, readerActive, vocabulary, disabled,
       {session && <>
         {session.size > 0 && <div className="review-progress"><div><span aria-live="polite">已处理 {processed} / {session.size}<PulseHeart run={confirmedAssessments} active={active} /></span><span>已自评 {session.assessed} · 已跳过 {session.skipped}{session.removed > 0 && ` · 已移出 ${session.removed}`}</span></div><div className="progress-track" role="progressbar" aria-label="本组复习进度" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={processed}><div style={{ width: `${processed / session.size * 100}%` }} /></div></div>}
         {item && <div className="review-card" aria-busy={saving}>
-          <ReviewPractice key={practiceKey} item={item} mode={mode} onModeChange={value => { if (value !== mode) { setRevealedCard(''); setMode(value); } }} active={active} disabled={blocked || Boolean(pending) || !sessionVerified} onReveal={() => setRevealedCard(practiceKey)} onOpenDocument={onOpenDocument} headingRef={wordHeading} meta={<div className="review-meta"><StatusBadge status={latestWord?.status ?? item.vocabulary.status} /><span>{item.last_reviewed_at ? <>最近复习 · <time dateTime={item.last_reviewed_at}>{formatDate(item.last_reviewed_at)}</time></> : '尚未在这里复习'}</span><span>{item.due_at ? <>已到期 · {formatDate(item.due_at)}</> : '首次复习'}</span></div>} />
+          <ReviewPractice key={practiceKey} item={item} mode={mode} autoExplain={autoExplain} onAutoExplainChange={setAutoExplain} onGoToRating={() => { ratingControls.current?.focus({ preventScroll: true }); ratingControls.current?.scrollIntoView({ block: 'center' }); }} onModeChange={value => { if (value !== mode) { setRevealedCard(''); setMode(value); } }} active={active} disabled={blocked || Boolean(pending) || !sessionVerified} onReveal={() => setRevealedCard(practiceKey)} onOpenDocument={onOpenDocument} headingRef={wordHeading} meta={<div className="review-meta"><StatusBadge status={latestWord?.status ?? item.vocabulary.status} /><span>{item.last_reviewed_at ? <>最近复习 · <time dateTime={item.last_reviewed_at}>{formatDate(item.last_reviewed_at)}</time></> : '尚未在这里复习'}</span><span>{item.due_at ? <>已到期 · {formatDate(item.due_at)}</> : '首次复习'}</span></div>} />
           {needsReveal && !pending && <p className="review-rating-hint">先检查或揭晓原句答案，再按自己的掌握程度自评。</p>}
-          <fieldset className="review-ratings" disabled={blocked || Boolean(pending) || !sessionVerified || needsReveal}><legend>这次，你对它有多熟悉？</legend><div>{ratings.map(rating => <button className={`review-rating ${rating.status.toLowerCase()}`} key={rating.status} onClick={() => void assess(rating.status)}><rating.icon size={20} /><strong>{rating.label}</strong><span>{rating.description}</span><small>下次 · {intervalLabel(item.next_intervals_seconds[rating.status])}后</small></button>)}</div></fieldset>
+          <fieldset ref={ratingControls} tabIndex={-1} className="review-ratings" disabled={blocked || Boolean(pending) || !sessionVerified || needsReveal}><legend>这次，你对它有多熟悉？</legend><div>{ratings.map(rating => <button className={`review-rating ${rating.status.toLowerCase()}`} key={rating.status} onClick={() => void assess(rating.status)}><rating.icon size={20} /><strong>{rating.label}</strong><span>{rating.description}</span><small>下次 · {intervalLabel(item.next_intervals_seconds[rating.status])}后</small></button>)}</div></fieldset>
           {pending && <div className="review-pending" role="status"><Clock3 size={16} /><p>待确认的自评：{ratings.find(rating => rating.status === pending.status)?.label}。请先重试原评价，再继续其他单词；重试不会重复记分。</p></div>}
           {(saveError || pending) && <div className="review-save-error" role={saveError ? 'alert' : undefined}>{saveError && <p><AlertCircle size={16} />{saveError}</p>}{(pending?.status ?? failedStatus) && <button className="text-button" disabled={blocked} onClick={() => void assess((pending?.status ?? failedStatus)!)}><RefreshCw size={14} />重试保存</button>}{canDismiss && <><p>这张卡无法继续确认。可以放下它，已保存的学习记录不会被撤销。</p><button className="text-button" disabled={blocked} onClick={() => skip(true)}>放下这张卡</button></>}</div>}
           <div className="review-card-footer"><p>{saving ? <><LoaderCircle className="spin" size={14} />正在保存自评…</> : '自评后自动安排下次复习，进度保存在当前浏览器。'}</p><button className="text-button" disabled={blocked || Boolean(pending)} onClick={() => skip()}><SkipForward size={15} />跳过这个词</button></div>

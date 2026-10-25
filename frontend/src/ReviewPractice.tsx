@@ -4,13 +4,16 @@ import type { ReactNode, Ref } from 'react';
 import { errorMessage, request } from './api';
 import { matchesReviewAnswer, reviewCloze } from './reviewExercise';
 import { useDictionary } from './DictionaryPanel';
+import ReviewAnnotations from './ReviewAnnotations';
 import type { ReviewMode } from './reviewExercise';
 import type { ReviewItem, ReviewMeaning } from './types';
 import './reviewPractice.css';
 
-export default function ReviewPractice({ item, mode, onModeChange, disabled, active, onReveal, onOpenDocument, headingRef, meta }: {
+export default function ReviewPractice({ item, mode, onModeChange, autoExplain, onAutoExplainChange, onGoToRating, disabled, active, onReveal, onOpenDocument, headingRef, meta }: {
   item: ReviewItem; mode: ReviewMode; onModeChange: (mode: ReviewMode) => void;
   disabled: boolean; active: boolean; onReveal: () => void;
+  autoExplain: boolean; onAutoExplainChange: (value: boolean) => void;
+  onGoToRating: () => void;
   onOpenDocument: (documentId: number, occurrenceId: number) => void;
   headingRef: Ref<HTMLHeadingElement>; meta: ReactNode;
 }) {
@@ -55,7 +58,6 @@ export default function ReviewPractice({ item, mode, onModeChange, disabled, act
     if (disabled || !active || revealed || (checkAnswer && !input.trim())) return;
     if (checkAnswer && cloze) setCorrect(matchesReviewAnswer(input, cloze.answer));
     setRevealed(true); onReveal();
-    void loadMeaning();
   };
 
   return <div className="review-practice">
@@ -63,7 +65,7 @@ export default function ReviewPractice({ item, mode, onModeChange, disabled, act
       <button type="button" aria-pressed={!isCloze} disabled={disabled} onClick={() => onModeChange('recall')}>词卡回想</button>
       <button type="button" aria-pressed={isCloze} disabled={disabled || !cloze} onClick={() => onModeChange('cloze')}>原句填空</button>
     </div>
-    {!cloze && <p className="review-practice-note">{occurrence ? '这张卡没有可精确定位的原句，使用词卡回想。' : '这个词暂时没有关联原文，使用词卡回想；不提供自动释义。'}</p>}
+    {!cloze && occurrence && <p className="review-practice-note">这张卡没有可精确定位的原句，使用词卡回想。</p>}
     <p className="overline">{isCloze ? '结合原文，填回空缺处的单词' : '先回想这个词的意思，再揭晓释义'}</p>
     <h3 className={`review-word${isCloze && !revealed ? ' review-cloze-heading' : ''}`} ref={headingRef} tabIndex={-1}>{isCloze && !revealed ? '填回原句中的词' : isCloze ? occurrence?.word : item.vocabulary.word}</h3>
     {(!isCloze || revealed) && item.vocabulary.lemma !== (isCloze ? occurrence?.word : item.vocabulary.word)?.toLowerCase() && <p className="review-lemma">词元 · {item.vocabulary.lemma}</p>}
@@ -83,12 +85,12 @@ export default function ReviewPractice({ item, mode, onModeChange, disabled, act
       </div>}
     </div>}
     {!revealed && !isCloze && <div className="review-context-actions"><button className="button secondary" disabled={disabled} onClick={() => reveal()}><Eye size={15} />揭晓释义</button></div>}
+    <ReviewAnnotations word={item.vocabulary.word} revealed={revealed} active={active} disabled={disabled} summary={item.vocabulary.meaning_summary} autoExplain={autoExplain} onAutoExplainChange={onAutoExplainChange} onGoToRating={onGoToRating} />
     {revealed && <section className="review-revealed" aria-label="本词释义与原句">
-      <button type="button" className="text-button" disabled={disabled} onClick={event => openDictionary(item.vocabulary.word, event.currentTarget)}><BookOpen size={15} />释义与词汇拓展<ArrowRight size={14} /></button>
-      <div className="review-meaning">
-        <div className="section-label"><span>释义</span>{meaning && meaning.source !== 'unavailable' && <span className={`source-badge ${meaning.source}`}>{meaning.source === 'llm' ? 'AI 语境释义' : '离线基础释义'}</span>}</div>
+      <button type="button" className="text-button" disabled={disabled} onClick={event => openDictionary(item.vocabulary.word, event.currentTarget)}><BookOpen size={15} />打开词典与词汇拓展<ArrowRight size={14} /></button>
+      {occurrence && <div className="review-meaning">
+        <div className="section-label"><span>本句中的意思</span>{meaning && meaning.source !== 'unavailable' && <span className={`source-badge ${meaning.source}`}>{meaning.source === 'llm' ? 'AI 语境释义' : '离线基础释义'}</span>}</div>
         {loading && <p className="loading-copy" role="status"><LoaderCircle size={16} className="spin" />正在获取本词释义…</p>}
-        {!occurrence && <p className="service-note">暂无关联原文，无法提供可信的语境释义。可以根据记忆自评。</p>}
         {error && <div className="inline-error" role="alert"><p>{error} 已保留本卡答案，可重试或根据记忆自评。</p><button className="text-button" disabled={disabled || loading} onClick={() => void loadMeaning()}><RefreshCw size={14} />重试释义</button></div>}
         {meaning?.source === 'unavailable' && <div className="review-meaning-unavailable" role="status"><p>{meaning.warning || '暂时没有可靠释义，可重试或回到原文查看。'}</p><button className="text-button" disabled={disabled || loading} onClick={() => void loadMeaning()}><RefreshCw size={14} />重试释义</button></div>}
         {meaning && meaning.source !== 'unavailable' && <>
@@ -98,8 +100,8 @@ export default function ReviewPractice({ item, mode, onModeChange, disabled, act
           {meaning.cached && <p className="service-note">已复用这条语境释义。</p>}
           {meaning.warning && <p className="service-note">{meaning.warning}</p>}
         </>}
-        {!meaning && !loading && !error && occurrence && <button className="text-button" disabled={disabled} onClick={() => void loadMeaning()}><RefreshCw size={14} />获取释义</button>}
-      </div>
+        {!meaning && !loading && !error && <><p className="service-note">上方是通用词义；需要时，可结合这次阅读的原句进一步讲解。</p><button className="text-button" disabled={disabled} onClick={() => void loadMeaning()}><RefreshCw size={14} />讲解这个词在原句中的意思</button></>}
+      </div>}
       {occurrence && <div className="review-context"><p className="section-label">原文 · {occurrence.document_title}</p><blockquote lang="en">{occurrence.sentence || '该词暂无可用的原句，可回到原文查看。'}</blockquote><button className="text-button" disabled={disabled} onClick={() => onOpenDocument(occurrence.document_id, occurrence.id)}><BookOpen size={15} />回到原文 <ArrowRight size={14} /></button></div>}
     </section>}
   </div>;

@@ -8,13 +8,24 @@ export interface DictionaryDetail {
   usage_notes: string[];
   confusables: { word: string; distinction: string }[];
 }
+export interface MaimemoAnnotations {
+  source: 'maimemo_personal';
+  status: 'available' | 'empty' | 'not_found' | 'unavailable';
+  word: string;
+  interpretations: { id: string; text: string; tags: string[] }[];
+  phrases: { id: string; english: string; chinese: string; origin: string | null }[];
+  notes: { id: string; type: string; text: string }[];
+  cached: boolean; stale: boolean; fetched_at: string | null; warning: string | null;
+}
 export interface DictionaryResult {
   word: string; lemma: string;
   dictionary: {
     headword: string; phonetic: string; chinese: string[]; english: string[];
-    forms: { label: string; word: string }[]; source: 'ecdict'; source_url: string;
+    forms: { label: string; word: string }[]; source: 'ecdict' | 'lexi_supplement'; source_url: string;
+    examples?: DictionaryExample[]; usage_notes?: string[];
   } | null;
   detail: DictionaryDetail | null; cached: boolean; can_generate: boolean; warning: string | null;
+  maimemo: MaimemoAnnotations | null; can_fetch_annotations: boolean;
 }
 
 /** Search cached Chinese meanings without interpreting a general definition as context. */
@@ -27,6 +38,14 @@ export function matchesVocabularyQuery(word: Vocabulary, query: string): boolean
 /** Each word is a single path segment, including words with punctuation. */
 export function dictionaryPath(word: string, explain = false): string {
   return `/dictionary/${encodeURIComponent(word.trim())}${explain ? '/explain' : ''}`;
+}
+
+export function dictionaryAnnotationsPath(word: string): string {
+  return `${dictionaryPath(word)}/annotations`;
+}
+
+export function hasMaimemoAnnotations(annotations: MaimemoAnnotations | null | undefined): boolean {
+  return Boolean(annotations && (annotations.interpretations.length || annotations.phrases.length || annotations.notes.length));
 }
 
 export function dictionaryGenerationLabel(result: DictionaryResult): string {
