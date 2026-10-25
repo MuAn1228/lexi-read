@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>词间 Lexi</title>
+  <!-- Leaf paths match the existing lucide-react Leaf mark used by LexiMark.tsx.
+       Lucide is ISC licensed; see docs/third-party/LUCIDE-LICENSE.txt. -->
+  <path d="M88 8h80a80 80 0 0 1 80 80v80a80 80 0 0 1-80 80H32a24 24 0 0 1-24-24V88A80 80 0 0 1 88 8Z" fill="#dceeab" stroke="#e2eebc" stroke-width="2"/>
+  <g transform="translate(56 56) scale(6)" fill="none" stroke="#28533b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+    <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+  </g>
+</svg>

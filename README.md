@@ -8,6 +8,8 @@
 
 启动失败时窗口会保留错误，日志在 `backend/data/logs/`。下方安装步骤适用于新环境。
 
+桌面快捷方式使用 [assets/lexi.ico](assets/lexi.ico)，与网页左上角的绿色叶子标识一致，包含 16–256 像素的多种尺寸；可编辑矢量源文件为 [assets/lexi.svg](assets/lexi.svg)。快捷方式仍启动 `打开词间.cmd`。
+
 推荐 Python 3.12、Node.js 22.12+。SQLite 不需要单独安装。以下命令在本文件所在的项目目录运行。
 
 ```powershell
