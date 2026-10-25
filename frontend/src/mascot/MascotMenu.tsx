@@ -3,9 +3,9 @@ import { EyeOff, RotateCcw, X } from 'lucide-react';
 import { MASCOT_GESTURES } from './mascotInteraction';
 import type { MascotGestureKind } from './mascotTypes';
 
-export function MascotMenu({ x, y, maxHeight, scale, idleBubbleEnabled, interactionEnabled, interactionBlocked, onScale, onIdle, onInteraction, onGesture, onReset, onHide, onClose }: {
+export function MascotMenu({ x, y, maxHeight, scale, idleBubbleEnabled, interactionEnabled, interactionBlocked, collapsed = false, onScale, onIdle, onInteraction, onGesture, onReset, onHide, onClose }: {
   x: number; y: number; maxHeight: number; scale: number; idleBubbleEnabled: boolean;
-  interactionEnabled: boolean; interactionBlocked: boolean; onGesture: (kind: MascotGestureKind) => void;
+  interactionEnabled: boolean; interactionBlocked: boolean; collapsed?: boolean; onGesture: (kind: MascotGestureKind) => void;
   onScale: (scale: number) => void; onIdle: (enabled: boolean) => void; onInteraction: (enabled: boolean) => void;
   onReset: () => void; onHide: () => void; onClose: () => void;
 }) {
@@ -43,10 +43,10 @@ export function MascotMenu({ x, y, maxHeight, scale, idleBubbleEnabled, interact
     <div className="mascot-menu-heading"><span>Lexi · 阅读助手</span><button type="button" aria-label="关闭助手设置" onClick={onClose}><X size={14} /></button></div>
     <section className="mascot-interaction-settings" aria-label="角色互动">
       <label className="mascot-interaction-setting"><input type="checkbox" data-testid="mascot-interaction-toggle" checked={interactionEnabled} onChange={event => onInteraction(event.target.checked)} /><span>角色动作与表情</span></label>
-      <fieldset><legend>和 Lexi 互动</legend><div className="mascot-gesture-options">
+      {!collapsed && <fieldset><legend>和 Lexi 互动</legend><div className="mascot-gesture-options">
         {MASCOT_GESTURES.map(gesture => <button key={gesture.kind} type="button" data-testid={`mascot-gesture-${gesture.kind}`} disabled={!interactionEnabled || interactionBlocked} onClick={() => onGesture(gesture.kind)}><span>{gesture.label}</span><small>{gesture.description}</small></button>)}
-      </div></fieldset>
-      <div className="mascot-interaction-hint">{interactionBlocked ? '正在处理学习任务，互动会稍后恢复。' : !interactionEnabled ? '已关闭动作与表情，学习提示仍然保留。' : '单击角色会回应你，连续点击两次摸摸头。'}</div>
+      </div></fieldset>}
+      <div className="mascot-interaction-hint">{collapsed ? '阅读空间较满，角色已暂时收起。回到有空位的区域会自动恢复。' : interactionBlocked ? '正在处理学习任务，互动会稍后恢复。' : !interactionEnabled ? '已关闭动作与表情，学习提示仍然保留。' : '单击角色会回应你，连续点击两次摸摸头。'}</div>
     </section>
     <fieldset><legend>角色大小</legend><div className="mascot-size-options">{[{ scale: .9, label: '小' }, { scale: 1, label: '中' }, { scale: 1.2, label: '大' }].map(option => <button key={option.scale} type="button" aria-pressed={Math.abs(scale - option.scale) < .05} onClick={() => onScale(option.scale)}>{option.label}</button>)}</div></fieldset>
     <label className="mascot-idle-setting"><input type="checkbox" checked={idleBubbleEnabled} onChange={event => onIdle(event.target.checked)} /><span>点击时显示日常台词</span></label>
