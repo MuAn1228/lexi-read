@@ -1,34 +1,32 @@
-import { findMascotPlacement } from './mascotPosition';
-import type { MascotPoint, MascotRect, MascotSize, MascotViewport } from './mascotPosition';
+import { clampMascot } from './mascotPosition';
+import type { MascotPoint, MascotSize, MascotViewport } from './mascotPosition';
 
 type Side = 'left' | 'right';
 
-function validGeometry(size: MascotSize, viewport: MascotViewport): boolean {
-  return [viewport.x, viewport.y].every(Number.isFinite)
-    && [size.width, size.height, viewport.width, viewport.height].every(value => Number.isFinite(value) && value > 0);
-}
-
-/** Ordinary avoidance stays on the user's chosen half, including the whole character. */
-export function findMascotRestingPlacement(preferred: MascotPoint, size: MascotSize, viewport: MascotViewport, obstacles: MascotRect[], side: Side): MascotPoint | null {
-  if (!validGeometry(size, viewport) || ![preferred.x, preferred.y].every(Number.isFinite)
-    || (side !== 'left' && side !== 'right')) return null;
-  const half = {
-    ...viewport,
-    x: viewport.x + (side === 'right' ? viewport.width / 2 : 0),
-    width: viewport.width / 2,
-  };
-  if (size.width > half.width - 16 || size.height > half.height - 16) return null;
-  return findMascotPlacement(preferred, size, half, obstacles);
-}
-
-/** A collapsed handle belongs to its physical edge; only its vertical position may change. */
-export function findMascotEdgePlacement(preferredY: number, size: MascotSize, viewport: MascotViewport, obstacles: MascotRect[], side: Side): MascotPoint | null {
-  const inset = 2;
-  if (!validGeometry(size, viewport) || !Number.isFinite(preferredY)
-    || (side !== 'left' && side !== 'right')
-    || size.width > viewport.width - inset * 2 || size.height > viewport.height - inset * 2) return null;
-  const x = side === 'left' ? viewport.x + inset : viewport.x + viewport.width - size.width - inset;
-  // An exact-width virtual viewport makes every candidate x clamp to this same edge.
-  const edgeViewport = { ...viewport, x: x - inset, width: size.width + inset * 2 };
-  return findMascotPlacement({ x, y: preferredY }, size, edgeViewport, obstacles, inset);
+/**
+ * Resolve a persistent floating dock, independent of scrolling document rectangles.
+ * sidebarWidth is the sidebar's absolute right edge in viewport coordinates.
+ * A crowded document never changes the character's size or removes its position.
+ */
+export function resolveMascotDock(preferred: MascotPoint, size: MascotSize, viewport: MascotViewport, side: Side, sidebarWidth = 0): MascotPoint {
+  const inset = 8;
+  const left = viewport.x + inset;
+  const right = Math.max(left, viewport.x + viewport.width - size.width - inset);
+  const sidebarRight = Number.isFinite(sidebarWidth) ? sidebarWidth : viewport.x;
+  const contentLeft = Math.min(right, Math.max(left, sidebarRight + (sidebarRight > viewport.x ? inset : 0)));
+  const middle = viewport.x + viewport.width / 2;
+  let minX = contentLeft;
+  let maxX = right;
+  if (side === 'right') minX = Math.min(right, Math.max(minX, middle + inset));
+  else {
+    const wholeCharacterMax = middle - size.width - inset;
+    // Keep the chosen half whenever it fits. In unusually narrow content areas,
+    // prefer staying visible beside navigation over disappearing or shrinking.
+    maxX = Math.max(minX, Math.min(right, wholeCharacterMax));
+  }
+  const bounded = clampMascot({
+    x: Number.isFinite(preferred.x) ? preferred.x : side === 'left' ? minX : maxX,
+    y: Number.isFinite(preferred.y) ? preferred.y : viewport.y + viewport.height - size.height - 24,
+  }, size, viewport, inset);
+  return { x: Math.max(minX, Math.min(bounded.x, maxX)), y: bounded.y };
 }

@@ -18,9 +18,9 @@ const gestureMoods = { nod: 'smile', tilt: 'curious', hop: 'heart', stretch: 'mu
 const stateMoods = { thinking: 'thinking', searching: 'searching', explaining: 'explaining', success: 'success', uncertain: 'curious', error: 'error' } as const;
 const moodIcons = { smile: Smile, curious: HelpCircle, heart: Heart, music: Music2, thinking: MoreHorizontal, searching: Search, explaining: MessageCircle, success: Check, error: CircleAlert };
 
-export function MascotCharacter({ state, reactionId, gesture, interactionEnabled, side, pressed, dragging, compact, assets = defaultAssets }: {
+export function MascotCharacter({ state, reactionId, gesture, interactionEnabled, side, pressed, dragging, assets = defaultAssets }: {
   state: MascotState; reactionId: number; gesture: MascotGesture | null; interactionEnabled: boolean;
-  side: 'left' | 'right'; pressed: boolean; dragging: boolean; compact: boolean; assets?: MascotAssets;
+  side: 'left' | 'right'; pressed: boolean; dragging: boolean; assets?: MascotAssets;
 }) {
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const reducedMotion = useMascotReducedMotion();
@@ -36,7 +36,7 @@ export function MascotCharacter({ state, reactionId, gesture, interactionEnabled
   const stateMood = state in stateMoods ? stateMoods[state as keyof typeof stateMoods] : null;
   const mood = interactionEnabled && !dragging ? stateMood ?? (activeGesture ? gestureMoods[activeGesture.kind] : null) : null;
   const MoodIcon = mood ? moodIcons[mood] : null;
-  return <span className={`mascot-character${pressed && !dragging ? ' is-pressed' : ''}${compact ? ' is-compact' : ''}`} data-testid="mascot-character" data-side={side}>
+  return <span className={`mascot-character${pressed && !dragging ? ' is-pressed' : ''}`} data-testid="mascot-character" data-side={side}>
     <span key={activeGesture?.id ?? 'rest'} className="mascot-character-gesture" data-testid="mascot-gesture-layer" data-gesture={activeGesture?.kind ?? 'none'}>
       <span className="mascot-character-facing" style={{ '--mascot-facing': side === 'left' ? -1 : 1 } as CSSProperties}>
         <span className="mascot-character-breath">

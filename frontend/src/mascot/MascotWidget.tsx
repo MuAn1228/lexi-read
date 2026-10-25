@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Leaf, MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import { useMascot, useMascotSnapshot } from './useMascot';
 import { MascotCharacter } from './MascotCharacter';
 import { MascotBubble, MascotBubbleMeasure } from './MascotBubble';
@@ -9,10 +9,10 @@ import type { MascotBubbleMeasurements } from './MascotBubble';
 import { findMascotBubblePlacement } from './mascotBubblePosition';
 import { MascotMenu } from './MascotMenu';
 import { clampMascot, snapMascot } from './mascotPosition';
-import { findMascotEdgePlacement, findMascotRestingPlacement } from './mascotRestingPosition';
+import { resolveMascotDock } from './mascotRestingPosition';
 import type { MascotPoint, MascotRect, MascotSize, MascotViewport } from './mascotPosition';
 
-type Layout = { viewport: MascotViewport; obstacles: MascotRect[]; controls: MascotRect[]; modal: boolean };
+type Layout = { viewport: MascotViewport; obstacles: MascotRect[]; controls: MascotRect[]; navigation: MascotRect[]; sidebarRight: number; modal: boolean };
 type Drag = { id: number; origin: MascotPoint; pointer: MascotPoint; current: MascotPoint; moved: boolean; longPressed: boolean; size: MascotSize };
 const initialViewport: MascotViewport = { x: 0, y: 0, width: 1440, height: 900 };
 const SURFACES = '.document-panel,.word-list,.context-panel,.vocabulary-table,.vocabulary-list,.article-text,.text-article,.image-stage,.relation-workspace,.reading-bar,.reading-library-tools,.page-heading-copy,.heading-actions,.review-summary,.today-review-heading>div,.review-stats,.today-review-footer>span';
@@ -33,7 +33,7 @@ function readRects(selector: string, viewport: MascotViewport): MascotRect[] {
 }
 
 function useLayoutMeasurements(): Layout {
-  const [layout, setLayout] = useState<Layout>({ viewport: initialViewport, obstacles: [], controls: [], modal: false });
+  const [layout, setLayout] = useState<Layout>({ viewport: initialViewport, obstacles: [], controls: [], navigation: [], sidebarRight: 0, modal: false });
   useEffect(() => {
     let frame = 0;
     const safeArea = document.createElement('div');
@@ -56,7 +56,10 @@ function useLayoutMeasurements(): Layout {
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
       });
-      setLayout({ viewport, controls, obstacles: [...readRects(SURFACES, viewport), ...controls], modal });
+      const shell = document.querySelector<HTMLElement>('.app-shell');
+      const sidebarWidth = shell ? parseFloat(getComputedStyle(shell).paddingLeft) || 0 : 0;
+      const sidebarRight = sidebarWidth > 0 ? (shell?.getBoundingClientRect().left ?? 0) + sidebarWidth : viewport.x;
+      setLayout({ viewport, controls, obstacles: [...readRects(SURFACES, viewport), ...controls], navigation: readRects('.study-dock,.study-menu-trigger,.topbar', viewport), sidebarRight, modal });
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
     const resize = new ResizeObserver(schedule);
@@ -98,7 +101,6 @@ export function MascotWidget() {
   const [dragging, setDragging] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [dragSize, setDragSize] = useState<MascotSize | null>(null);
-  const [clickPosition, setClickPosition] = useState<MascotRect | null>(null);
   const [bubbleMeasurements, setBubbleMeasurements] = useState<MascotBubbleMeasurements | null>(null);
   const measureBubble = useCallback((value: MascotBubbleMeasurements) => setBubbleMeasurements(previous =>
     previous?.text === value.text && previous.widths === value.widths && previous.maxHeight === value.maxHeight
@@ -107,7 +109,6 @@ export function MascotWidget() {
   const drag = useRef<Drag | null>(null);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clickHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const characterButton = useRef<HTMLButtonElement>(null);
   const visible = !config.hidden && !suppressed && !layout.modal;
   const mobile = viewport.width <= 620;
@@ -115,58 +116,28 @@ export function MascotWidget() {
   const fullSize = { width, height: Math.round(width * 1.18) };
   const defaultPoint = { x: viewport.x + viewport.width - fullSize.width - 24, y: viewport.y + viewport.height - fullSize.height - 24 };
   const preferred = { x: config.x ?? defaultPoint.x, y: config.y ?? defaultPoint.y };
-  // Anchored placements follow viewport changes; the saved y/x are never overwritten by avoidance.
-  if (config.anchor === 'left') preferred.x = viewport.x + 24;
+  // Scrolling changes the page under this fixed dock, never its size or saved position.
+  if (config.anchor === 'left') preferred.x = Math.max(viewport.x, layout.sidebarRight) + 24;
   if (config.anchor === 'right') preferred.x = defaultPoint.x;
   if (config.anchor === 'bottom') preferred.y = defaultPoint.y;
-  const fullPosition = findMascotRestingPlacement(preferred, fullSize, viewport, layout.obstacles, config.side);
-  // Try a readable miniature before falling back to a narrow edge tab.
-  const miniSize = { width: mobile ? 64 : 80, height: mobile ? 76 : 94 };
-  const miniPosition = fullPosition ? null : findMascotRestingPlacement(preferred, miniSize, viewport, layout.obstacles, config.side);
-  const compactSize = { width: mobile ? 12 : 18, height: 64 };
-  const compact = fullPosition === null || Boolean(dragSize && dragSize.width < fullSize.width);
-  const edge = dragSize ? dragSize.width <= compactSize.width : !fullPosition && !miniPosition;
-  const restingSize = fullPosition ? fullSize : miniPosition ? miniSize : compactSize;
-  const edgePreferred = { x: config.side === 'left' ? viewport.x + 2 : viewport.x + viewport.width - compactSize.width - 2, y: preferred.y };
-  const compactPosition = findMascotEdgePlacement(preferred.y, compactSize, viewport, layout.obstacles, config.side);
-  const restingPosition = dragPosition ?? clickPosition ?? fullPosition ?? miniPosition ?? compactPosition ?? clampMascot(edgePreferred, compactSize, viewport, 2);
-  const baseSize = dragSize ?? (clickPosition ? { width: clickPosition.width, height: clickPosition.height } : restingSize);
+  const size = dragSize ?? fullSize;
+  const position = dragPosition ?? resolveMascotDock(preferred, size, viewport, config.side, layout.sidebarRight);
   const bubbleWidths = [...new Set((mobile ? [220, 168, 148, 120] : [280, 220, 176, 148, 120]).map(value => Math.max(48, Math.min(value, viewport.width - 24))))];
   const bubbleMaxHeight = Math.max(48, Math.min(180, viewport.height - 24));
   const measuredSizes = bubble && bubbleMeasurements?.text === bubble.text && bubbleMeasurements.widths === bubbleWidths.join(',')
     && bubbleMeasurements.maxHeight === bubbleMaxHeight ? bubbleMeasurements.sizes : [];
-  // Keep the bubble attached. When a narrower bubble is enough, keep the character in place;
-  // otherwise temporarily find a clear spot for the pair without saving that adjustment.
-  const dialogueSizes = baseSize.width > 56 && baseSize.width <= 80 && !edge
-    ? [baseSize, { width: 56, height: 66 }, { width: 48, height: 57 }, { width: 32, height: 38 }] : [baseSize];
-  const bubbleLayouts = bubble && !menuOpen && !dragPosition ? dialogueSizes.flatMap(characterSize => measuredSizes.map(bubbleSize => ({ characterSize, bubbleSize, placement: findMascotBubblePlacement({
-    character: restingPosition, characterSize, bubbleSize, viewport, obstacles: layout.obstacles, inset: 8,
-  }) }))).filter(value => value.placement !== null
-    && ((value.placement.character.x + value.characterSize.width / 2 >= viewport.x + viewport.width / 2) === (config.side === 'right'))
-    && (!edge || (value.placement.character.x === restingPosition.x && value.placement.character.y === restingPosition.y))
-    && (!clickPosition || (value.characterSize === baseSize && value.placement.character.x === restingPosition.x && value.placement.character.y === restingPosition.y))) : [];
-  const bubbleLayout = bubbleLayouts.find(value => value.characterSize === baseSize && value.placement!.character.x === restingPosition.x && value.placement!.character.y === restingPosition.y) ?? bubbleLayouts[0];
-  const size = bubbleLayout?.characterSize ?? baseSize;
-  const position = bubbleLayout?.placement?.character ?? restingPosition;
+  // Only the speech bubble adapts: try clear whitespace, then a floating callout above
+  // non-interactive content. Neither pass is allowed to move or shrink the character.
+  const bubbleLayouts = bubble && !menuOpen && !dragPosition ? [layout.obstacles, layout.controls].flatMap(obstacles => measuredSizes.map(bubbleSize => ({ bubbleSize, placement: findMascotBubblePlacement({
+    character: position, characterSize: size, bubbleSize, viewport, obstacles, characterObstacles: layout.navigation, fixedCharacter: true, inset: 8,
+  }) }))) : [];
+  const bubbleLayout = bubbleLayouts.find(value => value.placement !== null);
   const actualSide = position.x + size.width / 2 < viewport.x + viewport.width / 2 ? 'left' : 'right';
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const clearLongPress = useCallback(() => { if (longPress.current) clearTimeout(longPress.current); longPress.current = null; }, []);
-  const clearClickHold = useCallback(() => {
-    if (clickHoldTimer.current) clearTimeout(clickHoldTimer.current);
-    clickHoldTimer.current = null;
-    setClickPosition(null);
-  }, []);
-  const interactAt = useCallback((point: MascotPoint, heldSize: MascotSize) => {
-    if (clickHoldTimer.current) clearTimeout(clickHoldTimer.current);
-    // A bubble may need to move the pair, but never move the next double-click target away.
-    setClickPosition({ ...point, ...heldSize });
-    clickHoldTimer.current = setTimeout(() => { clickHoldTimer.current = null; setClickPosition(null); }, 360);
-    mascot.interact();
-  }, [mascot]);
   const cancelDrag = useCallback(() => {
     clearLongPress();
-    clearClickHold();
     mascot.cancelGesture();
     if (snapTimer.current) clearTimeout(snapTimer.current);
     snapTimer.current = null; setSnapping(false);
@@ -174,15 +145,14 @@ export function MascotWidget() {
     drag.current = null;
     if (pointerId !== undefined && characterButton.current?.hasPointerCapture(pointerId)) characterButton.current.releasePointerCapture(pointerId);
     setDragging(false); setPressed(false); setDragPosition(null); setDragSize(null);
-  }, [clearLongPress, clearClickHold, mascot]);
+  }, [clearLongPress, mascot]);
   useEffect(() => {
     const onVisibility = () => { if (document.hidden) cancelDrag(); };
     window.addEventListener('blur', cancelDrag);
     document.addEventListener('visibilitychange', onVisibility);
-    return () => { window.removeEventListener('blur', cancelDrag); document.removeEventListener('visibilitychange', onVisibility); clearLongPress(); if (snapTimer.current) clearTimeout(snapTimer.current); if (clickHoldTimer.current) clearTimeout(clickHoldTimer.current); };
+    return () => { window.removeEventListener('blur', cancelDrag); document.removeEventListener('visibilitychange', onVisibility); clearLongPress(); if (snapTimer.current) clearTimeout(snapTimer.current); };
   }, [cancelDrag, clearLongPress]);
   useEffect(() => { if (!visible) { cancelDrag(); setMenuOpen(false); } }, [visible, cancelDrag]);
-  useEffect(() => { if (edge) { mascot.cancelGesture(); clearClickHold(); } }, [edge, mascot, clearClickHold]);
 
   const pointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!event.isPrimary || event.button !== 0 || drag.current) return;
@@ -194,7 +164,6 @@ export function MascotWidget() {
     // rather than its CSS transition target, so the character never jumps.
     const painted = event.currentTarget.parentElement!.getBoundingClientRect();
     const origin = { x: painted.left, y: painted.top };
-    clearClickHold();
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { id: event.pointerId, origin, pointer: { x: event.clientX, y: event.clientY }, current: origin, moved: false, longPressed: false, size };
     setDragPosition(origin); setDragSize(size);
@@ -230,8 +199,7 @@ export function MascotWidget() {
       snapTimer.current = setTimeout(() => { setSnapping(false); snapTimer.current = null; }, 240);
       mascot.updateConfig(snapped);
     } else if (!active.longPressed) {
-      if (edge) setMenuOpen(true);
-      else interactAt(active.origin, active.size);
+      mascot.interact();
     }
     setDragPosition(null); setDragSize(null);
   };
@@ -239,13 +207,11 @@ export function MascotWidget() {
   const menuHeight = Math.min(560, Math.max(60, viewport.height - 24));
   const menuPoint = clampMascot({ x: actualSide === 'right' ? position.x + size.width - 224 : position.x, y: position.y - menuHeight - 8 }, { width: 224, height: menuHeight }, viewport, 12);
 
-  // Even a tiny handle must not sit on a critical action. The header remains a restore entry.
-  if (!visible || (!dragPosition && !fullPosition && !miniPosition && !compactPosition)) return null;
+  if (!visible) return null;
   return createPortal(<div className="mascot-portal" data-mascot-root="true" onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()}>
-    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}${edge ? ' is-edge' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-compact={compact} data-mode={edge ? 'edge' : compact ? 'mini' : 'full'} data-dragging={dragging} data-small-dialogue={size.width < 48} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
-      <button ref={characterButton} type="button" className="mascot-character-button" data-testid="mascot-drag-handle" aria-label={edge ? '阅读助手已收起，点击打开设置，拖动调整位置' : compact ? 'Lexi 阅读助手，点击打招呼，拖动调整位置' : '和 Lexi 打招呼，拖动调整位置'} title={edge ? '阅读空间较满，点击打开助手设置' : 'Lexi · 拖动调整位置，右键打开设置'} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelDrag} onLostPointerCapture={() => { if (drag.current) cancelDrag(); }} onContextMenu={event => { event.preventDefault(); cancelDrag(); setMenuOpen(true); }} onClick={event => { if (event.detail === 0) { if (edge) setMenuOpen(true); else { const rect = event.currentTarget.parentElement!.getBoundingClientRect(); interactAt({ x: rect.left, y: rect.top }, { width: rect.width, height: rect.height }); } } }} onDragStart={event => event.preventDefault()}>
-        {edge ? <span className="mascot-edge-content" data-testid="mascot-collapsed-handle" aria-hidden="true"><Leaf size={mobile ? 8 : 12} /><span>Lexi</span></span>
-          : <MascotCharacter state={state} reactionId={reactionId} gesture={gesture} interactionEnabled={config.interactionEnabled} side={actualSide} pressed={pressed} dragging={dragging} compact={false} />}
+    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-mode="full" data-dragging={dragging} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
+      <button ref={characterButton} type="button" className="mascot-character-button" data-testid="mascot-drag-handle" aria-label="和 Lexi 打招呼，拖动调整位置" title="Lexi · 拖动调整位置，右键打开设置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelDrag} onLostPointerCapture={() => { if (drag.current) cancelDrag(); }} onContextMenu={event => { event.preventDefault(); cancelDrag(); setMenuOpen(true); }} onClick={event => { if (event.detail === 0) mascot.interact(); }} onDragStart={event => event.preventDefault()}>
+        <MascotCharacter state={state} reactionId={reactionId} gesture={gesture} interactionEnabled={config.interactionEnabled} side={actualSide} pressed={pressed} dragging={dragging} />
       </button>
       <button type="button" className="mascot-menu-toggle" aria-label="Lexi 助手设置" aria-expanded={menuOpen} data-testid="mascot-menu-toggle" onPointerDown={event => event.stopPropagation()} onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={14} aria-hidden="true" /></button>
     </div>
@@ -253,7 +219,7 @@ export function MascotWidget() {
     {bubble && !menuOpen && !pressed && !dragging && (bubbleLayout?.placement
       ? <MascotBubble {...bubble} {...bubbleLayout.placement.bubble} width={bubbleLayout.bubbleSize.width} maxHeight={bubbleMaxHeight} side={bubbleLayout.placement.side} tailOffset={bubbleLayout.placement.tailOffset} dismiss={mascot.dismissBubble} />
       : <span className="mascot-accessible-status" role="status" aria-live="polite">{bubble.text}</span>)}
-    {menuOpen && <MascotMenu x={menuPoint.x} y={menuPoint.y} maxHeight={menuHeight} scale={config.scale} idleBubbleEnabled={config.idleBubbleEnabled} interactionEnabled={config.interactionEnabled} interactionBlocked={interactionBlocked} collapsed={edge} onScale={scale => mascot.updateConfig({ scale })} onIdle={idleBubbleEnabled => mascot.updateConfig({ idleBubbleEnabled })} onInteraction={interactionEnabled => mascot.updateConfig({ interactionEnabled })} onGesture={kind => { mascot.playGesture(kind); closeMenu(); }} onReset={mascot.resetPosition} onHide={() => { closeMenu(); mascot.hide(); }} onClose={closeMenu} />}
+    {menuOpen && <MascotMenu x={menuPoint.x} y={menuPoint.y} maxHeight={menuHeight} scale={config.scale} idleBubbleEnabled={config.idleBubbleEnabled} interactionEnabled={config.interactionEnabled} interactionBlocked={interactionBlocked} onScale={scale => mascot.updateConfig({ scale })} onIdle={idleBubbleEnabled => mascot.updateConfig({ idleBubbleEnabled })} onInteraction={interactionEnabled => mascot.updateConfig({ interactionEnabled })} onGesture={kind => { mascot.playGesture(kind); closeMenu(); }} onReset={mascot.resetPosition} onHide={() => { closeMenu(); mascot.hide(); }} onClose={closeMenu} />}
   </div>, document.body);
 }
 

@@ -8,22 +8,23 @@ export type MascotBubblePlacement = {
 };
 type Options = {
   character: MascotPoint; characterSize: MascotSize; bubbleSize: MascotSize;
-  viewport: MascotViewport; obstacles: MascotRect[]; inset?: number; gap?: number;
+  viewport: MascotViewport; obstacles: MascotRect[]; characterObstacles?: MascotRect[];
+  fixedCharacter?: boolean; inset?: number; gap?: number;
 };
 const sides: readonly MascotBubbleSide[] = ['top', 'bottom', 'left', 'right'];
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 
-/** Keep a measured bubble attached, temporarily moving the pair only when no nearby position fits. */
-export function findMascotBubblePlacement({ character, characterSize, bubbleSize, viewport, obstacles, inset = 12, gap = 10 }: Options): MascotBubblePlacement | null {
+/** Keep a measured bubble attached. A fixed character never moves to make room for dialogue. */
+export function findMascotBubblePlacement({ character, characterSize, bubbleSize, viewport, obstacles, characterObstacles = obstacles, fixedCharacter = false, inset = 12, gap = 10 }: Options): MascotBubblePlacement | null {
   if (![character.x, character.y, viewport.x, viewport.y, inset, gap].every(Number.isFinite)
     || ![characterSize.width, characterSize.height, bubbleSize.width, bubbleSize.height, viewport.width, viewport.height].every(value => Number.isFinite(value) && value > 0)
     || inset < 0 || gap < 0) return null;
   const inside = (rect: MascotRect) => rect.x >= viewport.x + inset - .001 && rect.y >= viewport.y + inset - .001
     && rect.x + rect.width <= viewport.x + viewport.width - inset + .001
     && rect.y + rect.height <= viewport.y + viewport.height - inset + .001;
-  const clear = (rect: MascotRect) => inside(rect) && obstacles.every(obstacle => !mascotRectsOverlap(rect, obstacle, 4));
+  const clear = (rect: MascotRect, protectedRects: MascotRect[]) => inside(rect) && protectedRects.every(obstacle => !mascotRectsOverlap(rect, obstacle, 4));
   const candidate = (point: MascotPoint, bubble: MascotPoint, side: MascotBubbleSide): MascotBubblePlacement | null => {
-    if (!clear({ ...point, ...characterSize }) || !clear({ ...bubble, ...bubbleSize })) return null;
+    if (!clear({ ...point, ...characterSize }, characterObstacles) || !clear({ ...bubble, ...bubbleSize }, obstacles)) return null;
     const horizontal = side === 'top' || side === 'bottom';
     const origin = horizontal ? bubble.x : bubble.y;
     const span = horizontal ? bubbleSize.width : bubbleSize.height;
@@ -62,6 +63,9 @@ export function findMascotBubblePlacement({ character, characterSize, bubbleSize
       if (placement) return placement;
     }
   }
+
+  // Dialogue may use another side or width, but must not move the user's parked character.
+  if (fixedCharacter) return null;
 
   // Find the nearest free bounding bundle. Empty corners remain protected as a conservative fallback.
   let best: MascotBubblePlacement | null = null;

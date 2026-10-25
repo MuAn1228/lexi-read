@@ -16,10 +16,10 @@ function valid(result, input = options) {
   const character = { ...result.character, ...input.characterSize }, bubble = { ...result.bubble, ...input.bubbleSize };
   const gap = input.gap ?? 10, inset = input.inset ?? 12;
   assert.equal(mascotRectsOverlap(character, bubble), false);
-  for (const rect of [character, bubble]) {
+  for (const [rect, obstacles] of [[character, input.characterObstacles ?? input.obstacles], [bubble, input.obstacles]]) {
     assert.ok(rect.x >= input.viewport.x + inset - .01 && rect.y >= input.viewport.y + inset - .01);
     assert.ok(rect.x + rect.width <= input.viewport.x + input.viewport.width - inset + .01 && rect.y + rect.height <= input.viewport.y + input.viewport.height - inset + .01);
-    for (const obstacle of input.obstacles) assert.equal(mascotRectsOverlap(rect, obstacle, 4), false);
+    for (const obstacle of obstacles) assert.equal(mascotRectsOverlap(rect, obstacle, 4), false);
   }
   if (result.side === 'top') assert.equal(character.y - bubble.y - bubble.height, gap);
   if (result.side === 'bottom') assert.equal(bubble.y - character.y - character.height, gap);
@@ -73,6 +73,45 @@ test('joint relocation finds room for the attached pair without mutating saved p
   const before = structuredClone(input);
   const result = valid(findMascotBubblePlacement(input), input);
   assert.notDeepEqual(result.character, input.character); assert.deepEqual(input, before);
+});
+
+test('fixed dialogue rejects relocation even when the pair fits elsewhere in the viewport', () => {
+  const input = { ...options, fixedCharacter: true, obstacles: [{ x: 230, y: 200, width: 360, height: 90 }, { x: 230, y: 404, width: 360, height: 90 }, { x: 110, y: 298, width: 230, height: 96 }, { x: 440, y: 298, width: 240, height: 96 }] };
+  const before = structuredClone(input);
+  assert.equal(findMascotBubblePlacement(input), null);
+  const movable = valid(findMascotBubblePlacement({ ...input, fixedCharacter: false }), input);
+  assert.notDeepEqual(movable.character, input.character);
+  assert.deepEqual(input, before);
+});
+
+test('a parked character may overlap a soft reading surface while its bubble remains clear', () => {
+  const input = { ...options, fixedCharacter: true, characterObstacles: [], obstacles: [{ x: 340, y: 290, width: 100, height: 110 }] };
+  const before = structuredClone(input);
+  const result = valid(findMascotBubblePlacement(input), input);
+  assert.deepEqual(result.character, input.character);
+  assert.equal(result.side, 'bottom');
+  assert.equal(mascotRectsOverlap({ ...result.character, ...input.characterSize }, input.obstacles[0]), true);
+  assert.equal(findMascotBubblePlacement({ ...input, characterObstacles: undefined }), null);
+  assert.deepEqual(input, before);
+});
+
+test('fixed dialogue still protects navigation under the character and content under the bubble', () => {
+  const navigation = { x: 340, y: 290, width: 100, height: 110 };
+  assert.equal(findMascotBubblePlacement({ ...options, fixedCharacter: true, characterObstacles: [navigation] }), null);
+  const bubbleBlocked = { ...options, fixedCharacter: true, characterObstacles: [], obstacles: [{ x: 0, y: 0, width: 800, height: 700 }] };
+  assert.equal(findMascotBubblePlacement(bubbleBlocked), null);
+});
+
+test('fixed dialogue chooses any clear adjacent side without changing character size or position', () => {
+  const blocks = { top: { x: 180, y: 215, width: 450, height: 75 }, bottom: { x: 180, y: 404, width: 450, height: 80 }, left: { x: 110, y: 298, width: 230, height: 96 }, right: { x: 440, y: 298, width: 240, height: 96 } };
+  for (const side of ['top', 'bottom', 'left', 'right']) {
+    const input = { ...options, fixedCharacter: true, obstacles: Object.entries(blocks).filter(([key]) => key !== side).map(([, value]) => value) };
+    const before = structuredClone(input);
+    const result = valid(findMascotBubblePlacement(input), input);
+    assert.equal(result.side, side);
+    assert.deepEqual(result.character, input.character);
+    assert.deepEqual(input, before);
+  }
 });
 
 test('crowded and undersized viewports reject impossible pairs instead of separating or clipping them', () => {
