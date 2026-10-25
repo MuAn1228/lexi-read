@@ -26,7 +26,8 @@ test('config validates persisted primitives and safely recovers corrupt or missi
   assert.deepEqual(normalizeMascotConfig({ x: Infinity, y: '30', anchor: 'top', side: 'bad', scale: -10, hidden: 'true' }),
     { ...defaultMascotConfig, scale: .75 });
   const valid = { x: 24, y: 40, anchor: 'left', side: 'left', scale: 1.25, hidden: true, idleBubbleEnabled: false };
-  assert.deepEqual(parseMascotConfig(JSON.stringify(valid)), valid);
+  assert.deepEqual(parseMascotConfig(JSON.stringify(valid)), { ...valid, interactionEnabled: true });
+  assert.equal(parseMascotConfig(JSON.stringify({ ...valid, interactionEnabled: false })).interactionEnabled, false);
   assert.equal(normalizeMascotConfig({ scale: 20 }).scale, 1.25);
   assert.equal(normalizeMascotConfig({ scale: NaN }).scale, 1);
 });

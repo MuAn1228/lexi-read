@@ -1,6 +1,8 @@
 import type { MascotEvent } from './mascotEvents';
 
 export type MascotState = 'idle' | 'reading' | 'thinking' | 'explaining' | 'searching' | 'success' | 'uncertain' | 'error';
+export type MascotGestureKind = 'nod' | 'tilt' | 'hop' | 'stretch' | 'pet';
+export type MascotGesture = { id: number; kind: MascotGestureKind; until: number };
 
 export type MascotAssets = {
   idle: string;
@@ -9,6 +11,7 @@ export type MascotAssets = {
   thinking?: string;
   happy?: string;
   error?: string;
+  pet?: string;
 };
 
 export type MascotConfig = {
@@ -19,6 +22,7 @@ export type MascotConfig = {
   scale: number;
   hidden: boolean;
   idleBubbleEnabled: boolean;
+  interactionEnabled: boolean;
 };
 
 export type MascotBubbleValue = { id: number; text: string; priority: number };
@@ -29,6 +33,8 @@ export type MascotSnapshot = {
   bubble: MascotBubbleValue | null;
   config: MascotConfig;
   suppressed: boolean;
+  gesture: MascotGesture | null;
+  interactionBlocked: boolean;
 };
 
 export type MascotApi = {
@@ -41,6 +47,8 @@ export type MascotApi = {
   hide: () => void;
   interact: () => void;
   dismissBubble: () => void;
+  playGesture: (kind: MascotGestureKind) => void;
+  cancelGesture: () => void;
 };
 
 export type { MascotEvent } from './mascotEvents';

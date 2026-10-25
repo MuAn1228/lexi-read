@@ -20,6 +20,11 @@ export const mascotMessages = {
   feedback: ['反馈记下了。', '已保存，继续按你的节奏学。'],
   error: ['这次请求没有完成，可以稍后再试，或者继续读。', '这次没能得到结果，我先陪你继续读。'],
   fallback: ['模型暂时没回应，先用已有的离线结果帮你。'],
+  gestureNod: ['嗯，我在。', '收到，继续按你的节奏读。'],
+  gestureTilt: ['换个角度，也许就明白了。', '让我换个角度看看。'],
+  gestureHop: ['好，打起一点精神。', '稍微活动一下，接着读。'],
+  gestureStretch: ['放松一下肩膀和眼睛吧。', '伸个懒腰，再慢慢往下读。'],
+  gesturePet: ['收到这份鼓励了。', '谢谢，我会安静陪你读。'],
 } as const;
 
 export type MascotMessageGroup = keyof typeof mascotMessages;

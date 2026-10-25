@@ -9,19 +9,32 @@
 .mascot-widget { position: absolute; top: 0; left: 0; pointer-events: none; }
 .mascot-widget.is-snapping { transition: transform 240ms cubic-bezier(.22,.8,.25,1); }
 .mascot-widget.is-dragging { transition: none; }
-.mascot-character-button { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* Clip character motion and stickers to the rectangle reserved by the placement solver. */
+.mascot-character-button { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; overflow: hidden; background: transparent; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .mascot-character-button:active, .mascot-widget.is-dragging .mascot-character-button { cursor: grabbing; }
 .mascot-character { display: block; width: 100%; height: 100%; position: relative; transform-origin: bottom center; transition: transform 210ms cubic-bezier(.34,1.56,.64,1); }
 .mascot-character.is-pressed { transform: scale(1.04,.90); }
-.mascot-character-facing, .mascot-character-breath, .mascot-character-reaction { width: 100%; height: 100%; display: block; transform-origin: bottom center; }
+.mascot-character-gesture, .mascot-character-facing, .mascot-character-breath, .mascot-character-reaction { width: 100%; height: 100%; display: block; transform-origin: bottom center; }
 .mascot-character-facing { transform: scaleX(var(--mascot-facing, 1)); }
 .mascot-character-breath { animation: mascot-breathe 3.6s ease-in-out infinite; }
+.mascot-character-gesture[data-gesture='nod'] { animation: mascot-gesture-nod 600ms ease-in-out; }
+.mascot-character-gesture[data-gesture='tilt'] { animation: mascot-gesture-tilt 800ms ease-in-out; }
+.mascot-character-gesture[data-gesture='hop'] { animation: mascot-gesture-hop 900ms cubic-bezier(.22,.65,.35,1); }
+.mascot-character-gesture[data-gesture='stretch'] { animation: mascot-gesture-stretch 1100ms ease-in-out; }
+.mascot-character-gesture[data-gesture='pet'] { animation: mascot-gesture-pet 1000ms ease-in-out; }
+.mascot-character-gesture:not([data-gesture='none']) .mascot-character-breath { animation: none; }
+.mascot-character-gesture[data-gesture='pet'] .mascot-character-reaction { animation: none; }
+.mascot-widget[data-dragging='true'] .mascot-character-gesture, .mascot-widget[data-dragging='true'] .mascot-character-breath, .mascot-widget[data-dragging='true'] .mascot-character-reaction { animation: none; }
 .mascot-character img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: crisp-edges; image-rendering: pixelated; pointer-events: none; user-select: none; -webkit-user-drag: none; }
 .mascot-character img[data-pixelated='false'] { image-rendering: auto; }
 .mascot-character-reaction.is-reading { animation: mascot-notice 440ms ease-out; }
 .mascot-character-reaction.is-thinking, .mascot-character-reaction.is-searching { animation: mascot-thought 520ms ease-out; }
 .mascot-character-reaction.is-success, .mascot-character-reaction.is-explaining { animation: mascot-nod 520ms ease-out; }
 .mascot-character-reaction.is-uncertain, .mascot-character-reaction.is-error { animation: mascot-question 440ms ease-out; }
+.mascot-emotion-badge { position: absolute; top: 7%; right: 1%; display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #c5d6bf; border-radius: 50% 50% 50% 3px; color: #477253; background: #fbfff3; pointer-events: none; animation: mascot-emotion-appear 160ms ease-out; }
+.mascot-emotion-badge[data-mood='heart'] { color: #a65f73; background: #fff7f7; border-color: #e0c4cc; }
+.mascot-emotion-badge[data-mood='thinking'], .mascot-emotion-badge[data-mood='searching'] { color: #637da2; background: #f5f8ff; border-color: #c8d3e2; }
+.mascot-emotion-badge[data-mood='error'], .mascot-emotion-badge[data-mood='curious'] { color: #987744; background: #fffbef; border-color: #e3d5b6; }
 .mascot-state-light { position: absolute; right: 23%; bottom: 9%; width: 5px; height: 5px; background: #809f92; border: 1px solid #fdfbf3; pointer-events: none; }
 .mascot-state-light[data-state='thinking'], .mascot-state-light[data-state='searching'] { background: #647baf; }
 .mascot-state-light[data-state='error'], .mascot-state-light[data-state='uncertain'] { background: #bd879a; }
@@ -32,6 +45,7 @@
 .mascot-character.is-compact { height: 36px; width: 36px; margin-left: calc((100% - 36px) / 2); overflow: hidden; }
 .mascot-character.is-compact .mascot-character-facing { width: 52px; height: 62px; margin-left: -8px; }
 .mascot-character.is-compact .mascot-state-light { right: 8px; bottom: 2px; }
+.mascot-character.is-compact .mascot-emotion-badge { display: none; }
 .mascot-edge-label { display: block; position: absolute; left: 0; right: 0; bottom: 19px; text-align: center; font: 9px/1 Georgia,serif; color: #45655b; }
 .mascot-widget.is-edge .mascot-menu-toggle { width: 100%; right: 0; height: 17px; border: 0; border-top: 1px solid #d4ddce; border-radius: 0; }
 .mascot-bubble { position: absolute; top: 0; left: 0; min-height: 64px; max-height: 82px; padding: 14px 30px 14px 14px; border: 2px solid #405e58; border-radius: 2px; background: #fffdf3; box-shadow: 3px 3px 0 #3b59551a; pointer-events: auto; font-size: 12px; line-height: 1.85; animation: mascot-bubble-appear 150ms ease-out; }
@@ -44,6 +58,18 @@
 .mascot-menu-heading button { display: grid; place-items: center; padding: 3px; border: 0; background: transparent; }
 .mascot-menu fieldset { margin: 0; padding: 8px 0 0; border: 0; }
 .mascot-menu legend { padding: 0; color: #7e8c7d; font-size: 11px; }
+.mascot-interaction-settings { margin-bottom: 4px; padding-bottom: 12px; border-bottom: 1px solid #e5e9dc; }
+.mascot-interaction-setting { display: flex; align-items: center; gap: 7px; padding: 3px 0 7px; line-height: 1.5; }
+.mascot-interaction-setting input { margin: 0; accent-color: #3f745c; }
+.mascot-gesture-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.mascot-gesture-options button { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 7px; border: 1px solid #d7dfcf; border-radius: 3px; background: #f6f9f0; color: #3d6551; text-align: left; font: inherit; line-height: 1.5; }
+.mascot-gesture-options button:last-child { grid-column: 1 / -1; }
+.mascot-gesture-options button small { color: #83917d; font-size: 9px; font-weight: 400; }
+.mascot-gesture-options button:hover:enabled { background: #eaf1e2; border-color: #a0b89b; }
+.mascot-gesture-options button:active:enabled { background: #dfead7; }
+.mascot-gesture-options button:disabled { cursor: default; opacity: .5; }
+.mascot-gesture-options button:focus-visible, .mascot-interaction-setting input:focus-visible { outline: 2px solid #668f67; outline-offset: 2px; }
+.mascot-interaction-hint { margin-top: 9px; color: #81907b; font-size: 10px; line-height: 1.7; }
 .mascot-size-options { display: flex; gap: 5px; }
 .mascot-size-options button { flex: 1; padding: 5px 9px; border: 1px solid #d7dfcf; border-radius: 2px; background: transparent; }
 .mascot-size-options button[aria-pressed='true'] { background: #e7efdf; color: #315a48; border-color: #7b9981; }
@@ -58,5 +84,11 @@
 @keyframes mascot-nod { 0%,100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(2px) rotate(2deg); } 70% { transform: translateY(-1px); } }
 @keyframes mascot-question { 0%,100% { transform: rotate(0); } 40% { transform: rotate(-3deg); } }
 @keyframes mascot-bubble-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mascot-gesture-nod { 0%,100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(4px) rotate(3deg); } 62% { transform: translateY(-1px) rotate(-1deg); } }
+@keyframes mascot-gesture-tilt { 0%,100% { transform: rotate(0); } 32%,62% { transform: rotate(-7deg); } 80% { transform: rotate(2deg); } }
+@keyframes mascot-gesture-hop { 0%,100% { transform: translateY(0) scale(1); } 16% { transform: translateY(2px) scale(1.025,.96); } 43% { transform: translateY(-6%) scale(.98,1.02); } 70% { transform: translateY(1px) scale(1.025,.96); } }
+@keyframes mascot-gesture-stretch { 0%,100% { transform: translateY(0) scale(1); } 38%,62% { transform: translateY(-4px) scale(1.035,1.06); } 80% { transform: translateY(1px) scale(1,.99); } }
+@keyframes mascot-gesture-pet { 0%,100% { transform: translateY(0) rotate(0); } 25%,65% { transform: translateY(2px) rotate(-2deg); } 45%,80% { transform: translateY(1px) rotate(2deg); } }
+@keyframes mascot-emotion-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 620px) { .app-shell .topbar .profile > span { display: none; } .mascot-widget.is-edge .mascot-edge-label { display: none; } .mascot-bubble { padding-top: 12px; padding-bottom: 12px; } }
-@media (prefers-reduced-motion: reduce) { .mascot-widget, .mascot-character { transition: none !important; } .mascot-character-breath, .mascot-character-reaction, .mascot-bubble { animation: none !important; } .mascot-character.is-pressed { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mascot-widget, .mascot-character { transition: none !important; } .mascot-character-gesture, .mascot-character-breath, .mascot-character-reaction, .mascot-emotion-badge, .mascot-bubble { animation: none !important; } .mascot-character.is-pressed { transform: none; } }

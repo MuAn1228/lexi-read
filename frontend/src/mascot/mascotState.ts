@@ -1,12 +1,12 @@
 import type { MascotEvent } from './mascotEvents';
-import type { MascotBubbleValue, MascotConfig, MascotState } from './mascotTypes';
+import type { MascotBubbleValue, MascotConfig, MascotGestureKind, MascotState } from './mascotTypes';
 import { chooseMascotMessage } from './mascotMessages';
 import type { MascotMessageGroup } from './mascotMessages';
 
 export const MASCOT_STORAGE_KEY = 'lexi:mascot:config';
 export const MASCOT_BUBBLE_COOLDOWN = 2500;
 export const defaultMascotConfig: MascotConfig = {
-  x: null, y: null, anchor: 'right', side: 'right', scale: 1, hidden: false, idleBubbleEnabled: true,
+  x: null, y: null, anchor: 'right', side: 'right', scale: 1, hidden: false, idleBubbleEnabled: true, interactionEnabled: true,
 };
 
 export function normalizeMascotConfig(value: unknown): MascotConfig {
@@ -20,6 +20,7 @@ export function normalizeMascotConfig(value: unknown): MascotConfig {
     scale: typeof candidate.scale === 'number' && Number.isFinite(candidate.scale) ? Math.max(0.75, Math.min(1.25, candidate.scale)) : 1,
     hidden: candidate.hidden === true,
     idleBubbleEnabled: typeof candidate.idleBubbleEnabled === 'boolean' ? candidate.idleBubbleEnabled : true,
+    interactionEnabled: typeof candidate.interactionEnabled === 'boolean' ? candidate.interactionEnabled : true,
   };
 }
 
@@ -47,6 +48,7 @@ export type MascotAction = EventAction
   | { type: 'cancel'; operationId: string; now: number }
   | { type: 'tick'; now: number }
   | { type: 'dismiss'; now: number }
+  | { type: 'gestureLine'; kind: MascotGestureKind; now: number; choice: number; enabled: boolean }
   | { type: 'interact'; now: number; choice: number; enabled: boolean };
 
 export function createMascotRuntime(): MascotRuntime {
@@ -58,6 +60,10 @@ export function mascotCurrentState(runtime: MascotRuntime): MascotState {
   if (runtime.transient && (runtime.transient.priority >= 2 || !runtime.pending.length)) return runtime.transient.state;
   const pending = runtime.pending.at(-1);
   return pending ? pending.kind === 'analysis' ? 'thinking' : 'searching' : 'idle';
+}
+
+export function mascotInteractionBlocked(runtime: MascotRuntime, now: number): boolean {
+  return runtime.pending.length > 0 || Boolean(runtime.transient && runtime.transient.until > now && runtime.transient.priority >= 2);
 }
 
 export function mascotNextExpiry(runtime: MascotRuntime): number | null {
@@ -101,6 +107,12 @@ export function reduceMascot(runtime: MascotRuntime, action: MascotAction): Masc
   if (action.type === 'interact') {
     const next = { ...current, reactionId: current.reactionId + 1 };
     return action.enabled ? speak(next, 'idle', 0, action.now, action.choice) : next;
+  }
+  if (action.type === 'gestureLine') {
+    const groups: Record<MascotGestureKind, MascotMessageGroup> = {
+      nod: 'gestureNod', tilt: 'gestureTilt', hop: 'gestureHop', stretch: 'gestureStretch', pet: 'gesturePet',
+    };
+    return action.enabled ? speak(current, groups[action.kind], 0, action.now, action.choice) : current;
   }
 
   const { event, now, sample, choice } = action;
