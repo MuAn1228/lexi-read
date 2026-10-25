@@ -3,6 +3,8 @@ import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, Book
 import type { CSSProperties } from 'react';
 import { useFocusReading } from './useFocusReading';
 import { useSpeech } from './SpeechProvider';
+import { useMascot } from './mascot/useMascot';
+import { MascotControls } from './mascot/MascotControls';
 import { browserStorageKey, errorMessage, learningStorageKey, request, reviewStorageKey } from './api';
 import ContextPanel from './ContextPanel';
 import { MotionNumber, SavedToast } from './MotionPrimitives';
@@ -60,6 +62,7 @@ function rememberedDocument(): number { try { return Number(localStorage.getItem
 function forgetDocument() { try { localStorage.removeItem(browserStorageKey('document')); } catch { /* Optional reading preference. */ } }
 
 export default function App() {
+  const mascot = useMascot();
   const [view, setView] = useState<View>('reader');
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [document, setDocument] = useState<ReadingDocument | null>(null);
@@ -137,6 +140,10 @@ export default function App() {
   const initializingRef = useRef(false);
   const focusReading = useFocusReading(view === 'reader' && !uploadOpen && proofread === null && !readerBlocked && !restorationLocked, document?.id ?? null);
   const { stop: stopSpeech } = useSpeech();
+  useEffect(() => {
+    mascot.setEnvironment({ suppressed: focusReading.active || uploadOpen || proofread !== null || restorationLocked });
+    return () => mascot.setEnvironment({ suppressed: false });
+  }, [mascot, focusReading.active, uploadOpen, proofread, restorationLocked]);
   useEffect(() => { stopSpeech(); }, [stopSpeech, view, document?.id, selectedId, articleTextRevision, uploadOpen, proofread, focusReading.active, focusReading.lookupOpen]);
 
   const vocabularyOperationBusy = useCallback((value: boolean) => {
@@ -549,14 +556,17 @@ export default function App() {
   const nextWord = useCallback(() => {
     if (proofreadLock.current || readerBlockedRef.current || !filteredWords.length) return;
     const index = filteredWords.findIndex(word => word.id === selectedId || word.lemma === selected?.lemma);
-    setCitationFocus(null); setSelectedId(filteredWords[(index + 1) % filteredWords.length].id);
-  }, [filteredWords, selectedId, selected?.lemma]);
+    const next = filteredWords[(index + 1) % filteredWords.length];
+    setCitationFocus(null); setSelectedId(next.id);
+    mascot.emit({ type: 'WORD_SELECTED', word: next.word });
+  }, [filteredWords, selectedId, selected?.lemma, mascot]);
   const mark = useCallback(async (word: string, status: WordStatus, occurrence?: Occurrence) => {
     if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || savingRef.current || busyRef.current) return;
     savingRef.current = true; setSaving(true); setError('');
     const next = occurrence ? filteredWords[(Math.max(0, filteredWords.findIndex(item => item.lemma === occurrence.lemma)) + 1) % filteredWords.length] : undefined;
     try {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(word)}`, { method: 'PUT', body: JSON.stringify({ status, ...(occurrence && document ? { document_id: document.id } : {}) }) });
+      if (updated.status) mascot.emit({ type: 'WORD_MARKED', word: updated.word, status: updated.status });
       ++libraryGeneration.current; // Invalidate a library load started before this write.
       // Updating a status must not move the focused table row or shift other pages.
       setVocabulary(values => values.some(item => item.id === updated.id)
@@ -567,7 +577,7 @@ export default function App() {
       setNotice(`${word} · ${status === 'KNOWN' ? '已掌握' : status === 'UNKNOWN' ? '不认识' : '不确定'}，已保存`);
     } catch (e) { setError(errorMessage(e)); }
     finally { savingRef.current = false; setSaving(false); }
-  }, [document, filteredWords]);
+  }, [document, filteredWords, mascot]);
   const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<void> => {
     if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
     savingRef.current = true; setSaving(true); setError('');
@@ -575,6 +585,7 @@ export default function App() {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(item.vocabulary.word)}`, {
         method: 'PUT', body: JSON.stringify({ status, origin: 'review', request_id: requestId, ...(item.occurrence ? { document_id: item.occurrence.document_id } : {}) }),
       });
+      if (updated.status) mascot.emit({ type: 'WORD_MARKED', word: updated.word, status: updated.status });
       ++libraryGeneration.current;
       setVocabulary(values => [updated, ...values.filter(word => word.id !== updated.id)]);
       setDocument(value => value ? { ...value, words: value.words.map(word => word.lemma === updated.lemma ? { ...word, status: updated.status } : word) } : null);
@@ -583,7 +594,7 @@ export default function App() {
       void refreshLearning().catch(e => setError(`自评已保存；暂未刷新词库与学习足迹：${errorMessage(e)}`));
     }
     finally { savingRef.current = false; setSaving(false); }
-  }, [refreshLearning]);
+  }, [refreshLearning, mascot]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (focusReading.active && !focusReading.lookupOpen) return;
@@ -605,7 +616,7 @@ export default function App() {
   </div>;
 
   return <DictionaryProvider resetKey={restorationLocked} vocabulary={vocabulary} onLearningChanged={refreshLearning} onGenerated={result => setVocabulary(current => current.map(entry => entry.lemma === result.lemma ? { ...entry, meaning_summary: entry.meaning_summary || result.detail?.summary || null, phonetic: entry.phonetic || result.dictionary?.phonetic || null } : entry))}><div className={`app-shell${focusReading.active ? ' is-reading-focus' : ''}`} data-view={view} data-focus-reading={focusReading.active}>
-    <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current && !savingRef.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><LexiMark /></span><span className="brand-name">词间<span className="brand-en">Lexi</span></span></a><span className="brand-tagline">在文章里，记住单词。</span></div><div className="profile"><span className="local-dot" /><span>{health?.auth_mode === 'guest' ? '我的学习空间' : '本机学习空间'}</span></div></header>
+    <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current && !savingRef.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><LexiMark /></span><span className="brand-name">词间<span className="brand-en">Lexi</span></span></a><span className="brand-tagline">在文章里，记住单词。</span></div><div className="profile"><MascotControls /><span className="local-dot" /><span>{health?.auth_mode === 'guest' ? '我的学习空间' : '本机学习空间'}</span></div></header>
     <main>
       <div className="focus-reading-bar" hidden={!focusReading.active}>
         <div className="focus-reading-title"><span>专注阅读</span><strong>{document?.title}</strong></div>
@@ -629,7 +640,7 @@ export default function App() {
         {document ? <>
           <section className="reading-bar studio-spotlight"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong><MotionNumber value={markedCount} /><span> / {uniqueWords.length}</span></strong></div><div className="progress-track" role="meter" aria-label="词汇扫描进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div style={{ width: `${progress}%` }} /></div></div><div className="legend"><span><i className="known" />已掌握</span><span><i className="unknown" />不认识</span><span><i className="uncertain" />不确定</span></div></section>
           <div className="reading-library-tools"><button ref={focusReading.entryButton} type="button" className="text-button reading-focus-entry" disabled={isLoading || saving || readerBlocked || proofread !== null} onClick={focusReading.toggle} aria-label="进入专注阅读"><Maximize2 size={15} />专注阅读</button><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || readerBlocked || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving || readerBlocked} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving || readerBlocked} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
-          <div ref={focusReading.workspace} className="reading-workspace" style={{ '--focus-font-size': `${focusReading.fontSize}px` } as CSSProperties}><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} disabled={saving || isLoading || readerBlocked || proofread !== null} onProofread={openProofread} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word?.id ?? null); if (word) focusReading.openLookup(); }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word.id); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading || readerBlocked || proofread !== null} /><div id="reading-lookup" className={`reading-lookup${focusReading.lookupOpen ? ' is-open' : ''}`}><div className="focus-lookup-heading" hidden={!focusReading.active}><span>查词与原句发音</span><button ref={focusReading.lookupClose} type="button" className="icon-button" aria-label="关闭专注查词" onClick={focusReading.closeLookup}><X size={17} /></button></div><ContextPanel word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading || readerBlocked || proofread !== null} vocabulary={vocabulary} onLearningChanged={refreshLearning} sentenceCache={sentenceCache} sentencePageStart={sentencePageStart} sentenceKey={sentenceKey} /></div></div>
+          <div ref={focusReading.workspace} className="reading-workspace" style={{ '--focus-font-size': `${focusReading.fontSize}px` } as CSSProperties}><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} disabled={saving || isLoading || readerBlocked || proofread !== null} onProofread={openProofread} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word?.id ?? null); if (word) { mascot.emit({ type: 'WORD_SELECTED', word: word.word }); focusReading.openLookup(); } }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word.id); mascot.emit({ type: 'WORD_SELECTED', word: word.word }); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading || readerBlocked || proofread !== null} /><div id="reading-lookup" className={`reading-lookup${focusReading.lookupOpen ? ' is-open' : ''}`}><div className="focus-lookup-heading" hidden={!focusReading.active}><span>查词与原句发音</span><button ref={focusReading.lookupClose} type="button" className="icon-button" aria-label="关闭专注查词" onClick={focusReading.closeLookup}><X size={17} /></button></div><ContextPanel word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading || readerBlocked || proofread !== null} vocabulary={vocabulary} onLearningChanged={refreshLearning} sentenceCache={sentenceCache} sentencePageStart={sentencePageStart} sentenceKey={sentenceKey} /></div></div>
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <StudioLanding upload={uploadZone(true)} disabled={isLoading || saving || restorationLocked} onNavigate={setView} />}
       </>}

@@ -10,6 +10,7 @@ import { findRelationSource, relationPageNumbers, relationPracticeItems, relatio
 import type { RelationContext, RelationWorkspace, RelationWorkspaceFilters, WorkspaceRelation } from './relationWorkspace';
 import './relationWorkspace.css';
 import { MotionNumber } from './MotionPrimitives';
+import { useMascot } from './mascot/useMascot';
 
 type FeedbackAction = 'UNKNOWN' | 'USEFUL' | 'NOT_USEFUL';
 type Attempt = { action: FeedbackAction; request_id: string; batch_id: number; word: string };
@@ -22,6 +23,7 @@ export default function RelationsView({ vocabulary, disabled, revision, onLearni
   onOpenDocument: (documentId: number, occurrenceId: number) => void; onReview: () => void; onBusyChange: (busy: boolean) => void;
 }) {
   const openDictionary = useDictionary();
+  const { emit } = useMascot();
   const cache = useRef<WordExpansionCache>(new Map());
   const [sourceQuery, setSourceQuery] = useState('');
   const [selectedWord, setSelectedWord] = useState('');
@@ -117,6 +119,7 @@ export default function RelationsView({ vocabulary, disabled, revision, onLearni
         setFeedback(current => ({ ...current, [item.id]: { status: value.vocabulary?.status ?? value.status ?? item.target.status, useful: value.useful } }));
         setRetry(value => value + 1);
       }
+      emit({ type: 'FEEDBACK_SAVED', requestId: attempt.request_id, word: attempt.word });
       // A saved action is not reported as failed merely because refreshing another panel failed.
       await refreshLearning();
     } catch (error) {

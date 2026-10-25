@@ -5,6 +5,8 @@ import RelatedWordCard from './RelatedWordCard';
 import type { Vocabulary } from './types';
 import { cacheExpansion, expansionCacheKey, expansionLabel, expansionOptions, expansionPath, expansionRequestBody, expansionSourceLabel, isExpansionRecommendation } from './wordExpansion';
 import type { ExpansionRecommendation, ExpansionRelation, WordExpansionCache } from './wordExpansion';
+import { useMascot } from './mascot/useMascot';
+import { createMascotOperationId } from './mascot/mascotEvents';
 import './wordExpansion.css';
 
 const noLearningChange = async () => {};
@@ -12,6 +14,7 @@ const noLearningChange = async () => {};
 export default function WordExpansion({ word, cache, vocabulary = [], onLearningChanged }: {
   word: string; cache: WordExpansionCache; vocabulary?: Vocabulary[]; onLearningChanged?: () => Promise<void>;
 }) {
+  const { emit, cancelOperation } = useMascot();
   const [relation, setRelation] = useState<ExpansionRelation>('domain_related');
   const [recommendation, setRecommendation] = useState<ExpansionRecommendation | null>(null);
   const [sessionCached, setSessionCached] = useState(false);
@@ -20,15 +23,20 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
   const [error, setError] = useState('');
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
+  const operation = useRef<string | null>(null);
   const heading = useId(); const panel = useId();
   const selectedOption = expansionOptions.find(option => option.relation === relation)!;
 
   useEffect(() => {
     ++generation.current; controller.current?.abort(); controller.current = null;
+    if (operation.current) { cancelOperation(operation.current); operation.current = null; }
     const saved = cache.get(expansionCacheKey(word, relation)) ?? null;
     setRecommendation(saved); setSessionCached(Boolean(saved)); setLoading(false); setError('');
-    return () => { ++generation.current; controller.current?.abort(); controller.current = null; };
-  }, [word, relation, cache]);
+    return () => {
+      ++generation.current; controller.current?.abort(); controller.current = null;
+      if (operation.current) { cancelOperation(operation.current); operation.current = null; }
+    };
+  }, [word, relation, cache, cancelOperation]);
 
   useEffect(() => {
     if (!loading) return;
@@ -39,6 +47,7 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
 
   const stop = () => {
     ++generation.current; controller.current?.abort(); controller.current = null; setLoading(false);
+    if (operation.current) { cancelOperation(operation.current); operation.current = null; }
   };
 
   const select = (value: ExpansionRelation) => {
@@ -50,6 +59,8 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
     if (controller.current) return;
     const abort = new AbortController(); controller.current = abort;
     const attempt = ++generation.current;
+    const operationId = createMascotOperationId('expansion'); operation.current = operationId;
+    emit({ type: 'RECOMMENDATION_STARTED', operationId, word });
     setLoading(true); setSeconds(0); setError('');
     try {
       const result = await request<unknown>(expansionPath(word), {
@@ -59,10 +70,17 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
       if (!isExpansionRecommendation(result, relation)) throw new Error('拓展结果暂时无法读取，请重试。');
       setRecommendation(result); setSessionCached(false);
       cacheExpansion(cache, word, relation, result);
+      emit({ type: 'RECOMMENDATION_SUCCESS', operationId, word, source: result.source, count: Math.min(3, result.items.length) });
     } catch (reason) {
-      if (attempt === generation.current && !abort.signal.aborted) setError(errorMessage(reason));
+      if (attempt === generation.current && !abort.signal.aborted) {
+        setError(errorMessage(reason));
+        emit({ type: 'RECOMMENDATION_ERROR', operationId, word });
+      }
     } finally {
-      if (attempt === generation.current && !abort.signal.aborted) { setLoading(false); controller.current = null; }
+      if (attempt === generation.current && !abort.signal.aborted) {
+        setLoading(false); controller.current = null;
+        if (operation.current === operationId) operation.current = null;
+      }
     }
   };
 

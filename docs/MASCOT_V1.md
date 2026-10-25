@@ -1,0 +1,80 @@
+# Lexi 阅读助手 V1 · 2026-10-25
+
+## 使用
+
+刷新本机词间页面即可看到阅读助手。拖动角色调整位置；点击显示一句短提示；右键、长按约 500ms 或点击 `…` 打开设置。支持三档大小、关闭点击台词、恢复位置和隐藏。隐藏后可从页头「阅读助手」恢复。
+
+选词和保存掌握状态会触发轻微反应；主动分析语境、发现关联词及保存关联反馈会显示对应状态。AI 等待只表示真实请求正在进行，取消、切词或离开会静默撤销等待提示。助手不会自动说话、朗读、滚动页面、查词或写入学习记录。
+
+## 素材与参考
+
+按用户最后的选择，本机暂用参考项目的原角色 `DSniang1.png`，原图保持不变；此图是平滑插画，当前不将它伪装成像素画。图片位于 Git 忽略的 `frontend/public/local-mascot/`，本机 Vite 构建会复制到同样忽略的 `frontend/dist/`。本次没有发布到 GitHub 或公网。
+
+参考项目的[素材声明](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget/blob/5247dd6813d6e4430728f39ccc63d43cda046022/PROVENANCE.md)明确将美术素材排除在 MIT 之外，不提供跨项目再分发授权。当前仅用于用户要求的本机预览，公开构建或安装包需先替换图片或取得授权。固定版本、原图 SHA-256 和来源见 `frontend/src/mascot/assets/README.md` 与本机 `source.json`。
+
+代码参考了原项目的交互思路，以 React + TypeScript 独立编写，没有安装其插件、引入 DSH、凭据、余额统计、音效或原设置中心，也没有实质复制其代码。
+
+仓库另保留一个原创 64×72 透明像素 PNG 作为缺图兜底：`assets/idle.png`。手工像素源为 `idle.pixels.txt`，可用标准 Python 执行 `scripts/generate_mascot_asset.py` 重建。内置图片生成服务返回 404 后，用户曾明确选择手工绘制；随后选择暂用原项目角色。没有调用付费图片生成 API。缺少本机原图时，只失败一次并使用兜底图片，不会在每次反应时反复请求缺图。
+
+## 文件
+
+| 文件 | 职责 |
+| --- | --- |
+| `frontend/src/mascot/MascotProvider.tsx` | 独立 API/快照 Context、定时器、设置持久化 |
+| `useMascot.ts` | 稳定的发送接口及单独的快照订阅 |
+| `mascotTypes.ts`、`mascotEvents.ts` | 配置、状态、素材接口、统一事件及本机操作 ID |
+| `mascotState.ts`、`mascotMessages.ts` | 纯状态机、并发请求归属、优先级、冷却与集中台词 |
+| `MascotWidget.tsx`、`mascotPosition.ts` | Portal、pointer 拖拽、吸附、测量、避让和临时收起 |
+| `MascotCharacter.tsx` | 素材选择与失败兜底、朝向、按压、反应层 |
+| `MascotBubble.tsx`、`MascotMenu.tsx` | 对话框、关闭、轻量设置和键盘隔离 |
+| `MascotControls.tsx`、`mascot.css` | 页头恢复入口及所有挂件样式 |
+| `frontend/tests/mascotState.test.mjs`、`mascotPosition.test.mjs` | 状态、配置与位置边界检查 |
+
+已有文件修改：`main.tsx` 放置 Provider/Widget 并导入 CSS；`App.tsx` 接入显式选词、下一词和已确认标记、复习自评，传递专注/导入/OCR/恢复时的临时收起状态；`ContextPanel.tsx`、`WordExpansionPanel.tsx` 观察原有请求；`RelatedWordCard.tsx`、`RelationsView.tsx` 观察原有保存结果。`.gitignore` 排除本机预览素材，README、CURRENT_STATUS、VERIFICATION 和本文记录交付结果。
+
+## 事件与学习语义
+
+| 事件 | 发送时机 | 视觉状态 |
+| --- | --- | --- |
+| `WORD_SELECTED` | 点击原文/词表，或主动进入下一词 | reading |
+| `WORD_MARKED` | 原有保存请求已确认返回状态，包括复习自评 | KNOWN → success；UNKNOWN → thinking；UNCERTAIN → uncertain |
+| `ANALYSIS_STARTED` | 点击语境释义/重试，立即响应；原有 300ms 防抖保留 | thinking |
+| `ANALYSIS_SUCCESS` / `ANALYSIS_ERROR` | 当前分析确认成功/失败，忽略取消和迟到结果 | explaining / error |
+| `RECOMMENDATION_STARTED` | 主动发现/刷新关联词或生成词汇拓展 | searching |
+| `RECOMMENDATION_SUCCESS` / `RECOMMENDATION_ERROR` | 当前推荐确认成功/失败 | success / error |
+| `FEEDBACK_SAVED` | KNOWN、UNKNOWN、USEFUL、NOT_USEFUL 的原有 POST 成功后 | success |
+
+被动选词仍不是 LOOKUP；SHOWN、VIEWED 均不触发 FEEDBACK_SAVED。反馈请求的业务 UUID、失败重试、已有 API 路径及请求体保持不变。缓存读取不发送 AI 开始事件，不增加请求。统计刷新失败不会误报为 AI 失败。
+
+视觉操作使用独立递增 ID，不占用业务 UUID，也不依赖 HTTPS 的 Web Crypto。每个进行中的请求进入 pending 集合，取消只移除所属操作并清理它的等待气泡；迟到结果找不到有效操作时直接忽略。并发请求完成后，短暂展示结果，再回到其他仍在进行的请求状态。
+
+状态全集：`idle / reading / thinking / explaining / searching / success / uncertain / error`。没有 pending 或临时状态时回到 idle。它是纯视觉状态机，不执行请求、数据库写入、焦点移动或滚动。
+
+## 气泡与动效
+
+- 优先级：error(3) > AI 等待/结果(2) > 学习动作(1) > 点击日常台词(0)。低优先级不能盖住更重要的状态或气泡。
+- 普通气泡最短间隔 2500ms；选词约 15%、标记约 12% 出现文字，每次仍可触发角色反应。AI 和错误不受普通冷却限制。
+- 日常台词只在主动点击角色时显示，不自动闲聊；随机选择排除上一句。普通和 AI 气泡约 4 秒、错误约 7 秒，可主动关闭；请求状态可持续到真实请求结束。
+- 推荐数量采用实际卡片数，最多 3；空结果使用中性提示。`source=offline` 只说明离线来源，不推断模型故障；仅显式 `fallback=true` 可使用回退文案，当前接入不会从 warning 文本猜测。
+- 整体通过独立层实现：位置 translate、朝向 scaleX、按压 scale(1.04,.90)、反应和呼吸。松手吸附约 240ms，Q 弹约 210ms，呼吸 3.6s/2px。只有松手吸附才过渡位置，自动避让即时完成，避免角色追着滚动穿越正文。
+- `prefers-reduced-motion: reduce` 关闭呼吸、状态动画、Q 弹和吸附过渡，保留即时状态、位置和文字。原角色按原图渲染；原创兜底采用 crisp-edges/pixelated。
+
+## 布局、移动端与存储
+
+Provider 在 `SpeechProvider` 内、`App` 外；Widget 通过 Portal 放在 body，不进入 OCR 或正文布局。挂件层级 15，低于 toast(20)、导航(35)、模态(40/80)；只有角色、菜单和气泡可接收指针，其余覆盖层穿透。
+
+默认偏好右下角 24px。桌面完整宽度约 130–180px，手机约 90–116px 且不超过视口 30%。位置测量保护正文、词表、语境、阅读工具、学习统计、导航、按钮和 toast。空间不足时先使用 80px 桌面/64px 手机小角色，再退至窄边缘入口；连边缘也无空位则临时收起，页头入口仍可用。气泡找不到安全空位时仅保留屏幕阅读器状态提示。
+
+仅角色使用 `touch-action:none`；页面仍可正常滚动。主指针捕获，4px 阈值区分点击与拖动，拖动 1:1 无过渡，取消/失去捕获/窗口失焦均清理；重新抓住正在吸附的角色，从当前实际绘制位置继续。松手在左右或底部附近吸附，中间保留自由坐标；左边只镜像角色，文字保持正向。
+
+viewport、visualViewport、窗口旋转和 CSS 安全区共同决定可用范围。布局与滚动变化合并到 rAF 测量，不持续轮询，不动画正文尺寸。专注阅读、导入/OCR/恢复和原生对话框打开时临时收起。
+
+设置只存浏览器 **`lexi:mascot:config`**：`x / y / anchor / side / scale / hidden / idleBubbleEnabled`。坏 JSON、非法数字和存储不可用会安全降级。视口夹取、键盘弹出、避让和临时收起不覆盖用户保存的偏好，不发送 LearningEvent。
+
+## 验证与边界
+
+分阶段 TypeScript/Vite 构建通过，前端测试 222 项通过（新增 19 项状态/位置测试）。隔离浏览器含挂件交互 10 组、业务联动 9 组、既有阅读回归 10 组；涵盖五种窗口、触屏取消、低动态、模态、存储、原图/缺图、反馈 UUID、缓存、取消和四态快捷键。所有 API 响应均为合成数据，无真实 AI/OCR/发音生成或学习写入。
+
+完整本机 18 张表及 `.env` 前后指纹一致；8000 首页、JS/CSS 和原图已与最终磁盘构建逐字节核对。工作目录 `work/qa-mascot/` 保存报告与合成截图，浏览器脚本位于 `work/browser/mascot-*-check.mjs`。既有入口包仍有 Vite 500kB 提示，不影响构建通过；本轮没有新增依赖。
+
+V2 未实现：多 sprite 状态帧、音效、AI 生成台词、连续学习/成就反应、词汇图谱反应和 Live2D。当前保留独立事件/素材接口，角色替换无需改学习组件。

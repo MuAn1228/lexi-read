@@ -11,6 +11,8 @@ __pycache__/
 backend/data/
 node_modules/
 frontend/dist/
+# Optional upstream artwork for local preview; its license does not cover redistribution.
+frontend/public/local-mascot/
 *.log
 .DS_Store
 *.tsbuildinfo

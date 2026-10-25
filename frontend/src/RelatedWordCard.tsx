@@ -4,6 +4,7 @@ import { Check, Eye, LoaderCircle, RefreshCw, ThumbsDown, ThumbsUp, X } from 'lu
 import { errorMessage, request } from './api';
 import type { RecommendationAction, RecommendationFeedback, RelatedWord, RelationType, WordStatus } from './types';
 import PronunciationButton from './PronunciationButton';
+import { useMascot } from './mascot/useMascot';
 
 const relationLabels: Record<RelationType, string> = {
   word_family: '同词族', synonym: '近义词', antonym: '反义词',
@@ -18,6 +19,7 @@ export default function RelatedWordCard({ item, batchId, status, disabled, onSav
   variant?: 'recommendation' | 'expansion';
   motionIndex?: number;
 }) {
+  const { emit } = useMascot();
   const card = useRef<HTMLElement>(null);
   const reason = useRef<HTMLParagraphElement>(null);
   const disclosureId = useId();
@@ -57,6 +59,10 @@ export default function RelatedWordCard({ item, batchId, status, disabled, onSav
         if (passive) setShownFailure(null);
         else { setFeedback(result); setFailure(null); }
       }
+      // Impressions and opening a reason are observations, not saved learning choices.
+      if (attempt.action !== 'SHOWN' && attempt.action !== 'VIEWED') {
+        emit({ type: 'FEEDBACK_SAVED', requestId: attempt.request_id, word: item.word });
+      }
       // A response to a passive impression must not overwrite a newer deliberate choice.
       // Complete global refresh even if navigation has unmounted this card.
       await refresh();
@@ -69,7 +75,7 @@ export default function RelatedWordCard({ item, batchId, status, disabled, onSav
       if (!passive) savingAction.current = false;
       if (active.current) { if (passive) setShownBusy(false); else setBusy(null); }
     }
-  }, [batchId, item.word, refresh]);
+  }, [batchId, item.word, refresh, emit]);
 
   useEffect(() => {
     if (!card.current) return;

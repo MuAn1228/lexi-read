@@ -1,0 +1,62 @@
+/* The portal sits below navigation (35), dialogs (40/80) and notices (20). */
+.app-shell .topbar .profile { display: flex; }
+.mascot-header-toggle.text-button { min-height: 32px; padding: 5px 8px; gap: 5px; font-size: 11px; white-space: nowrap; }
+.mascot-header-toggle[aria-pressed='true'] { color: #3f6857; }
+.mascot-portal { position: fixed; inset: 0; z-index: 15; pointer-events: none; color: #273f46; font-family: 'Microsoft YaHei',sans-serif; }
+.mascot-portal *, .mascot-portal *::before, .mascot-portal *::after { box-sizing: border-box; }
+.mascot-safe-area-probe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+.mascot-accessible-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mascot-widget { position: absolute; top: 0; left: 0; pointer-events: none; }
+.mascot-widget.is-snapping { transition: transform 240ms cubic-bezier(.22,.8,.25,1); }
+.mascot-widget.is-dragging { transition: none; }
+.mascot-character-button { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.mascot-character-button:active, .mascot-widget.is-dragging .mascot-character-button { cursor: grabbing; }
+.mascot-character { display: block; width: 100%; height: 100%; position: relative; transform-origin: bottom center; transition: transform 210ms cubic-bezier(.34,1.56,.64,1); }
+.mascot-character.is-pressed { transform: scale(1.04,.90); }
+.mascot-character-facing, .mascot-character-breath, .mascot-character-reaction { width: 100%; height: 100%; display: block; transform-origin: bottom center; }
+.mascot-character-facing { transform: scaleX(var(--mascot-facing, 1)); }
+.mascot-character-breath { animation: mascot-breathe 3.6s ease-in-out infinite; }
+.mascot-character img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: crisp-edges; image-rendering: pixelated; pointer-events: none; user-select: none; -webkit-user-drag: none; }
+.mascot-character img[data-pixelated='false'] { image-rendering: auto; }
+.mascot-character-reaction.is-reading { animation: mascot-notice 440ms ease-out; }
+.mascot-character-reaction.is-thinking, .mascot-character-reaction.is-searching { animation: mascot-thought 520ms ease-out; }
+.mascot-character-reaction.is-success, .mascot-character-reaction.is-explaining { animation: mascot-nod 520ms ease-out; }
+.mascot-character-reaction.is-uncertain, .mascot-character-reaction.is-error { animation: mascot-question 440ms ease-out; }
+.mascot-state-light { position: absolute; right: 23%; bottom: 9%; width: 5px; height: 5px; background: #809f92; border: 1px solid #fdfbf3; pointer-events: none; }
+.mascot-state-light[data-state='thinking'], .mascot-state-light[data-state='searching'] { background: #647baf; }
+.mascot-state-light[data-state='error'], .mascot-state-light[data-state='uncertain'] { background: #bd879a; }
+.mascot-menu-toggle { position: absolute; bottom: 0; right: 1px; display: grid; place-items: center; width: 24px; height: 20px; border: 1px solid #b9c7be; border-radius: 3px; padding: 0; background: #fffdf4; color: #4b6760; pointer-events: auto; opacity: .72; }
+.mascot-menu-toggle:hover, .mascot-menu-toggle:focus-visible { opacity: 1; background: #eaf0e7; }
+.mascot-widget.is-edge { border: 1px solid #bdcbbd; border-radius: 3px; background: #fffdf5; }
+.mascot-widget.is-edge .mascot-character-button { overflow: hidden; }
+.mascot-character.is-compact { height: 36px; width: 36px; margin-left: calc((100% - 36px) / 2); overflow: hidden; }
+.mascot-character.is-compact .mascot-character-facing { width: 52px; height: 62px; margin-left: -8px; }
+.mascot-character.is-compact .mascot-state-light { right: 8px; bottom: 2px; }
+.mascot-edge-label { display: block; position: absolute; left: 0; right: 0; bottom: 19px; text-align: center; font: 9px/1 Georgia,serif; color: #45655b; }
+.mascot-widget.is-edge .mascot-menu-toggle { width: 100%; right: 0; height: 17px; border: 0; border-top: 1px solid #d4ddce; border-radius: 0; }
+.mascot-bubble { position: absolute; top: 0; left: 0; min-height: 64px; max-height: 82px; padding: 14px 30px 14px 14px; border: 2px solid #405e58; border-radius: 2px; background: #fffdf3; box-shadow: 3px 3px 0 #3b59551a; pointer-events: auto; font-size: 12px; line-height: 1.85; animation: mascot-bubble-appear 150ms ease-out; }
+.mascot-bubble::after { content: ''; position: absolute; right: 18px; bottom: -6px; width: 8px; height: 8px; background: #fffdf3; border-right: 2px solid #405e58; border-bottom: 2px solid #405e58; transform: rotate(45deg); }
+.mascot-bubble-copy { display: block; max-height: 50px; overflow: auto; overflow-wrap: anywhere; }
+.mascot-bubble-close { position: absolute; right: 5px; top: 6px; display: grid; place-items: center; width: 21px; height: 21px; background: transparent; color: #70867b; border: 0; border-radius: 2px; padding: 0; }
+.mascot-bubble-close:hover { background: #edf0e5; }
+.mascot-menu { position: absolute; top: 0; left: 0; width: 224px; padding: 14px; border: 1px solid #718c79; border-radius: 3px; background: #fffdf5; box-shadow: 3px 3px 0 #34594e1a; pointer-events: auto; font-size: 12px; overflow-y: auto; overscroll-behavior: contain; }
+.mascot-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; font-weight: 600; }
+.mascot-menu-heading button { display: grid; place-items: center; padding: 3px; border: 0; background: transparent; }
+.mascot-menu fieldset { margin: 0; padding: 8px 0 0; border: 0; }
+.mascot-menu legend { padding: 0; color: #7e8c7d; font-size: 11px; }
+.mascot-size-options { display: flex; gap: 5px; }
+.mascot-size-options button { flex: 1; padding: 5px 9px; border: 1px solid #d7dfcf; border-radius: 2px; background: transparent; }
+.mascot-size-options button[aria-pressed='true'] { background: #e7efdf; color: #315a48; border-color: #7b9981; }
+.mascot-idle-setting { display: flex; align-items: center; gap: 7px; padding: 14px 0 10px; line-height: 1.5; }
+.mascot-idle-setting input { margin: 0; accent-color: #3f745c; }
+.mascot-menu-action { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 0; border: 0; background: transparent; text-align: left; }
+.mascot-menu-action:hover { color: #487a5b; }
+.mascot-menu p { color: #839181; font-size: 10px; line-height: 1.7; padding-top: 7px; border-top: 1px solid #e5e9dc; }
+@keyframes mascot-breathe { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes mascot-notice { 0%,100% { transform: translateY(0); } 45% { transform: translateY(-3px); } }
+@keyframes mascot-thought { 0%,100% { transform: rotate(0); } 45% { transform: rotate(-3deg); } }
+@keyframes mascot-nod { 0%,100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(2px) rotate(2deg); } 70% { transform: translateY(-1px); } }
+@keyframes mascot-question { 0%,100% { transform: rotate(0); } 40% { transform: rotate(-3deg); } }
+@keyframes mascot-bubble-appear { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 620px) { .app-shell .topbar .profile > span { display: none; } .mascot-widget.is-edge .mascot-edge-label { display: none; } .mascot-bubble { padding-top: 12px; padding-bottom: 12px; } }
+@media (prefers-reduced-motion: reduce) { .mascot-widget, .mascot-character { transition: none !important; } .mascot-character-breath, .mascot-character-reaction, .mascot-bubble { animation: none !important; } .mascot-character.is-pressed { transform: none; } }

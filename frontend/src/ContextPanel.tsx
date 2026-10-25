@@ -9,6 +9,8 @@ import SentencePanel from './SentencePanel';
 import { useDictionary } from './DictionaryPanel';
 import type { SentenceAnalysisCache } from './sentenceAnalysis';
 import PronunciationButton, { SpeechSettings } from './PronunciationButton';
+import { useMascot } from './mascot/useMascot';
+import { createMascotOperationId } from './mascot/mascotEvents';
 
 type ContextPanelProps = {
   word: Occurrence | null; onMark: (status: WordStatus) => void; saving: boolean;
@@ -38,6 +40,7 @@ function ContextProcessing({ label, skeleton = true }: { label: string; skeleton
 
 function ContextWordContent({ word, onMark, saving, vocabulary, onLearningChanged, sentenceCache, sentencePageStart, sentenceKey }: ContextPanelProps & { word: Occurrence }) {
   const openDictionary = useDictionary();
+  const { emit, cancelOperation } = useMascot();
   const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,17 +53,42 @@ function ContextWordContent({ word, onMark, saving, vocabulary, onLearningChange
   const [syncError, setSyncError] = useState('');
   const occurrenceId = word?.id;
   const active = useRef(false);
-  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const analysisOperation = useRef<string | null>(null);
+  const recommendationOperation = useRef<string | null>(null);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      if (analysisOperation.current) cancelOperation(analysisOperation.current);
+      if (recommendationOperation.current) cancelOperation(recommendationOperation.current);
+    };
+  }, [cancelOperation]);
   const feedbackSaved = useCallback(async () => {
     await onLearningChanged();
     if (active.current) setHistoryRevision(value => value + 1);
   }, [onLearningChanged]);
+
+  const startAnalysis = () => {
+    if (analysisOperation.current) cancelOperation(analysisOperation.current);
+    const operationId = createMascotOperationId('analysis');
+    analysisOperation.current = operationId;
+    emit({ type: 'ANALYSIS_STARTED', operationId, word: word.word });
+    setRetry(value => value + 1);
+  };
+  const startRecommendation = () => {
+    if (recommendationOperation.current) cancelOperation(recommendationOperation.current);
+    const operationId = createMascotOperationId('recommendation');
+    recommendationOperation.current = operationId;
+    emit({ type: 'RECOMMENDATION_STARTED', operationId, word: word.word });
+    setRelatedRequest(value => value + 1);
+  };
 
   useEffect(() => {
     setExplanation(null); setRecommendation(null); setError(''); setRecommendError('');
     setLoading(Boolean(occurrenceId && retry)); setRecommending(false); setRelatedRequest(0);
     // Passive navigation must not become a lookup or lower future mastery scores.
     if (!occurrenceId || retry === 0) return;
+    const operationId = analysisOperation.current;
     const controller = new AbortController();
     let ignore = false;
     // Debouncing skips API calls while the user quickly scans and marks words.
@@ -69,16 +97,26 @@ function ContextWordContent({ word, onMark, saving, vocabulary, onLearningChange
         .then(value => {
           if (ignore) return;
           setExplanation(value); setHistoryRevision(revision => revision + 1); setSyncError('');
+          if (operationId) emit({ type: 'ANALYSIS_SUCCESS', operationId, word: word.word, source: value.source });
           void onLearningChanged().catch(e => { if (!ignore) setSyncError(errorMessage(e)); });
         })
-        .catch(e => { if (!ignore) setError(errorMessage(e)); })
+        .catch(e => {
+          if (ignore || controller.signal.aborted) return;
+          setError(errorMessage(e));
+          if (operationId) emit({ type: 'ANALYSIS_ERROR', operationId, word: word.word });
+        })
         .finally(() => { if (!ignore) setLoading(false); });
     }, 300);
-    return () => { ignore = true; clearTimeout(timer); controller.abort(); };
-  }, [occurrenceId, retry, onLearningChanged]);
+    return () => {
+      ignore = true; clearTimeout(timer); controller.abort();
+      if (operationId) cancelOperation(operationId);
+      if (analysisOperation.current === operationId) analysisOperation.current = null;
+    };
+  }, [occurrenceId, retry, onLearningChanged, emit, cancelOperation, word.word]);
 
   useEffect(() => {
     if (!occurrenceId || relatedRequest === 0) return;
+    const operationId = recommendationOperation.current;
     const controller = new AbortController();
     let ignore = false;
     setRecommending(true); setRecommendError('');
@@ -86,12 +124,21 @@ function ContextWordContent({ word, onMark, saving, vocabulary, onLearningChange
       .then(value => {
         if (ignore) return;
         setRecommendation(value); setHistoryRevision(revision => revision + 1); setSyncError('');
+        if (operationId) emit({ type: 'RECOMMENDATION_SUCCESS', operationId, word: word.word, source: value.source, count: Math.min(3, value.items.length) });
         void onLearningChanged().catch(e => { if (!ignore) setSyncError(errorMessage(e)); });
       })
-      .catch(e => { if (!ignore) setRecommendError(errorMessage(e)); })
+      .catch(e => {
+        if (ignore || controller.signal.aborted) return;
+        setRecommendError(errorMessage(e));
+        if (operationId) emit({ type: 'RECOMMENDATION_ERROR', operationId, word: word.word });
+      })
       .finally(() => { if (!ignore) setRecommending(false); });
-    return () => { ignore = true; controller.abort(); };
-  }, [occurrenceId, relatedRequest, onLearningChanged]);
+    return () => {
+      ignore = true; controller.abort();
+      if (operationId) cancelOperation(operationId);
+      if (recommendationOperation.current === operationId) recommendationOperation.current = null;
+    };
+  }, [occurrenceId, relatedRequest, onLearningChanged, emit, cancelOperation, word.word]);
 
   return <div className="context-content">
       <div className="context-word-heading context-word-transition"><span className="overline">IN THIS CONTEXT</span><StatusBadge status={word.status} /></div>
@@ -101,9 +148,9 @@ function ContextWordContent({ word, onMark, saving, vocabulary, onLearningChange
       <WordControls word={word.word} status={word.status} disabled={saving} onMark={onMark} />
       <div className="context-sentence context-word-transition"><span className="quote-mark">“</span><p>{word.sentence}</p></div>
       <section className="meaning-section"><div className="section-label"><span>在这里，它的意思是</span>{explanation && <span className={`source-badge ${explanation.source}`}>{explanation.source === 'llm' ? 'AI 语境释义' : '离线基础释义'}</span>}</div>
-        {!explanation && !error && <button className="button related-button context-request-button" disabled={loading} aria-busy={loading} onClick={() => setRetry(v => v + 1)}>{loading ? <LoaderCircle size={16} className="spin" /> : <BookOpen size={16} />}{loading ? '正在理解语境…' : '查看语境释义'}</button>}
+        {!explanation && !error && <button className="button related-button context-request-button" disabled={loading} aria-busy={loading} onClick={startAnalysis}>{loading ? <LoaderCircle size={16} className="spin" /> : <BookOpen size={16} />}{loading ? '正在理解语境…' : '查看语境释义'}</button>}
         {loading && <ContextProcessing label="正在结合原文理解这个词…" />}
-        {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" onClick={() => setRetry(v => v + 1)}><RefreshCw size={13} />重新获取</button></div>}
+        {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" onClick={startAnalysis}><RefreshCw size={13} />重新获取</button></div>}
         {explanation && <><h3 className="context-meaning-piece context-meaning-first">{explanation.meaning_in_context}</h3><p className="context-meaning-piece context-meaning-second">{explanation.simple_explanation}</p>{typeof explanation.importance === 'number' && Number.isFinite(explanation.importance) && <p className="context-importance context-meaning-piece context-meaning-third">文中重要程度 · <strong>{Math.round(explanation.importance * 100)} / 100</strong><span>{explanation.source === 'offline' ? '离线词表参考值，仅供阅读参考。' : '帮助安排阅读顺序，仅供参考。'}</span></p>}{explanation.warning && <p className="service-note">{explanation.warning}</p>}</>}
       </section>
       <SentencePanel word={word} disabled={saving} analysisCache={sentenceCache} pageStart={sentencePageStart} analysisKey={sentenceKey} />
@@ -111,10 +158,10 @@ function ContextWordContent({ word, onMark, saving, vocabulary, onLearningChange
       {syncError && <div className="learning-sync-error inline-error" role="alert"><p>词库统计刷新失败：{syncError}</p><button className="text-button" onClick={() => void onLearningChanged().then(() => { setSyncError(''); setHistoryRevision(revision => revision + 1); }).catch(e => setSyncError(errorMessage(e)))}><RefreshCw size={13} />刷新词库统计</button></div>}
       <section className="related-section"><div className="section-label"><span><Sparkles size={14} />关联词推荐</span><span className="tiny-badge">≤ 3 个词</span></div>
         <p className="related-intro">结合这篇文章和你的掌握情况，只挑值得一起学的词。</p>
-        {!recommendation && !recommendError && <button className="button related-button context-request-button" disabled={recommending} aria-busy={recommending} onClick={() => setRelatedRequest(v => v + 1)}>{recommending ? <LoaderCircle size={16} className="spin" /> : <ArrowDownRight size={16} />}{recommending ? '正在筛选关联词…' : '发现关联词'}</button>}
+        {!recommendation && !recommendError && <button className="button related-button context-request-button" disabled={recommending} aria-busy={recommending} onClick={startRecommendation}>{recommending ? <LoaderCircle size={16} className="spin" /> : <ArrowDownRight size={16} />}{recommending ? '正在筛选关联词…' : '发现关联词'}</button>}
         {recommending && <ContextProcessing label="正在结合文章和你的学习记录筛选关联词…" skeleton={!recommendation} />}
-        {recommendError && <div className="inline-error" role="alert"><p>{recommendError}</p><button className="text-button" onClick={() => setRelatedRequest(v => v + 1)}>重试</button></div>}
-        {recommendation && <><div className="recommendation-meta"><span className={`source-badge ${recommendation.source}`}>{recommendation.source === 'llm' ? 'AI 个性化推荐' : '离线规则推荐'}</span><button className="text-button" disabled={recommending} onClick={() => setRelatedRequest(v => v + 1)} aria-label="刷新关联推荐"><RefreshCw size={12} /></button></div>
+        {recommendError && <div className="inline-error" role="alert"><p>{recommendError}</p><button className="text-button" onClick={startRecommendation}>重试</button></div>}
+        {recommendation && <><div className="recommendation-meta"><span className={`source-badge ${recommendation.source}`}>{recommendation.source === 'llm' ? 'AI 个性化推荐' : '离线规则推荐'}</span><button className="text-button" disabled={recommending} onClick={startRecommendation} aria-label="刷新关联推荐"><RefreshCw size={12} /></button></div>
           {recommendation.items.slice(0, 3).map((item, index) => <RelatedWordCard key={`${recommendation.batch_id}:${item.word}`} item={item} batchId={recommendation.batch_id} disabled={saving || recommending} status={vocabulary.find(entry => entry.lemma === item.word.toLowerCase() || entry.word.toLowerCase() === item.word.toLowerCase())?.status ?? null} onSaved={feedbackSaved} motionIndex={index} />)}
           {!recommendation.items.length && <p className="service-note">暂时没有合适的关联词。继续阅读，积累更多语境。</p>}
           {recommendation.items.length > 0 && <p className="service-note">学习优先级按语境和学习记录的规则评分，用于安排学习顺序。</p>}
