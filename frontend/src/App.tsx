@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, LoaderCircle, Maximize2, Minimize2, Minus, Network, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react';
+import { AlertCircle, Archive, ArrowRight, BarChart3, Bookmark, BookMarked, BookOpen, ChevronDown, Clock3, FileImage, FileText, FolderOpen, Globe, LoaderCircle, Maximize2, Minimize2, Minus, Network, Plus, RefreshCw, Search, Sparkles, Upload, X } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { useFocusReading } from './useFocusReading';
 import { useSpeech } from './SpeechProvider';
@@ -9,6 +9,8 @@ import { browserStorageKey, errorMessage, learningStorageKey, request, reviewSto
 import ContextPanel from './ContextPanel';
 import { MotionNumber, SavedToast } from './MotionPrimitives';
 import { DictionaryProvider } from './DictionaryPanel';
+import DictionaryLookupView from './DictionaryLookupView';
+import type { DictionaryResult } from './dictionary';
 import ArticleQuestionPanel from './ArticleQuestionPanel';
 import type { ArticleFocus } from './articleQuestions';
 import DocumentPanel from './DocumentPanel';
@@ -45,9 +47,10 @@ import type { SentenceAnalysisCache } from './sentenceAnalysis';
 import { sentenceOccurrenceKey } from './sentenceAnalysis';
 import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'practice', label: '短文练习', icon: Sparkles }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '词汇关联', icon: Network }, { value: 'history', label: '学习记录', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'dictionary', label: '查单词', icon: Search }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'practice', label: '短文练习', icon: Sparkles }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '词汇关联', icon: Network }, { value: 'history', label: '学习记录', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
 const titles: Record<View, { title: string; subtitle: string }> = {
   reader: { title: '阅读空间', subtitle: '导入英文材料，阅读查词，收录需要复习的生词。' },
+  dictionary: { title: '查单词', subtitle: '输入英文单词或短语，查看中文释义、听发音，收录生词。' },
   library: { title: '文章库', subtitle: '查找文章、管理标签和书签，继续上次的阅读。' },
   vocabulary: { title: '我的词库', subtitle: '查看中文释义，搜索单词，更新掌握程度。' },
   review: { title: '生词复习', subtitle: '复习到期单词，先回想释义或完成原句填空，再记录掌握程度。' },
@@ -155,12 +158,21 @@ export default function App() {
     const generation = ++libraryGeneration.current;
     const updates = new Map(items.map(item => [item.id, item]));
     const byLemma = new Map(items.map(item => [item.lemma, item.status]));
-    setVocabulary(values => values.map(item => updates.get(item.id) ?? item));
+    setVocabulary(values => {
+      const existing = new Set(values.map(item => item.id));
+      return [...items.filter(item => !existing.has(item.id)), ...values.map(item => updates.get(item.id) ?? item)];
+    });
     setDocument(value => value ? { ...value, words: value.words.map(item => byLemma.has(item.lemma)
       ? { ...item, status: byLemma.get(item.lemma) ?? null } : item) } : null);
     void request<LearningEvent[]>('/events').then(value => {
       if (generation === libraryGeneration.current) setEvents(value);
     }).catch(() => { /* Learning data is saved; opening history retries its read. */ });
+  }, []);
+
+  const dictionaryGenerated = useCallback((result: DictionaryResult) => {
+    setVocabulary(current => current.map(entry => entry.lemma === result.lemma ? { ...entry,
+      meaning_summary: entry.meaning_summary || result.detail?.summary || null,
+      phonetic: entry.phonetic || result.dictionary?.phonetic || null } : entry));
   }, []);
 
   const navigateFromMenu = (next: View) => {
@@ -629,7 +641,7 @@ export default function App() {
     <div className="upload-icon"><Upload size={25} /></div><h3>{showImportOptions ? '导入阅读材料' : '上传英文图片'}</h3><p>{showImportOptions ? '拖入英文图片，或选择下方导入方式。' : '拖入试卷或文章截图，识别后可校对正文'}<br /><span>JPG / PNG · 最大 10 MB</span></p><div className="import-entry-actions"><button className="button primary" disabled={isLoading || saving} onClick={() => fileInput.current?.click()}><Plus size={17} />选择图片</button>{showImportOptions && <><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'text'); setError(''); }}><FileText size={16} />粘贴英文文章</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'pdf'); setError(''); }}><FileText size={16} />导入 PDF 文档</button><button className="button secondary" disabled={isLoading || saving} onClick={event => { openUpload(event.currentTarget, 'url'); setError(''); }}><Globe size={16} />导入网页链接</button></>}</div>{showImportOptions && <div className="demo-link"><button className="text-button" disabled={isLoading || saving} onClick={() => void loadDemo()}>打开示例文章 <ArrowRight size={14} /></button></div>}
   </div>;
 
-  return <DictionaryProvider resetKey={restorationLocked} vocabulary={vocabulary} onLearningChanged={refreshLearning} onGenerated={result => setVocabulary(current => current.map(entry => entry.lemma === result.lemma ? { ...entry, meaning_summary: entry.meaning_summary || result.detail?.summary || null, phonetic: entry.phonetic || result.dictionary?.phonetic || null } : entry))}><div className={`app-shell${focusReading.active ? ' is-reading-focus' : ''}`} data-view={view} data-focus-reading={focusReading.active}>
+  return <DictionaryProvider resetKey={restorationLocked} vocabulary={vocabulary} onLearningChanged={refreshLearning} onGenerated={dictionaryGenerated}><div className={`app-shell${focusReading.active ? ' is-reading-focus' : ''}`} data-view={view} data-focus-reading={focusReading.active}>
     <header className="topbar"><div className="brand-lockup"><a className="brand" href="#" onClick={e => { e.preventDefault(); if (!restorationLock.current && !savingRef.current) setView('reader'); }} aria-label="词间 Lexi 首页"><span className="brand-icon"><LexiMark /></span><span className="brand-name">词间<span className="brand-en">Lexi</span></span></a><span className="brand-tagline">在文章里，记住单词。</span></div><div className="profile"><MascotControls /><span className="local-dot" /><span>{health?.auth_mode === 'guest' ? '我的学习空间' : '本机学习空间'}</span></div></header>
     <main>
       <div className="focus-reading-bar" hidden={!focusReading.active}>
@@ -658,6 +670,7 @@ export default function App() {
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <StudioLanding upload={uploadZone(true)} disabled={isLoading || saving || restorationLocked} onNavigate={setView} />}
       </>}
+      {!restorationLocked && <DictionaryLookupView active={view === 'dictionary'} vocabulary={vocabulary} disabled={saving || isLoading || proofread !== null || readerBlocked} onSaved={item => vocabularyChanged([item])} onBusyChange={vocabularyOperationBusy} onGenerated={dictionaryGenerated} />}
       {view === 'vocabulary' && <VocabularyView vocabulary={vocabulary} saving={saving || restorationLocked} loading={initializing || !vocabularyReady} localMode={health?.auth_mode === 'local'} onOpenMaimemo={() => { if (!savingRef.current) setView('data'); }} onMark={(word, status) => void mark(word, status)} onVocabularyChanged={vocabularyChanged} onBusyChange={vocabularyOperationBusy} onReloadVocabulary={refreshLearning} initialBrowsing={browsingPreferences.current.vocabulary} onBrowsingChange={rememberVocabularyBrowsing} storageWarning={browsingStorageWarning} />}
       {view === 'library' && <DocumentLibraryView documents={documents} revision={documentRevision} disabled={saving || isLoading} onOpen={id => void openDocument(id)} onUpdate={(id, patch) => changeArticle(id, 'update', patch)} onDelete={id => changeArticle(id, 'delete')} onRestore={id => changeArticle(id, 'restore')} />}
       {view === 'data' && health?.auth_mode === 'local' && <><MaimemoPanel disabled={saving || isLoading || restorationLocked} onImported={refreshLearning} onBusyChange={setMaimemoBusy} /><DataManagementView disabled={saving || isLoading || maimemoBusy} onRestore={restoreBackup} onClearBrowserState={clearRestoredBrowserState} /></>}

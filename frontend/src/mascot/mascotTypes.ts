@@ -3,7 +3,7 @@ import type { AssistantReadingContext } from './mascotAssistant';
 
 export type MascotState = 'idle' | 'reading' | 'thinking' | 'explaining' | 'searching' | 'success' | 'uncertain' | 'error';
 export type MascotGestureKind = 'nod' | 'tilt' | 'hop' | 'stretch' | 'pet' | 'wave' | 'clap' | 'read' | 'yawn' | 'think';
-export type MascotScene = 'reader' | 'library' | 'vocabulary' | 'review' | 'practice' | 'history' | 'dashboard' | 'relations' | 'data';
+export type MascotScene = 'reader' | 'dictionary' | 'library' | 'vocabulary' | 'review' | 'practice' | 'history' | 'dashboard' | 'relations' | 'data';
 export type MascotGesture = { id: number; kind: MascotGestureKind; until: number };
 
 export type MascotAtlas = {

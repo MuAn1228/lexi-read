@@ -158,7 +158,7 @@ export const mascotMessages = {
 export type MascotMessageGroup = keyof typeof mascotMessages;
 
 const sceneGroups: Record<MascotScene, MascotMessageGroup> = {
-  reader: 'reader', library: 'library', vocabulary: 'vocabulary', review: 'review',
+  reader: 'reader', dictionary: 'vocabulary', library: 'library', vocabulary: 'vocabulary', review: 'review',
   practice: 'practice', history: 'history', dashboard: 'dashboard', relations: 'relations', data: 'data',
 };
 
