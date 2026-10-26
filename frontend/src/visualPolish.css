@@ -267,7 +267,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .reading-bar { flex-wrap: wrap; gap: 18px; padding: 18px; }
   .document-selector { flex-basis: 100%; }
   .reading-progress { flex: 1; }
-  .legend { border-left: 0; padding-left: 0; gap: 11px; }
   .text-article { padding: 24px; font-size: 21px; }
   .welcome-grid { grid-template-columns: 1fr; max-width: 580px; }
   .welcome-story { text-align: left; padding: 30px; }
@@ -290,7 +289,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .tiny-badge { font-size: 10px; }
   .reading-bookmarks { flex-wrap: wrap; }
   .reading-progress { width: auto; min-width: 130px; }
-  .legend { width: 100%; justify-content: flex-start; }
   .document-panel { height: auto; }
   .text-article { flex: none; min-height: 200px; max-height: 65vh; padding: 22px; font-size: 20px; line-height: 1.95; }
   .text-reading-guide { padding: 12px 18px; font-size: 11px; }
