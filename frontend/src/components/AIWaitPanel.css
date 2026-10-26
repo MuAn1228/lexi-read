@@ -1,0 +1,16 @@
+.ai-wait-panel { margin: 12px 0; padding: 14px; border: 1px solid var(--border, #dedfd8); border-radius: 12px; background: var(--surface, #fafbf7); color: var(--text, #28352f); min-width: 0; }
+.ai-wait-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.ai-wait-status { display: grid; gap: 5px; min-width: 0; flex: 1 1 180px; }
+.ai-wait-status strong { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.ai-wait-status > span { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 1.6; color: var(--muted, #64736a); }
+.ai-wait-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent, #52735e); flex: 0 0 auto; }
+.ai-wait-elapsed { font-size: 12px; color: var(--muted, #64736a); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ai-wait-stop { flex-shrink: 0; }
+.ai-wait-panel .ai-wait-slow { margin: 10px 0 0; font-size: 12px; line-height: 1.7; color: var(--muted, #64736a); }
+.ai-wait-preview { margin-top: 12px; border-top: 1px solid var(--border, #dedfd8); padding-top: 10px; min-width: 0; }
+.ai-wait-panel .ai-wait-draft-label { margin: 0 0 7px; font-size: 11px; color: var(--muted, #64736a); }
+.ai-wait-draft { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.85; }
+.ai-wait-panel-compact { padding: 11px; }
+.ai-wait-panel-compact .ai-wait-draft { max-height: 160px; }
+@media (max-width: 560px) { .ai-wait-status { flex-basis: 100%; } .ai-wait-draft { max-height: 180px; } }
+@media (prefers-reduced-motion: reduce) { .ai-wait-panel *, .ai-wait-panel *::before, .ai-wait-panel *::after { animation: none !important; transition: none !important; } }

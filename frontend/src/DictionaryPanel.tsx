@@ -4,9 +4,11 @@ import { createPortal } from 'react-dom';
 import { BookOpen, LoaderCircle, MessageCircle, RefreshCw, Sparkles, X } from 'lucide-react';
 import { useMascot, useMascotSnapshot } from './mascot/useMascot';
 import { errorMessage, request } from './api';
+import { requestAIStream } from './aiStream';
+import type { AIStreamPhase } from './aiStream';
+import AIWaitPanel from './components/AIWaitPanel';
 import { dictionaryAnnotationsPath, dictionaryGenerationLabel, dictionaryPath } from './dictionary';
 import type { DictionaryResult } from './dictionary';
-import { ThoughtLine } from './components/StudyInteractions';
 import PronunciationButton, { SpeechSettings } from './PronunciationButton';
 import WordExpansion from './WordExpansionPanel';
 import WordAnnotations from './WordAnnotations';
@@ -47,6 +49,9 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
   const [result, setResult] = useState<DictionaryResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generationPhase, setGenerationPhase] = useState<AIStreamPhase>('connecting');
+  const [generationPreview, setGenerationPreview] = useState('');
+  const [notice, setNotice] = useState('');
   const [readingAnnotations, setReadingAnnotations] = useState(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
@@ -70,6 +75,8 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
 
   useEffect(() => {
     const controller = new AbortController();
+    generation.current?.abort(); generation.current = null;
+    setGenerating(false); setGenerationPreview(''); setNotice('');
     setLoading(true); setError(''); setResult(null);
     request<DictionaryResult>(dictionaryPath(word), { signal: controller.signal })
       .then(value => { if (!controller.signal.aborted) setResult(value); })
@@ -78,16 +85,28 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
     return () => controller.abort();
   }, [word, retry]);
 
+  const stopGeneration = () => {
+    generation.current?.abort(); generation.current = null;
+    setGenerating(false); setGenerationPreview(''); setNotice('已停止等待，可重新生成详细讲解。');
+  };
   const generate = async () => {
     if (!result?.can_generate || result.detail || generation.current || annotationRequest.current) return;
     const controller = new AbortController(); generation.current = controller;
-    setGenerating(true); setError('');
+    const isCurrent = () => generation.current === controller && !controller.signal.aborted;
+    setGenerating(true); setGenerationPhase('connecting'); setGenerationPreview(''); setError(''); setNotice('');
     try {
-      const value = await request<DictionaryResult>(dictionaryPath(word, true), { method: 'POST', signal: controller.signal });
-      if (!controller.signal.aborted) { setResult(value); if (value.detail) onGenerated?.(value); }
-    } catch (reason) { if (!controller.signal.aborted) setError(errorMessage(reason)); }
+      const value = await requestAIStream<DictionaryResult>(`${dictionaryPath(word)}/explain-stream`, { method: 'POST', signal: controller.signal }, {
+        onStatus: phase => { if (isCurrent()) setGenerationPhase(phase); },
+        onPreview: text => { if (isCurrent()) setGenerationPreview(text); },
+      });
+      if (isCurrent()) {
+        setResult(value);
+        if (value.detail) onGenerated?.(value);
+        else if (value.warning) setError(`${value.warning} 可重试生成，本地释义仍可查看。`);
+      }
+    } catch (reason) { if (isCurrent()) setError(errorMessage(reason)); }
     finally {
-      if (!controller.signal.aborted) { setGenerating(false); generation.current = null; }
+      if (isCurrent()) { setGenerating(false); setGenerationPreview(''); generation.current = null; }
     }
   };
   const readAnnotations = async () => {
@@ -127,10 +146,11 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
     <div className="dictionary-body" aria-busy={loading}>
       {loading && <p className="dictionary-loading" role="status"><LoaderCircle size={18} className="spin" />正在读取本地释义…</p>}
       {error && <div className="dictionary-error" role="alert"><p>{error}</p>{!result && <button type="button" className="text-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} />重新读取释义</button>}</div>}
+      {notice && <p className="dictionary-empty" role="status">{notice}</p>}
       {result && <WordAnnotations result={result}
         annotationAction={result.can_fetch_annotations ? <div className="dictionary-annotation-actions"><button type="button" className="text-button" disabled={readingAnnotations || generating} onClick={() => void readAnnotations()}>{readingAnnotations ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}{readingAnnotations ? '正在读取墨墨个人注解…' : result.maimemo ? '更新墨墨个人注解' : '读取墨墨个人注解'}</button>{readingAnnotations && <p className="dictionary-empty" role="status">先看本地词义，墨墨个人注解稍后补充。</p>}</div> : undefined}
         afterDefinitions={<WordExpansion word={word} cache={expansionCache} vocabulary={vocabulary} onLearningChanged={onLearningChanged} />}
-        detailAction={<div className="dictionary-generate"><p>补充常见义项、词性、双语例句、常用搭配和易混辨析。点击后调用 AI，成功后保存在本地，方便下次查看。</p><button type="button" className="button primary" disabled={generating || readingAnnotations || !result.can_generate} onClick={() => void generate()}>{generating ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}{generating ? '正在生成详细讲解…' : dictionaryGenerationLabel(result)}</button>{generating && <ThoughtLine label="正在整理义项和双语例句，关闭窗口可停止等待。" />}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；离线词典仍可正常查看。</p>}</div>}
+        detailAction={<div className="dictionary-generate"><p>补充常见义项、词性、双语例句、常用搭配和易混辨析。点击后调用 AI，成功后保存在本地，方便下次查看。</p>{generating ? <AIWaitPanel label="正在补充详细讲解" phase={generationPhase} preview={generationPreview} onStop={stopGeneration} /> : <button type="button" className="button primary" disabled={readingAnnotations || !result.can_generate} onClick={() => void generate()}><Sparkles size={16} />{dictionaryGenerationLabel(result)}</button>}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；离线词典仍可正常查看。</p>}</div>}
       />}
     </div>
     <footer className="dictionary-footer">查看词典不会改变掌握状态或复习安排。<button type="button" className="text-button" disabled={assistantSuppressed} title={assistantSuppressed ? '退出专注阅读或完成当前操作后可使用学习助手' : undefined} onClick={() => { onClose(); mascot.openAssistant({ key: `word:${word.toLowerCase()}`, documentId: null, occurrenceId: null, word, title: null, sentence: null }); }}><MessageCircle size={14} />{assistantSuppressed ? '当前模式下助手已收起' : '和 Lexi 学这个词'}</button><button type="button" className="text-button" onClick={onClose}>返回学习</button></footer>

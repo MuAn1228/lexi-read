@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from backend.config import Settings, get_settings
 from backend.schemas import AnalysisOut, Relation
+from backend.services.ai_stream import check_cancelled, current_observer
 from backend.services.vocabulary import normalize_word
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,150 @@ def _close_idle_clients():
 
 
 atexit.register(_close_idle_clients)
+
+
+def _response_content(response):
+    response.raise_for_status()
+    choice = response.json()["choices"][0]
+    if not isinstance(choice, dict) or choice.get("finish_reason") not in (None, "stop"):
+        raise ValueError("Model response did not finish normally")
+    content = choice["message"]["content"]
+    if not isinstance(content, str) or len(content) > 30_000:
+        raise ValueError("Invalid model response")
+    return content
+
+
+def _sse_data(response):
+    """Decode SSE records rather than treating arbitrary transport chunks as JSON."""
+    data, size = [], 0
+    for line in response.iter_lines():
+        check_cancelled()
+        if not line:
+            if data:
+                yield "\n".join(data)
+            data, size = [], 0
+        elif line.startswith("data:"):
+            value = line[5:]
+            value = value[1:] if value.startswith(" ") else value
+            size += len(value)
+            if size > 256_000:
+                raise ValueError("Model stream event is too large")
+            data.append(value)
+    if data:
+        yield "\n".join(data)
+
+
+def _stream_content(client, url, headers, payload, observer):
+    # The provider's OpenAI-compatible SSE is requested explicitly. Never retry
+    # network errors, partial streams or malformed output. Only an explicit HTTP
+    # rejection of streaming permits a single ordinary request in this attempt.
+    observer.status("connecting")
+    unsupported = False
+    with client.stream("POST", url, headers=headers, json={**payload, "stream": True}) as response:
+        with observer.transport(response):
+            if _stream_unsupported(response):
+                unsupported = True
+            else:
+                response.raise_for_status()
+                content, finished, generating = "", False, False
+                for record in _sse_data(response):
+                    observer.check()
+                    if record == "[DONE]":
+                        break
+                    chunk = json.loads(record)
+                    if not isinstance(chunk, dict) or "error" in chunk:
+                        raise ValueError("Invalid model stream")
+                    choices = chunk.get("choices")
+                    if not isinstance(choices, list):
+                        raise ValueError("Invalid model stream choices")
+                    # A usage-only event has no choices. Reasoning and other
+                    # side channels are deliberately never rendered as drafts.
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    if not isinstance(choice, dict) or choice.get("index", 0) != 0:
+                        raise ValueError("Invalid model stream choice")
+                    finish = choice.get("finish_reason")
+                    if finish not in (None, "stop"):
+                        raise ValueError("Model response did not finish normally")
+                    delta = choice.get("delta", {})
+                    if not isinstance(delta, dict):
+                        raise ValueError("Invalid model stream delta")
+                    fragment = delta.get("content")
+                    if fragment is not None:
+                        if not isinstance(fragment, str) or (finished and fragment):
+                            raise ValueError("Invalid model stream content")
+                        if fragment:
+                            content += fragment
+                            if len(content) > 30_000:
+                                raise ValueError("Invalid model response")
+                            if not generating:
+                                observer.status("generating")
+                                generating = True
+                            observer.preview(content)
+                            observer.check()
+                    finished = finished or finish == "stop"
+                if not finished:
+                    raise ValueError("Model stream ended before completion")
+                observer.check()
+                observer.preview(content, force=True)
+                return content
+    if unsupported:
+        observer.status("fallback")
+        # The same business-service budget reservation remains in force. A
+        # buffered fallback does not fabricate token progress or draft previews.
+        with client.stream("POST", url, headers=headers, json=payload) as response:
+            with observer.transport(response):
+                response.raise_for_status()
+                response.read()
+                observer.check()
+                return _response_content(response)
+    raise ValueError("Invalid model stream")
+
+
+def _stream_unsupported(response):
+    if response.status_code in {404, 415}:
+        return True
+    if response.status_code not in {400, 422}:
+        return False
+    # A bad model/message/parameter is not evidence of unsupported streaming.
+    # Inspect a small error body privately; never display or log its contents.
+    parts, size = [], 0
+    for part in response.iter_bytes():
+        check_cancelled()
+        size += len(part)
+        if size > 16_000:
+            return False
+        parts.append(part)
+    text = b"".join(parts).decode("utf-8", errors="ignore").lower()
+
+    def explicit(message):
+        return isinstance(message, str) and bool(re.search(r"\bstream(?:ing)?\b", message) and re.search(
+            r"unsupported|not.{0,25}support|unknown|unrecognized|not implemented|"
+            r"not available|not allowed|extra_forbidden|extra inputs are not permitted|"
+            r"unexpected|不支持|不允许|未实现", message))
+
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return explicit(text)
+    if isinstance(body, str):
+        return explicit(body)
+    if not isinstance(body, dict):
+        return False
+    # Read error messages, never an echoed request (which could mention stream
+    # alongside an unrelated "unknown model" or invalid-message error).
+    error = body.get("error", body.get("detail", body.get("message")))
+    if isinstance(error, dict):
+        message = error.get("message", "")
+        if error.get("param") == "stream":
+            message = "stream " + str(message) + " " + str(error.get("code", ""))
+        return explicit(message)
+    if isinstance(error, list):
+        return any(isinstance(item, dict) and item.get("loc", [None])[-1:] == ["stream"]
+                   and explicit("stream " + str(item.get("msg", "")) + " " + str(item.get("type", "")))
+                   for item in error)
+    return explicit(error)
 
 
 class ExplanationData(BaseModel):
@@ -223,6 +368,7 @@ class LLMService:
         self.settings = settings or get_settings()
 
     def _complete(self, instruction: str, data: dict, schema: type[BaseModel]) -> BaseModel:
+        check_cancelled()
         settings = self.settings
         if settings.llm_provider != "openai_compatible":
             raise ValueError("Unsupported LLM provider")
@@ -242,17 +388,18 @@ class LLMService:
         if settings.llm_json_mode:
             payload["response_format"] = {"type": "json_object"}
         with _borrow_client(settings) as client:
-            response = client.post(settings.llm_base_url.rstrip("/") + "/chat/completions",
-                headers={"Authorization": f"Bearer {settings.llm_api_key}"},
-                json=payload)
-            response.raise_for_status()
-            choice = response.json()["choices"][0]
-            if not isinstance(choice, dict) or choice.get("finish_reason") not in (None, "stop"):
-                raise ValueError("Model response did not finish normally")
-            content = choice["message"]["content"]
-        if not isinstance(content, str) or len(content) > 30_000:
-            raise ValueError("Invalid model response")
-        return schema.model_validate_json(content)
+            url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+            headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+            observer = current_observer()
+            if observer is None:
+                content = _response_content(client.post(url, headers=headers, json=payload))
+            else:
+                content = _stream_content(client, url, headers, payload, observer)
+                observer.status("validating")
+        check_cancelled()
+        result = schema.model_validate_json(content)
+        check_cancelled()
+        return result
 
     def analyze_word(self, word: str, lemma: str, sentence: str, article: str,
                      learner_context: dict | None = None) -> AnalysisOut:

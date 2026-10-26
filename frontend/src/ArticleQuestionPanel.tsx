@@ -4,7 +4,8 @@ import { errorMessage, request } from './api';
 import { ARTICLE_QUESTION_LIMIT, ARTICLE_TURN_LIMIT, articleQuestionHistory, articleQuestionProblem, validArticleFocus } from './articleQuestions';
 import type { ArticleAnswer, ArticleCitation, ArticleHistory, ArticleTurn } from './articleQuestions';
 import type { ReadingDocument } from './types';
-import { FlyingSendIcon, PaperCrumpleIcon, ThoughtLine } from './components/StudyInteractions';
+import { FlyingSendIcon, PaperCrumpleIcon } from './components/StudyInteractions';
+import AIWaitPanel from './components/AIWaitPanel';
 import './articleQuestionPanel.css';
 
 const prompts = ['请用中文概括这篇文章的主要内容。', '作者的核心观点是什么？有哪些依据？', '这篇文章有哪些值得留意的细节？'];
@@ -64,6 +65,12 @@ export default function ArticleQuestionPanel({ document, disabled, onLocate, onC
       if (current === generation.current && !abort.signal.aborted) { pending.current = false; setLoading(false); controller.current = null; }
     }
   };
+  const stop = () => {
+    ++generation.current; controller.current?.abort(); controller.current = null; pending.current = false;
+    setLoading(false);
+    if (attempt) setDraft(value => value || attempt.question);
+    setAttempt(value => value ? { ...value, error: '已停止等待，问题已保留，可以重试。' } : value);
+  };
   const clear = () => {
     ++generation.current; controller.current?.abort(); controller.current = null; pending.current = false;
     setLoading(false); setTurns([]); setAttempt(null); setDraft(''); setValidation(''); setCrumple(value => value + 1); onClear();
@@ -89,7 +96,7 @@ export default function ArticleQuestionPanel({ document, disabled, onLocate, onC
               {turn.response.citations.length > 0 && <details className="article-question-citations"><summary><BookOpen size={14} />查看原文依据 <span>{turn.response.citations.length}</span></summary><ol>{turn.response.citations.map((citation, number) => <li key={`${citation.chunk_id}-${number}`}><div className="article-question-citation-label"><span>依据 {number + 1}{citation.page_number !== null ? ` · 第 ${citation.page_number} 页` : ''}</span><button type="button" className="text-button" disabled={disabled || !canLocate(citation)} onClick={() => onLocate(citation)} aria-label={`定位第 ${index + 1} 轮的第 ${number + 1} 处原文`}>定位原文<CornerDownRight size={13} /></button></div><blockquote lang="en">{citation.quote}</blockquote>{!canLocate(citation) && <p className="article-question-note">正文已变化，暂时无法定位这处引用。</p>}</li>)}</ol></details>}
             </div>
           </article>)}
-          {attempt && <article className="article-question-turn article-question-pending"><div className="article-question-user"><span className="article-question-number">{String(turns.length + 1).padStart(2, '0')}</span><p>{attempt.question}</p></div>{loading ? <ThoughtLine className="article-question-waiting" label="正在阅读原文，整理回答与依据…" /> : <div className="article-question-failure" role={attempt.error ? 'alert' : 'status'}><p>{attempt.error || attempt.response?.warning || '文章问答暂不可用，请检查模型服务后重试。'}</p><button type="button" className="text-button" disabled={disabled} onClick={() => void submit(attempt.question, attempt.history)}><RefreshCw size={14} />重试这个问题</button></div>}</article>}
+          {attempt && <article className="article-question-turn article-question-pending"><div className="article-question-user"><span className="article-question-number">{String(turns.length + 1).padStart(2, '0')}</span><p>{attempt.question}</p></div>{loading ? <AIWaitPanel label="正在阅读原文，整理回答与依据…" onStop={stop} /> : <div className="article-question-failure" role={attempt.error ? 'alert' : 'status'}><p>{attempt.error || attempt.response?.warning || '文章问答暂不可用，请检查模型服务后重试。'}</p><button type="button" className="text-button" disabled={disabled} onClick={() => void submit(attempt.question, attempt.history)}><RefreshCw size={14} />重试这个问题</button></div>}</article>}
           <div ref={latest} />
         </div>
         {isFull ? <div className="article-question-limit" role="status"><p>本轮已完成 {ARTICLE_TURN_LIMIT} 次提问。清空问答后，可以开始新一轮。</p><button type="button" className="button secondary" disabled={disabled} onClick={clear}>清空并重新提问</button></div> : <form className="article-question-form" onSubmit={event => { event.preventDefault(); ask(draft); }}>

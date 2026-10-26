@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { BookOpen, Clock3, LoaderCircle, Plus, RefreshCw, Search, Sparkles, Square, Trash2 } from 'lucide-react';
+import { BookOpen, Clock3, LoaderCircle, Plus, RefreshCw, Search, Sparkles, Trash2 } from 'lucide-react';
 import { errorMessage, learningStorageKey, request } from './api';
+import { requestAIStream } from './aiStream';
+import type { AIStreamPhase } from './aiStream';
+import AIWaitPanel from './components/AIWaitPanel';
 import { dictionaryAnnotationsPath, dictionaryGenerationLabel, dictionaryPath } from './dictionary';
 import type { DictionaryResult } from './dictionary';
 import { lookupQueryProblem, normalizeLookupQuery, pushLookupHistory, readLookupHistory, writeLookupHistory } from './dictionaryLookup';
@@ -49,6 +52,8 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
   const [spellingItems, setSpellingItems] = useState<LookupSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generationPhase, setGenerationPhase] = useState<AIStreamPhase>('connecting');
+  const [generationPreview, setGenerationPreview] = useState('');
   const [readingAnnotations, setReadingAnnotations] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inputError, setInputError] = useState('');
@@ -187,6 +192,7 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
     if (active) return;
     cancelReads();
     setLoading(false); setGenerating(false); setReadingAnnotations(false);
+    setGenerationPreview('');
     focusedRef.current = false; composingRef.current = false;
     setInputFocused(false); setInputEdited(false); setComposing(false);
     setPrefixItems([]); setPrefixOpen(false); setPrefixWarning(false); setSelectedSuggestion(-1); setSpellingItems([]);
@@ -244,6 +250,7 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
     queryRef.current = word;
     setQuery(word); setSubmitted(word); updateResult(null);
     setLoading(true); setGenerating(false); setReadingAnnotations(false);
+    setGenerationPreview('');
     setInputError(''); setError(''); setSaveError(''); setNotice(''); setFailedStatus(null);
     try {
       const value = await request<DictionaryResult>(dictionaryPath(word), { signal: controller.signal });
@@ -260,7 +267,7 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
 
   const stopGeneration = () => {
     generation.current?.abort(); generation.current = null;
-    setGenerating(false); setNotice('已停止等待详细讲解，可随时重新生成。');
+    setGenerating(false); setGenerationPreview(''); setNotice('已停止等待详细讲解，可随时重新生成。');
   };
 
   const generate = async () => {
@@ -271,16 +278,20 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
     const current = sequence.current;
     const isCurrent = () => activeRef.current && mounted.current && !controller.signal.aborted
       && sequence.current === current && generation.current === controller;
-    setGenerating(true); setError(''); setNotice('');
+    setGenerating(true); setGenerationPhase('connecting'); setGenerationPreview(''); setError(''); setNotice('');
     try {
-      const value = await request<DictionaryResult>(dictionaryPath(entry.word, true), { method: 'POST', signal: controller.signal });
+      const value = await requestAIStream<DictionaryResult>(`${dictionaryPath(entry.word)}/explain-stream`, { method: 'POST', signal: controller.signal }, {
+        onStatus: phase => { if (isCurrent()) setGenerationPhase(phase); },
+        onPreview: text => { if (isCurrent()) setGenerationPreview(text); },
+      });
       if (!isCurrent()) return;
       updateResult(value);
       if (value.detail) onGenerated?.(value);
+      else if (value.warning) setError(`${value.warning} 可重试生成，本地释义仍可查看。`);
     } catch (reason) {
       if (isCurrent()) setError(errorMessage(reason));
     } finally {
-      if (isCurrent()) { generation.current = null; setGenerating(false); }
+      if (isCurrent()) { generation.current = null; setGenerating(false); setGenerationPreview(''); }
     }
   };
 
@@ -411,7 +422,7 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
           </section>}
           <WordAnnotations result={result}
             annotationAction={result.can_fetch_annotations ? <div className="dictionary-annotation-actions"><button type="button" className="text-button" disabled={actionsDisabled || readingAnnotations || generating} onClick={() => void readAnnotations()}>{readingAnnotations ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}{readingAnnotations ? '正在读取墨墨个人注解…' : result.maimemo ? '更新墨墨个人注解' : '读取墨墨个人注解'}</button></div> : undefined}
-            detailAction={<div className="dictionary-generate"><p>补充常见义项、双语例句和搭配。点击后调用 AI，生成的讲解会保存在本地。</p><div className="lookup-generate-actions"><button type="button" className="button primary" disabled={actionsDisabled || generating || readingAnnotations || !result.can_generate} onClick={() => void generate()}>{generating ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}{generating ? '正在生成详细讲解…' : dictionaryGenerationLabel(result)}</button>{generating && <button type="button" className="text-button" onClick={stopGeneration}><Square size={13} />停止等待</button>}</div>{generating && <p role="status">正在整理义项和例句，可以继续查询其他词。</p>}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；本地释义仍可查看。</p>}</div>}
+            detailAction={<div className="dictionary-generate"><p>补充常见义项、双语例句和搭配。点击后调用 AI，生成的讲解会保存在本地。</p>{generating ? <AIWaitPanel label="正在补充详细讲解" phase={generationPhase} preview={generationPreview} onStop={stopGeneration} /> : <div className="lookup-generate-actions"><button type="button" className="button primary" disabled={actionsDisabled || readingAnnotations || !result.can_generate} onClick={() => void generate()}><Sparkles size={16} />{dictionaryGenerationLabel(result)}</button></div>}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；本地释义仍可查看。</p>}</div>}
           />
         </>}
       </section>

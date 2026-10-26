@@ -117,6 +117,13 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   return await response.json() as T;
 }
 
+/** Stream requests share the same backend, learning identity and request timeout. */
+export async function requestStreamResponse(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (!headers.has('Accept')) headers.set('Accept', 'text/event-stream');
+  return await fetchBackend(`/api${path}`, { ...init, headers });
+}
+
 /** Never send a saved credential to an image host supplied by document data. */
 export async function requestImage(path: string, signal?: AbortSignal): Promise<Blob> {
   return await requestBlob(path, { signal }, '图片地址无效，请重新打开阅读材料。');

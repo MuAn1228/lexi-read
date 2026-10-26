@@ -1,6 +1,9 @@
 import { ArrowDown, LoaderCircle, NotebookPen, RefreshCw, Sparkles, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage, request } from './api';
+import { requestAIStream } from './aiStream';
+import type { AIStreamPhase } from './aiStream';
+import AIWaitPanel from './components/AIWaitPanel';
 import { dictionaryAnnotationsPath, dictionaryPath } from './dictionary';
 import type { DictionaryResult } from './dictionary';
 import { mergeReviewAnnotations, needsReviewAnnotations, needsReviewLesson } from './reviewAnnotationState';
@@ -17,6 +20,8 @@ export default function ReviewAnnotations({ word, revealed, active, disabled, su
   const [readError, setReadError] = useState('');
   const [operationError, setOperationError] = useState('');
   const [pending, setPending] = useState<'maimemo' | 'detail' | null>(null);
+  const [generationPhase, setGenerationPhase] = useState<AIStreamPhase>('connecting');
+  const [generationPreview, setGenerationPreview] = useState('');
   const [retry, setRetry] = useState(0);
   const epoch = useRef(0);
   const operation = useRef<AbortController | null>(null);
@@ -26,7 +31,7 @@ export default function ReviewAnnotations({ word, revealed, active, disabled, su
   useEffect(() => {
     const scope = ++epoch.current;
     operation.current?.abort(); operation.current = null;
-    setPending(null); setOperationError(''); attempted.current = false;
+    setPending(null); setGenerationPreview(''); setOperationError(''); attempted.current = false;
     detailAttempted.current = false;
     if (!active) return;
     const controller = new AbortController();
@@ -44,17 +49,26 @@ export default function ReviewAnnotations({ word, revealed, active, disabled, su
     if (!active || disabled || !revealed || operation.current) return;
     const controller = new AbortController(); operation.current = controller;
     const scope = epoch.current;
-    setPending(kind); setOperationError('');
+    const isCurrent = () => scope === epoch.current && operation.current === controller && !controller.signal.aborted;
+    setPending(kind); setGenerationPhase('connecting'); setGenerationPreview(''); setOperationError('');
     try {
-      const value = await request<DictionaryResult>(kind === 'maimemo' ? dictionaryAnnotationsPath(word) : dictionaryPath(word, true), {
-        method: 'POST', ...(kind === 'maimemo' ? { body: JSON.stringify({ refresh }) } : {}), signal: controller.signal,
-      });
-      if (scope === epoch.current && !controller.signal.aborted) setResult(current => mergeReviewAnnotations(current, value));
+      const value = kind === 'maimemo'
+        ? await request<DictionaryResult>(dictionaryAnnotationsPath(word), {
+          method: 'POST', body: JSON.stringify({ refresh }), signal: controller.signal,
+        })
+        : await requestAIStream<DictionaryResult>(`${dictionaryPath(word)}/explain-stream`, { method: 'POST', signal: controller.signal }, {
+          onStatus: phase => { if (isCurrent()) setGenerationPhase(phase); },
+          onPreview: text => { if (isCurrent()) setGenerationPreview(text); },
+        });
+      if (isCurrent()) {
+        setResult(current => mergeReviewAnnotations(current, value));
+        if (kind === 'detail' && !value.detail && value.warning) setOperationError(value.warning);
+      }
     } catch (reason) {
-      if (scope === epoch.current && !controller.signal.aborted) setOperationError(errorMessage(reason));
+      if (isCurrent()) setOperationError(errorMessage(reason));
     } finally {
       if (scope === epoch.current && operation.current === controller) {
-        operation.current = null; setPending(null);
+        operation.current = null; setPending(null); setGenerationPreview('');
       }
     }
   }, [active, disabled, revealed, word]);
@@ -76,7 +90,7 @@ export default function ReviewAnnotations({ word, revealed, active, disabled, su
 
   const stop = () => {
     detailAttempted.current = true;
-    operation.current?.abort(); operation.current = null; setPending(null);
+    operation.current?.abort(); operation.current = null; setPending(null); setGenerationPreview('');
   };
 
   if (!revealed) return null;
@@ -85,7 +99,7 @@ export default function ReviewAnnotations({ word, revealed, active, disabled, su
   </div> : undefined;
   const detailAction = <div className="review-annotation-detail-action">
     <p>补充逐项中文讲解、双语例句、常用搭配、用法提示和易混词辨析。成功后自动保存在本机，下次直接查看。</p>
-    {pending === 'detail' ? <div className="review-annotation-actions"><p role="status"><LoaderCircle size={15} className="spin" />Agnes 正在整理详细讲解，可先按上面的词义自评。</p><button type="button" className="text-button" onClick={stop}><Square size={13} />停止等待</button></div> : <button type="button" className="button secondary" disabled={disabled || Boolean(pending) || !result?.can_generate} onClick={() => void fetchContent('detail')}><Sparkles size={15} />{result?.can_generate ? '补充详细例句与用法' : 'AI 详细讲解暂不可用'}</button>}
+    {pending === 'detail' ? <AIWaitPanel compact label="正在补充详细讲解，可先按本地词义自评" phase={generationPhase} preview={generationPreview} onStop={stop} /> : <button type="button" className="button secondary" disabled={disabled || Boolean(pending) || !result?.can_generate} onClick={() => void fetchContent('detail')}><Sparkles size={15} />{result?.can_generate ? '补充详细例句与用法' : 'AI 详细讲解暂不可用'}</button>}
   </div>;
 
   return <section className="review-annotations" aria-label="单词详细注解">

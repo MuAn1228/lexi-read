@@ -4,7 +4,7 @@ import { errorMessage, request } from './api';
 import { rememberSentenceAnalysis, sentenceCacheKey, sentenceProblem } from './sentenceAnalysis';
 import type { SentenceAnalysis, SentenceAnalysisCache } from './sentenceAnalysis';
 import type { Occurrence } from './types';
-import { ThoughtLine } from './components/StudyInteractions';
+import AIWaitPanel from './components/AIWaitPanel';
 import PronunciationButton from './PronunciationButton';
 import './sentencePanel.css';
 
@@ -38,13 +38,17 @@ export default function SentencePanel({ word, disabled, analysisCache, pageStart
     } catch (e) { if (current === generation.current && !abort.signal.aborted) setError(errorMessage(e)); }
     finally { if (current === generation.current && !abort.signal.aborted) { pending.current = false; setLoading(false); controller.current = null; } }
   };
+  const stop = () => {
+    ++generation.current; controller.current?.abort(); controller.current = null; pending.current = false;
+    setLoading(false); setError('已停止等待，原句和已有解析已保留，可以重试。');
+  };
   return <section className="sentence-analysis" aria-label="整句翻译与长难句解析">
     <div className="section-label"><span><Languages size={14} />读懂这一整句</span>{value?.source === 'llm' && <span className="source-badge llm">AI 句子解析</span>}</div>
     <p className="sentence-analysis-intro">从句子结构和语法，理解当前单词所在的原句。</p>
     <PronunciationButton text={word.sentence} label="朗读原句" speechKey={`context-sentence:${word.id}`} className="sentence-pronunciation" />
     {problem ? <p className="service-note" role="status">{problem}</p> : <>
       {!value && !loading && !error && <button className="button related-button" disabled={disabled} onClick={() => void analyze()}><Languages size={16} />翻译与解析本句</button>}
-      {loading && <ThoughtLine label="正在翻译并拆解这句话…" />}
+      {loading && <AIWaitPanel label="正在翻译并拆解这句话…" onStop={stop} compact />}
       {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-button" disabled={disabled || loading} onClick={() => void analyze()}><RefreshCw size={13} />重试句子解析</button></div>}
       {value?.source === 'unavailable' && <div className="sentence-unavailable" role="status"><p>{value.warning || '句子解析暂不可用，请检查模型服务后重试。'}</p><button className="text-button" disabled={disabled || loading} onClick={() => void analyze()}><RefreshCw size={13} />重试句子解析</button></div>}
       {value?.source === 'llm' && <div className="sentence-analysis-result" aria-label="本句解析结果">

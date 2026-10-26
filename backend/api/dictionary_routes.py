@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, StrictBool
 from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user_id
 from backend.config import get_settings
 from backend.database import get_session
+from backend.services.ai_stream import stream_response
 from backend.services.dictionary import (DictionaryResult, explain_dictionary, read_dictionary,
                                          fetch_dictionary_annotations)
 from backend.services.dictionary_suggestions import DictionarySuggestions, read_suggestions
@@ -56,3 +57,15 @@ def explanation(word: str, response: Response, session: Session = Depends(get_se
         return explain_dictionary(word, user_id, session)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/{word}/explain-stream")
+async def explanation_stream(word: str, request: Request, session: Session = Depends(get_session),
+                             user_id: int = Depends(get_current_user_id)):
+    def operation(worker_session):
+        try:
+            return explain_dictionary(word, user_id, worker_session)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    return await stream_response(request, session.get_bind(), operation, kind="dictionary")

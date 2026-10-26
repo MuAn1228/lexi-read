@@ -5,7 +5,7 @@ import { PRACTICE_LENGTH_LABELS, practiceParts, practiceProblem, practiceTargetR
 import type { PracticeDifficulty, PracticeLength, PracticeOptions, PracticePayload, PracticeResult, PracticeTarget, PracticeTargets } from './practiceGeneration';
 import type { TextImportPayload } from './textArticle';
 import type { ReadingDocument } from './types';
-import { ThoughtLine } from './components/StudyInteractions';
+import AIWaitPanel from './components/AIWaitPanel';
 import './practiceGeneration.css';
 
 interface GenerationAttempt { payload: PracticePayload; error: string }
@@ -108,6 +108,12 @@ export default function PracticeGenerationView({ active, disabled, onSave, onOpe
       if (current === generation.current && !abort.signal.aborted) { generationPending.current = false; setGenerating(false); controller.current = null; }
     }
   };
+  const stopGeneration = () => {
+    if (!generationPending.current) return;
+    ++generation.current; controller.current?.abort(); controller.current = null; generationPending.current = false;
+    setGenerating(false);
+    setAttempt(value => value ? { ...value, error: '已停止等待，主题、目标词和本次请求已保留，可重试取回结果。' } : value);
+  };
   const save = async () => {
     if (!active || disabled || generating || savePending.current || !usablePractice(result) || saved) return;
     const payload = savePayload ?? { request_id: crypto.randomUUID(), title: `AI练习 · ${result.title}`, text: result.text };
@@ -144,7 +150,7 @@ export default function PracticeGenerationView({ active, disabled, onSave, onOpe
             </fieldset>
           </form>
           {validation && <p className="practice-local-error" role="alert">{validation}</p>}
-          {generating && <ThoughtLine className="practice-status" label="正在围绕这些词写一篇新的英文短文…" />}
+          {generating && <AIWaitPanel label="正在围绕这些词写一篇新的英文短文…" onStop={stopGeneration} />}
           {!generating && attempt?.error && <div className="practice-local-error" role="alert"><p>{attempt.error}</p>{staleTargets ? <button type="button" className="text-button" disabled={locked} onClick={() => void loadTargets()}><RefreshCw size={14} />刷新目标词后重新生成</button> : <p className="practice-help">设置未改动时，重试会继续同一次生成。</p>}</div>}
           {savePayload && <p className="practice-local-error" role="status">{saving ? '正在保存这篇短文…' : '这次保存的结果尚未确认。请在右侧重试保存，确认前已保留短文并暂停重新生成。'}</p>}
           <p className="practice-footnote">点击生成才会调用 AI。难度是本次写作目标，供阅读参考；不会据此评定你的英语水平。</p>

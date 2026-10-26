@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from backend.config import get_settings
 from backend.models import Vocabulary, WordOccurrence
 from backend.public_limits import require_llm_budget
+from backend.services.ai_stream import check_cancelled
 from backend.services.article_context import prepare_article_context
 from backend.services.documents import require_document
 from backend.services.lemmatization import normalize_word
@@ -150,6 +151,7 @@ def respond_to_assistant(session: Session, payload: AssistantRequest, user_id: i
     # Do not flush/commit caller changes or create lookups, assessments, schedules
     # or events. Public model budgets commit through their independent session.
     with session.no_autoflush:
+        check_cancelled()
         return _respond(session, payload, user_id)
 
 
@@ -230,6 +232,7 @@ def _respond(session: Session, payload: AssistantRequest, user_id: int) -> Assis
         return AssistantResult(source="unavailable", context_limited=limited,
                                warning="AI 暂时未能提供有效回答，请稍后重试或换个问法。")
     verify_current()
+    check_cancelled()
     return AssistantResult(source="llm", answer=_QUIZ_INTRO if value.quiz else value.answer,
                            quiz=value.quiz, context_limited=limited,
                            warning="文章较长，本次仅参考部分相关片段。" if limited else None)

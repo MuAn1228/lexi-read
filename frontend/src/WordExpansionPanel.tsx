@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { ArrowUpRight, LoaderCircle, Network, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, Network, RefreshCw } from 'lucide-react';
 import { errorMessage, request } from './api';
 import RelatedWordCard from './RelatedWordCard';
 import type { Vocabulary } from './types';
@@ -7,6 +7,7 @@ import { cacheExpansion, expansionCacheKey, expansionLabel, expansionOptions, ex
 import type { ExpansionRecommendation, ExpansionRelation, WordExpansionCache } from './wordExpansion';
 import { useMascot } from './mascot/useMascot';
 import { createMascotOperationId } from './mascot/mascotEvents';
+import AIWaitPanel from './components/AIWaitPanel';
 import './wordExpansion.css';
 
 const noLearningChange = async () => {};
@@ -19,7 +20,6 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
   const [recommendation, setRecommendation] = useState<ExpansionRecommendation | null>(null);
   const [sessionCached, setSessionCached] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState('');
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
@@ -38,13 +38,6 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
     };
   }, [word, relation, cache, cancelOperation]);
 
-  useEffect(() => {
-    if (!loading) return;
-    const started = Date.now(); setSeconds(0);
-    const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => window.clearInterval(timer);
-  }, [loading]);
-
   const stop = () => {
     ++generation.current; controller.current?.abort(); controller.current = null; setLoading(false);
     if (operation.current) { cancelOperation(operation.current); operation.current = null; }
@@ -61,7 +54,7 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
     const attempt = ++generation.current;
     const operationId = createMascotOperationId('expansion'); operation.current = operationId;
     emit({ type: 'RECOMMENDATION_STARTED', operationId, word });
-    setLoading(true); setSeconds(0); setError('');
+    setLoading(true); setError('');
     try {
       const result = await request<unknown>(expansionPath(word), {
         method: 'POST', body: JSON.stringify(expansionRequestBody(relation, refresh)), signal: abort.signal,
@@ -96,7 +89,7 @@ export default function WordExpansion({ word, cache, vocabulary = [], onLearning
       {!recommendation && !loading && <button type="button" className="button secondary word-expansion-generate" onClick={() => void generate()}>
         {error ? <RefreshCw size={15} /> : <ArrowUpRight size={15} />}{error ? `重新获取${expansionLabel(relation)}` : `发现${expansionLabel(relation)}`}
       </button>}
-      {loading && <div className="word-expansion-loading"><p role="status"><LoaderCircle size={16} className="spin" />正在整理{selectedOption.label}…<span>{seconds} 秒</span></p><button type="button" className="text-button" onClick={stop}>停止等待</button></div>}
+      {loading && <AIWaitPanel label={`正在整理${selectedOption.label}…`} onStop={stop} compact />}
       {error && <div className="inline-error word-expansion-error" role="alert"><p>{error}</p>{recommendation && <button type="button" className="text-button" disabled={loading} onClick={() => void generate()}><RefreshCw size={13} />重试获取</button>}</div>}
       {recommendation && <>
         <div className="recommendation-meta word-expansion-meta"><span className={`source-badge ${recommendation.source}`}>{expansionSourceLabel(recommendation, sessionCached)}</span>

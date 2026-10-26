@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.public_limits import require_llm_budget
+from backend.services.ai_stream import check_cancelled, completed_write
 from backend.services.lemmatization import normalize_word
 from backend.services.llm import LLMService
 from backend.services.offline_dictionary import lookup, OfflineDictionaryUnavailable
@@ -169,6 +170,7 @@ def _save_cache(path: Path, value: dict, detail: DetailedMeaning):
         path.parent.mkdir(parents=True, exist_ok=True)
         with temporary.open("x", encoding="utf-8") as stream:
             json.dump({"identity": value, "detail": detail.model_dump()}, stream, ensure_ascii=False)
+        check_cancelled()
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -221,6 +223,7 @@ def explain_dictionary(word: str, user_id: int, session: Session) -> DictionaryR
     value, path = identity(word, user_id)
     # Serialize the same cache slot; other users/words use different slots.
     with _locks[int(path.stem[:8], 16) % len(_locks)], session.no_autoflush:
+        check_cancelled()
         result = _result(value, path)
         if result.detail is not None or not result.can_generate:
             return result
@@ -250,12 +253,14 @@ def explain_dictionary(word: str, user_id: int, session: Session) -> DictionaryR
             detail = generated.detail
             if detail is None or detail.word != value["word"] or detail.lemma != value["lemma"]:
                 raise ValueError("Model explained a different word")
+            check_cancelled()
         except (httpx.HTTPError, ValidationError, ValueError, KeyError, IndexError, TypeError):
             logger.warning("Detailed dictionary explanation unavailable or invalid")
             return result.model_copy(update={"warning": "AI 详细讲解暂时不可用或格式不完整。离线词义已保留，可以稍后重试。"})
         warning = result.warning if result.dictionary else None
         try:
-            _save_cache(path, value, detail)
+            with completed_write():
+                _save_cache(path, value, detail)
         except OSError:
             logger.warning("Detailed dictionary explanation cache could not be saved")
             warning = "详细讲解已生成，但本机缓存暂未保存成功，下次可能需要重新生成。"
