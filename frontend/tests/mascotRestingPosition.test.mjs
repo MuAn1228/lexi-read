@@ -7,7 +7,7 @@ const compile = source => ts.transpileModule(source, { compilerOptions: { target
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const position = url(compile(await readFile(new URL('../src/mascot/mascotPosition.ts', import.meta.url), 'utf8')));
 const source = compile(await readFile(new URL('../src/mascot/mascotRestingPosition.ts', import.meta.url), 'utf8')).replace("'./mascotPosition'", JSON.stringify(position));
-const { resolveMascotDock } = await import(url(source));
+const { avoidMascotControls, resolveMascotDock } = await import(url(source));
 const viewport = { x: 0, y: 0, width: 1440, height: 900 };
 const size = { width: 144, height: 170 };
 
@@ -69,4 +69,23 @@ test('generated normal viewports retain full-size bounds and avoid the sidebar',
     if (side === 'right') assert.ok(point.x >= screen.x + screen.width / 2);
     else assert.ok(point.x + body.width <= screen.x + screen.width / 2);
   }
+});
+
+test('a docked mascot moves along its edge instead of covering a nearby control', () => {
+  const screen = { x: 0, y: 0, width: 390, height: 800 };
+  const body = Object.freeze({ width: 72, height: 85 });
+  const preferred = Object.freeze({ x: 300, y: 650 });
+  const controls = Object.freeze([Object.freeze({ x: 200, y: 645, width: 170, height: 48 })]);
+  assert.deepEqual(avoidMascotControls(preferred, body, screen, controls), { x: 300, y: 701 });
+  assert.deepEqual(preferred, { x: 300, y: 650 });
+  assert.deepEqual(body, { width: 72, height: 85 });
+});
+
+test('control avoidance leaves a clear dock untouched and stays inside an offset viewport', () => {
+  const screen = { x: 12, y: 30, width: 390, height: 620 };
+  const body = { width: 72, height: 85 };
+  assert.deepEqual(avoidMascotControls({ x: 310, y: 500 }, body, screen, [{ x: 20, y: 500, width: 120, height: 44 }]), { x: 310, y: 500 });
+  const moved = avoidMascotControls({ x: 310, y: 500 }, body, screen, [{ x: 300, y: 490, width: 90, height: 50 }]);
+  assert.ok(moved.x >= screen.x + 8 && moved.x + body.width <= screen.x + screen.width - 8);
+  assert.ok(moved.y >= screen.y + 8 && moved.y + body.height <= screen.y + screen.height - 8);
 });

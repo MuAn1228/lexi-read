@@ -10,6 +10,7 @@
 .mascot-accessible-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mascot-widget { position: absolute; top: 0; left: 0; pointer-events: none; }
 .mascot-widget.is-snapping { transition: transform 240ms cubic-bezier(.22,.8,.25,1); }
+.mascot-widget.is-avoiding-controls { transition: transform 180ms cubic-bezier(.22,.8,.25,1); }
 .mascot-widget.is-dragging { transition: none; }
 /* Clip character motion and stickers to the rectangle reserved by the placement solver. */
 .mascot-character-button { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; overflow: hidden; background: transparent; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }

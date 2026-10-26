@@ -472,5 +472,7 @@ kbd { font: 11px 'Segoe UI', 'Microsoft YaHei', sans-serif; border: 1px solid #e
 .reading-library-tools .text-button { font-size: 11px; }
 .reading-bookmarks { gap: 12px; flex-wrap: wrap; font-size: 11px; }
 .reading-bookmarks > span { display: inline-flex; align-items: center; gap: 5px; color: #7b8f75; max-width: 100%; overflow-wrap: anywhere; }
+.reading-bookmarks > .reading-resume-state { padding-left: 11px; border-left: 1px solid var(--line); color: #66805e; }
+.reading-bookmarks > .reading-resume-state.is-warning { color: #a15f3c; }
 @media (max-width: 1050px) { .document-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.article-library-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }.article-library-filters > .word-search { grid-column: 1 / -1; } }
 @media (max-width: 620px) { .document-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }.article-library-heading h2 { font-size: 18px; }.article-library-filters { padding: 15px; gap: 12px 9px; }.article-library-filters > label:not(.word-search) { flex-direction: column; align-items: flex-start; gap: 7px; }.article-library-filters select { font-size: 11px; padding: 8px 5px; }.document-card { padding: 19px; }.article-edit-form, .article-delete-content { padding: 20px; }.article-library-heading { gap: 15px; }.reading-library-tools { align-items: flex-start; }.reading-bookmarks { width: 100%; gap: 11px; }.reading-bookmarks > span { width: 100%; }.article-modal-actions { gap: 9px; }.article-modal-actions .button { padding: 10px 13px; } }

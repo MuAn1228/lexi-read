@@ -9,7 +9,7 @@ import type { MascotBubbleMeasurements } from './MascotBubble';
 import { findMascotBubblePlacement } from './mascotBubblePosition';
 import { MascotMenu } from './MascotMenu';
 import { clampMascot, snapMascot } from './mascotPosition';
-import { resolveMascotDock } from './mascotRestingPosition';
+import { avoidMascotControls, resolveMascotDock } from './mascotRestingPosition';
 import type { MascotPoint, MascotRect, MascotSize, MascotViewport } from './mascotPosition';
 
 const MascotAssistantPanel = lazy(() => import('./MascotAssistantPanel'));
@@ -123,7 +123,10 @@ export function MascotWidget() {
   if (config.anchor === 'right') preferred.x = defaultPoint.x;
   if (config.anchor === 'bottom') preferred.y = defaultPoint.y;
   const size = dragSize ?? fullSize;
-  const position = dragPosition ?? resolveMascotDock(preferred, size, viewport, config.side, layout.sidebarRight);
+  const dockPosition = resolveMascotDock(preferred, size, viewport, config.side, layout.sidebarRight);
+  const safeDockPosition = avoidMascotControls(dockPosition, size, viewport, layout.controls);
+  const position = dragPosition ?? safeDockPosition;
+  const avoidingControls = !dragPosition && (safeDockPosition.x !== dockPosition.x || safeDockPosition.y !== dockPosition.y);
   const bubbleWidths = [...new Set((mobile ? [220, 168, 148, 120] : [280, 220, 176, 148, 120]).map(value => Math.max(48, Math.min(value, viewport.width - 24))))];
   const bubbleMaxHeight = Math.max(48, Math.min(180, viewport.height - 24));
   const measuredSizes = bubble && bubbleMeasurements?.text === bubble.text && bubbleMeasurements.widths === bubbleWidths.join(',')
@@ -212,7 +215,7 @@ export function MascotWidget() {
 
   if (!visible) return null;
   return createPortal(<div className="mascot-portal" data-mascot-root="true" onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()}>
-    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-mode="full" data-dragging={dragging} data-small={size.width < 90} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
+    <div className={`mascot-widget${snapping ? ' is-snapping' : ''}${dragging || pressed ? ' is-dragging' : ''}${avoidingControls ? ' is-avoiding-controls' : ''}`} data-testid="mascot-widget" data-state={state} data-reaction-id={reactionId} data-side={actualSide} data-anchor={config.anchor} data-mode="full" data-dragging={dragging} data-small={size.width < 90} style={{ width: size.width, height: size.height, transform: `translate3d(${position.x}px, ${position.y}px, 0)` } as CSSProperties}>
       <button ref={characterButton} type="button" className="mascot-character-button" data-testid="mascot-drag-handle" aria-label="和 Lexi 打招呼，拖动调整位置" title="Lexi · 拖动调整位置，右键打开设置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelDrag} onLostPointerCapture={() => { if (drag.current) cancelDrag(); }} onContextMenu={event => { event.preventDefault(); cancelDrag(); setMenuOpen(true); }} onClick={event => { if (event.detail === 0) mascot.interact(); }} onDragStart={event => event.preventDefault()}>
         <MascotCharacter state={state} reactionId={reactionId} gesture={gesture} interactionEnabled={config.interactionEnabled} side={actualSide} pressed={pressed} dragging={dragging} />
       </button>

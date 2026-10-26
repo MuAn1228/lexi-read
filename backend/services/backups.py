@@ -1,8 +1,10 @@
 """Local complete backups with bounded validation and atomic SQLite restores."""
 from datetime import datetime, timedelta, timezone
 from contextlib import closing, contextmanager
+from dataclasses import dataclass
 from hashlib import sha256
 import json
+import logging
 import math
 from pathlib import Path
 import re
@@ -10,6 +12,7 @@ import shutil
 import sqlite3
 import stat
 from tempfile import TemporaryDirectory
+from threading import Condition
 from uuid import uuid4
 from zipfile import BadZipFile, ZIP_DEFLATED, ZIP_STORED, ZipFile
 
@@ -30,6 +33,26 @@ ASSET = re.compile(r"^assets/[a-f0-9]{32}\.(png|pdf)$")
 SAFETY = re.compile(r"^lexi-read-safety-[a-f0-9]{32}\.zip$")
 VOCABULARY_TOOL_TABLES = {"vocabulary_operations", "vocabulary_groups", "vocabulary_group_members"}
 TTL = timedelta(minutes=30)
+AUTOMATIC_INTERVAL = timedelta(hours=24)
+AUTOMATIC_RETENTION = 7
+AUTOMATIC = re.compile(r"^lexi-read-auto-(?P<stamp>\d{8}T\d{12}Z)-[a-f0-9]{32}\.zip$")
+AUTOMATIC_STATE = "status.json"
+AUTOMATIC_ERROR = "自动恢复点创建失败，请稍后重试或下载手动备份。"
+AUTOMATIC_PRUNE_ERROR = "自动恢复点已创建，但旧恢复点暂时无法清理。"
+AUTOMATIC_STATE_ERROR = "自动备份状态暂时不可用。"
+AUTOMATIC_VERIFY_ERROR = "有自动恢复点校验失败，将在下次保障时重新创建。"
+_AUTOMATIC_ERRORS = {AUTOMATIC_ERROR, AUTOMATIC_PRUNE_ERROR, AUTOMATIC_STATE_ERROR, AUTOMATIC_VERIFY_ERROR}
+_automatic_condition = Condition()
+_automatic_running: set[tuple[str, int]] = set()
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AutomaticPoint:
+    path: Path
+    created_at: datetime
+    size: int
+    sha256: str
 
 
 def now():
@@ -310,6 +333,254 @@ def inspect_archive(archive_path: Path, folder: Path) -> dict:
         raise
     except (BadZipFile, OSError, RuntimeError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:
         raise invalid() from exc
+
+
+def _automatic_folder(create=False) -> Path:
+    folder = root() / "automatic-backups"
+    if create:
+        folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _read_automatic_state() -> tuple[str | None, str | None, list[AutomaticPoint]]:
+    """Read atomically written verification metadata; never trust filenames alone."""
+    path = _automatic_folder() / AUTOMATIC_STATE
+    if not path.is_file() or path.is_symlink():
+        return None, None, []
+    try:
+        if path.stat().st_size > 16 * 1024:
+            raise ValueError()
+        state = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(state, dict) or state.get("version") != 1:
+            raise ValueError()
+        error = state.get("error")
+        attempted_at = state.get("attempted_at")
+        if error is not None and error not in _AUTOMATIC_ERRORS:
+            error = AUTOMATIC_STATE_ERROR
+        if attempted_at is not None:
+            parsed = datetime.fromisoformat(attempted_at)
+            if parsed.tzinfo is None:
+                raise ValueError()
+        records = state.get("points", [])
+        if not isinstance(records, list) or len(records) > AUTOMATIC_RETENTION:
+            raise ValueError()
+        folder, points, names = _automatic_folder(), [], set()
+        for record in records:
+            if not isinstance(record, dict) or set(record) != {"filename", "created_at", "size", "sha256"}:
+                raise ValueError()
+            filename, created, size, checksum = (record["filename"], record["created_at"],
+                                                   record["size"], record["sha256"])
+            match = AUTOMATIC.fullmatch(filename) if isinstance(filename, str) else None
+            if (not match or filename in names or type(size) is not int or not 0 < size <= MAX_ARCHIVE_BYTES
+                    or not isinstance(checksum, str) or not re.fullmatch(r"[a-f0-9]{64}", checksum)):
+                raise ValueError()
+            created_at = datetime.fromisoformat(created) if isinstance(created, str) else None
+            stamped = datetime.strptime(match.group("stamp"), "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
+            if created_at is None or created_at.tzinfo is None or created_at != stamped:
+                raise ValueError()
+            point_path = folder / filename
+            if not within(point_path, folder):
+                raise ValueError()
+            names.add(filename)
+            points.append(AutomaticPoint(point_path, created_at, size, checksum))
+        points.sort(key=lambda point: (point.created_at, point.path.name))
+        return error, attempted_at, points
+    except (OSError, ValueError, TypeError, AttributeError, json.JSONDecodeError):
+        return AUTOMATIC_STATE_ERROR, None, []
+
+
+def _write_automatic_state(error: str | None, attempted_at: datetime,
+                           points: list[AutomaticPoint]) -> None:
+    folder = _automatic_folder(create=True)
+    destination = folder / AUTOMATIC_STATE
+    partial = folder / f".{AUTOMATIC_STATE}.{uuid4().hex}.partial"
+    payload = {
+        "version": 1,
+        "attempted_at": attempted_at.isoformat(),
+        "error": error,
+        "points": [{"filename": point.path.name, "created_at": point.created_at.isoformat(),
+                    "size": point.size, "sha256": point.sha256} for point in points],
+    }
+    try:
+        partial.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        partial.replace(destination)
+    finally:
+        try:
+            partial.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _verified_automatic_points(stored: list[AutomaticPoint] | None = None) -> tuple[list[AutomaticPoint], str | None]:
+    """Return only metadata-owned points whose current bytes still match their digest."""
+    if stored is None:
+        _, _, stored = _read_automatic_state()
+    folder = _automatic_folder()
+    verified = []
+    rejected = False
+    for point in stored:
+        try:
+            valid_path = not point.path.is_symlink() and within(point.path, folder)
+            details = point.path.stat() if valid_path else None
+            valid_size = (details is not None and stat.S_ISREG(details.st_mode)
+                          and details.st_size == point.size
+                          and details.st_size <= MAX_ARCHIVE_BYTES)
+            actual = digest(point.path) if valid_size else None
+        except OSError:
+            actual = None
+        if actual == {"sha256": point.sha256, "size": point.size}:
+            verified.append(point)
+        else:
+            rejected = True
+    return verified, AUTOMATIC_VERIFY_ERROR if rejected else None
+
+
+def latest_automatic_backup() -> AutomaticPoint | None:
+    points, _ = _verified_automatic_points()
+    return points[-1] if points else None
+
+
+def _database_health(engine: Engine) -> tuple[str, str]:
+    """Run SQLite's read-only consistency checks without exposing diagnostic rows."""
+    if engine.dialect.name != "sqlite":
+        return "unavailable", "unavailable"
+    raw = None
+    try:
+        raw = engine.raw_connection()
+        connection = raw.driver_connection
+        quick = connection.execute("PRAGMA quick_check").fetchone()
+        foreign = connection.execute("PRAGMA foreign_key_check").fetchone()
+        return ("ok" if quick and quick[0] == "ok" else "failed",
+                "ok" if foreign is None else "failed")
+    except Exception:
+        return "unavailable", "unavailable"
+    finally:
+        if raw is not None:
+            raw.close()
+
+
+def automatic_backup_status(engine: Engine, *, created=False) -> dict:
+    stored_error, attempted_at, stored = _read_automatic_state()
+    points, verification_error = _verified_automatic_points(stored)
+    latest = points[-1] if points else None
+    current = now()
+    next_due = latest.created_at + AUTOMATIC_INTERVAL if latest else None
+    quick, foreign = _database_health(engine)
+    error = verification_error or stored_error
+    return {
+        "database_ok": quick == "ok" and foreign == "ok",
+        "quick_check": quick,
+        "foreign_key_check": foreign,
+        "last_success_at": latest.created_at.isoformat() if latest else None,
+        "last_size_bytes": latest.size if latest else None,
+        "backup_count": len(points),
+        "next_due_at": next_due.isoformat() if next_due else None,
+        "due": verification_error is not None or latest is None or current >= next_due,
+        "last_attempt_at": attempted_at,
+        "error": error,
+        "created": created,
+        "retention": AUTOMATIC_RETENTION,
+    }
+
+
+def _create_automatic_backup(engine: Engine) -> AutomaticPoint:
+    folder = _automatic_folder(create=True)
+    created_at = now()
+    stamp = created_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    destination = folder / f"lexi-read-auto-{stamp}-{uuid4().hex}.zip"
+    if not AUTOMATIC.fullmatch(destination.name) or not within(destination, folder):
+        raise RuntimeError("Invalid automatic backup destination")
+    try:
+        export_backup(engine, destination)
+        with TemporaryDirectory(prefix=".automatic-check-", dir=root()) as temporary:
+            inspect_archive(destination, Path(temporary))
+        verified = digest(destination)
+    except Exception:
+        # Exclude a failed archive from recovery-point discovery even if deletion
+        # is temporarily blocked by the operating system.
+        quarantine = destination.with_suffix(".invalid")
+        try:
+            destination.replace(quarantine)
+            quarantine.unlink(missing_ok=True)
+        except OSError:
+            destination.unlink(missing_ok=True)
+        raise
+    return AutomaticPoint(path=destination, created_at=created_at,
+                          size=verified["size"], sha256=verified["sha256"])
+
+
+def _discard_automatic_point(point: AutomaticPoint) -> bool:
+    try:
+        if (AUTOMATIC.fullmatch(point.path.name) and not point.path.is_symlink()
+                and within(point.path, _automatic_folder())):
+            point.path.unlink(missing_ok=True)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def _prune_automatic_backups(points: list[AutomaticPoint]) -> bool:
+    """Delete only metadata-owned archives after the retained state is durable."""
+    failed = False
+    for point in points:
+        if not _discard_automatic_point(point):
+            failed = True
+    return not failed
+
+
+def ensure_automatic_backup(engine: Engine, *, force=False) -> dict:
+    """Create one due recovery point; overlapping callers share the same attempt."""
+    key = (str(_automatic_folder().resolve()), id(engine))
+    with _automatic_condition:
+        if key in _automatic_running:
+            _automatic_condition.wait_for(lambda: key not in _automatic_running)
+            return automatic_backup_status(engine)
+        status = automatic_backup_status(engine)
+        if not force and not status["due"]:
+            return status
+        _automatic_running.add(key)
+    created = False
+    error = None
+    attempted_at = now()
+    point = None
+    points, _ = _verified_automatic_points()
+    try:
+        try:
+            point = _create_automatic_backup(engine)
+            combined = sorted([*points, point], key=lambda item: (item.created_at, item.path.name))
+            retained = combined[-AUTOMATIC_RETENTION:]
+            discarded = combined[:-AUTOMATIC_RETENTION]
+            # The archive becomes a recovery point only when its digest metadata
+            # is atomically committed. Old metadata and files survive a failure.
+            _write_automatic_state(None, attempted_at, retained)
+            created = True
+            if not _prune_automatic_backups(discarded):
+                error = AUTOMATIC_PRUNE_ERROR
+                try:
+                    _write_automatic_state(error, attempted_at, retained)
+                except OSError as state_exc:
+                    # The digest metadata for the new point is already durable;
+                    # do not roll it back merely because a warning could not save.
+                    logger.error("Automatic backup warning could not be saved (%s)", type(state_exc).__name__)
+        except Exception as exc:
+            if point is not None and not created:
+                _discard_automatic_point(point)
+            error = AUTOMATIC_ERROR
+            logger.error("Automatic recovery point creation failed (%s)", type(exc).__name__)
+            try:
+                _write_automatic_state(error, attempted_at, points)
+            except OSError as state_exc:
+                logger.error("Automatic backup status could not be saved (%s)", type(state_exc).__name__)
+                error = AUTOMATIC_STATE_ERROR
+        result = automatic_backup_status(engine, created=created)
+        if error is not None:
+            result["error"] = error
+        return result
+    finally:
+        with _automatic_condition:
+            _automatic_running.discard(key)
+            _automatic_condition.notify_all()
 
 
 def preview_backup(upload: UploadFile) -> dict:

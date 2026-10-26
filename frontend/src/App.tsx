@@ -21,6 +21,8 @@ import { clearLearningPreferences } from './backupData';
 import type { BackupRestore, RestoreOutcome } from './backupData';
 import { activeArticleList, initialArticleSelection } from './documentLibrary';
 import type { DocumentPatch } from './documentLibrary';
+import { emptyReadingResume, forgetReadingDocument as forgetReadingResumeDocument, readingDocumentIdentity, readingPositionForDocument, readReadingResume, rememberReadingDocument as rememberResumeDocument, rememberReadingPosition as rememberResumePosition, writeReadingResume } from './readingResume';
+import type { ReadingPosition } from './readingResume';
 import DashboardView from './DashboardView';
 import RelationsView from './RelationsView';
 import ReviewView from './ReviewView';
@@ -60,9 +62,8 @@ const titles: Record<View, { title: string; subtitle: string }> = {
   relations: { title: '词汇关联', subtitle: '从一个词出发，理解联系与区别，再试着回想。' },
   data: { title: '数据管理', subtitle: '导入墨墨单词，导出或恢复学习数据备份。' },
 };
-function rememberDocument(id: number) { try { localStorage.setItem(browserStorageKey('document'), String(id)); } catch { /* Optional storage: the server already persists this document. */ } }
-function rememberedDocument(): number { try { return Number(localStorage.getItem(browserStorageKey('document'))); } catch { return 0; } }
-function forgetDocument() { try { localStorage.removeItem(browserStorageKey('document')); } catch { /* Optional reading preference. */ } }
+function legacyRememberedDocument(): number { try { return Number(localStorage.getItem(browserStorageKey('document'))); } catch { return 0; } }
+function forgetLegacyDocument() { try { localStorage.removeItem(browserStorageKey('document')); } catch { /* Optional legacy reading preference. */ } }
 
 export default function App() {
   const mascot = useMascot();
@@ -78,6 +79,11 @@ export default function App() {
   const browsingKey = useRef<string | null>(null);
   const browsingLoaded = useRef(false);
   const [browsingStorageWarning, setBrowsingStorageWarning] = useState(false);
+  const readingPreferences = useRef(emptyReadingResume());
+  const readingKey = useRef<string | null>(null);
+  const readingLoaded = useRef(false);
+  const [readingResumePosition, setReadingResumePosition] = useState<ReadingPosition | null>(null);
+  const [readingStorageWarning, setReadingStorageWarning] = useState(false);
   const saveBrowsing = useCallback(() => {
     const key = browsingKey.current;
     setBrowsingStorageWarning(!key || !writeBrowsingPreferences(key, browsingPreferences.current));
@@ -86,6 +92,22 @@ export default function App() {
     browsingPreferences.current = { ...browsingPreferences.current, vocabulary: value };
     saveBrowsing();
   }, [saveBrowsing]);
+  const saveReadingPreferences = useCallback(() => {
+    const key = readingKey.current;
+    const saved = Boolean(key) && writeReadingResume(key!, readingPreferences.current);
+    setReadingStorageWarning(!saved);
+    if (saved) forgetLegacyDocument();
+    return saved;
+  }, []);
+  const rememberReadingPosition = useCallback((position: ReadingPosition) => {
+    if (restorationLock.current || !activeDocumentIds.current.has(position.documentId)) return;
+    const isCurrent = currentDocumentId.current === position.documentId;
+    // Proofreading can keep an article ID while replacing every occurrence. Ignore that stale panel's final flush.
+    if (isCurrent && currentDocumentIdentity.current !== position.contentIdentity) return;
+    readingPreferences.current = rememberResumePosition(readingPreferences.current, position, isCurrent);
+    if (isCurrent) setReadingResumePosition(position);
+    saveReadingPreferences();
+  }, [saveReadingPreferences]);
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [maimemoBusy, setMaimemoBusy] = useState(false);
@@ -94,6 +116,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const readingRestored = useCallback(() => setNotice('已回到上次阅读位置。'), []);
   const [initializing, setInitializing] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const [query, setQuery] = useState('');
@@ -121,12 +144,17 @@ export default function App() {
   const [documentSyncError, setDocumentSyncError] = useState('');
   const [syncingDocuments, setSyncingDocuments] = useState(false);
   const [revealBookmark, setRevealBookmark] = useState(0);
+  const [readingRestartToken, setReadingRestartToken] = useState(0);
   const [restorationLocked, setRestorationLocked] = useState(false);
   const restorationLock = useRef(false);
   const documentEpoch = useRef(0);
   const documentSyncGeneration = useRef(0);
   const currentDocumentId = useRef<number | null>(null);
   currentDocumentId.current = document?.id ?? null;
+  const currentDocumentIdentity = useRef<string | null>(null);
+  currentDocumentIdentity.current = document ? readingDocumentIdentity(document) : null;
+  const activeDocumentIds = useRef<Set<number>>(new Set());
+  activeDocumentIds.current = new Set(documents.map(item => item.id));
   const textImportRequest = useRef<TextImportPayload | null>(null);
   const urlImportRequest = useRef<UrlImportPayload | null>(null);
   const importSyncGeneration = useRef(0);
@@ -196,9 +224,16 @@ export default function App() {
 
   const acceptDocument = useCallback((value: ReadingDocument, occurrenceId?: number) => {
     if (proofreadUncertain.current === value.id) { proofreadUncertain.current = null; setProofreadSync(null); }
-    setDocument(value); setSelectedId(initialArticleSelection(value, occurrenceId)); setRevealBookmark(value => value + 1);
-    setQuery(''); setFilter('ALL'); setView('reader'); setUploadOpen(false); rememberDocument(value.id);
-  }, []);
+    const resumed = occurrenceId === undefined
+      ? readingPositionForDocument(readingPreferences.current, value.id, readingDocumentIdentity(value)) : null;
+    const resumeSelection = resumed && value.words.some(word => word.id === resumed.selectedId)
+      ? resumed.selectedId : resumed && value.words.some(word => word.id === resumed.anchorId) ? resumed.anchorId : undefined;
+    setReadingResumePosition(resumed);
+    setDocument(value); setSelectedId(initialArticleSelection(value, occurrenceId ?? resumeSelection ?? undefined)); setRevealBookmark(value => value + 1);
+    setQuery(''); setFilter('ALL'); setView('reader'); setUploadOpen(false);
+    readingPreferences.current = rememberResumeDocument(readingPreferences.current, value.id);
+    saveReadingPreferences();
+  }, [saveReadingPreferences]);
   const refreshLearning = useCallback(async () => {
     if (restorationLock.current) return;
     const generation = ++libraryGeneration.current;
@@ -222,7 +257,7 @@ export default function App() {
     initializingRef.current = true;
     const epoch = documentEpoch.current;
     setInitializing(true); setError('');
-    const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), request<Health>('/health'), refreshLearning(), learningStorageKey('browsing:v1')]);
+    const results = await Promise.allSettled([request<DocumentSummary[]>('/documents'), request<Health>('/health'), refreshLearning(), learningStorageKey('browsing:v1'), learningStorageKey('reading-resume:v1')]);
     const restoreBrowsing = !browsingLoaded.current;
     if (restoreBrowsing) {
       if (results[3].status === 'fulfilled') {
@@ -233,9 +268,19 @@ export default function App() {
         setBrowsingStorageWarning(!saved.available);
       } else setBrowsingStorageWarning(true);
     }
+    if (!readingLoaded.current) {
+      if (results[4].status === 'fulfilled') {
+        readingLoaded.current = true;
+        readingKey.current = results[4].value;
+        const saved = readReadingResume(results[4].value);
+        readingPreferences.current = saved.preferences;
+        setReadingStorageWarning(!saved.available);
+      } else setReadingStorageWarning(true);
+    }
     if (results[0].status === 'fulfilled' && epoch === documentEpoch.current) {
       const list = results[0].value; setDocuments(list);
-      if (list.length) await openDocument(list.find(item => item.id === rememberedDocument())?.id ?? list[0].id);
+      const last = readingPreferences.current.lastDocumentId ?? legacyRememberedDocument();
+      if (list.length) await openDocument(list.find(item => item.id === last)?.id ?? list[0].id);
     } else if (results[0].status === 'rejected') setError(errorMessage(results[0].reason));
     if (results[1].status === 'fulfilled') setHealth(results[1].value);
     if (results[2].status === 'rejected') setError(errorMessage(results[2].reason));
@@ -244,7 +289,14 @@ export default function App() {
   }, [openDocument, refreshLearning]);
   // Avoid duplicate initialization in React development StrictMode.
   const initialized = useRef(false);
+  const automaticProtectionStarted = useRef(false);
   useEffect(() => { if (!initialized.current) { initialized.current = true; void initialize(); } }, [initialize]);
+  useEffect(() => {
+    if (health?.auth_mode !== 'local' || automaticProtectionStarted.current) return;
+    automaticProtectionStarted.current = true;
+    void request<unknown>('/backups/automatic', { method: 'POST', body: JSON.stringify({ force: false }) })
+      .catch(() => { /* Startup protection is best-effort; Data Management shows the verified status and any error. */ });
+  }, [health?.auth_mode]);
   useEffect(() => {
     if (initializing || !browsingLoaded.current) return;
     browsingPreferences.current.resumeVocabulary = view === 'vocabulary';
@@ -311,12 +363,15 @@ export default function App() {
       if (id !== null) {
         const summary = items.find(item => item.id === id);
         if (summary) setDocument(value => value?.id === id ? { ...value, ...summary } : value);
-        else { setDocument(value => value?.id === id ? null : value); setSelectedId(null); forgetDocument(); }
+        else {
+          setDocument(value => value?.id === id ? null : value); setSelectedId(null); setReadingResumePosition(null);
+          readingPreferences.current = forgetReadingResumeDocument(readingPreferences.current, id); saveReadingPreferences();
+        }
       }
     } catch (e) {
       if (generation === documentSyncGeneration.current && epoch === documentEpoch.current) setDocumentSyncError(`阅读材料列表暂未刷新：${errorMessage(e)}`);
     } finally { if (generation === documentSyncGeneration.current) setSyncingDocuments(false); }
-  }, []);
+  }, [saveReadingPreferences]);
   const openProofread = (initialPage: number, opener: HTMLElement) => {
     if (!document || !['pdf', 'upload', 'demo'].includes(document.source) || restorationLock.current || proofreadLock.current || readerBlockedRef.current || busyRef.current || savingRef.current || initializingRef.current || uploadOpen) return;
     // Older list reads must not overwrite summaries returned by this explicit correction.
@@ -332,11 +387,12 @@ export default function App() {
     setDocuments(items => activeArticleList(items, { ...value, word_count: value.words.length }));
     if (currentDocumentId.current === value.id) {
       // All occurrence IDs and offsets can change; never retain the previous selection or citations.
-      setSelectedId(null); setCitationFocus(null); setQuery(''); setFilter('ALL');
+      setSelectedId(null); setCitationFocus(null); setReadingResumePosition(null); setQuery(''); setFilter('ALL');
+      readingPreferences.current = forgetReadingResumeDocument(readingPreferences.current, value.id); saveReadingPreferences();
       setRevealBookmark(number => number + 1); setArticleTextRevision(number => number + 1);
     }
     setDocumentRevision(number => number + 1);
-  }, []);
+  }, [saveReadingPreferences]);
   const reconcileProofread = async (id: number) => {
     if (restorationLock.current || proofreadLock.current || busyRef.current || savingRef.current) return;
     const generation = ++proofreadSyncGeneration.current;
@@ -393,7 +449,10 @@ export default function App() {
       ++documentEpoch.current;
       setDocuments(items => activeArticleList(items, updated));
       setDocument(value => value?.id === id ? updated.deleted_at ? null : { ...value, ...updated } : value);
-      if (updated.deleted_at && document?.id === id) { setSelectedId(null); forgetDocument(); }
+      if (updated.deleted_at && document?.id === id) {
+        setSelectedId(null); setReadingResumePosition(null);
+        readingPreferences.current = forgetReadingResumeDocument(readingPreferences.current, id); saveReadingPreferences();
+      }
       setDocumentRevision(value => value + 1);
       setNotice(action === 'delete' ? '文章已移到回收站，词库和学习记录保留。' : action === 'restore' ? '文章已恢复，可以继续阅读。' : patch && 'bookmark_occurrence_id' in patch ? patch.bookmark_occurrence_id === null ? '阅读书签已清除。' : '当前阅读位置已保存。' : '文章标题与标签已保存。');
       void refreshDocumentList();
@@ -403,7 +462,7 @@ export default function App() {
       void refreshDocumentList();
       throw e;
     } finally { savingRef.current = false; setSaving(false); }
-  }, [document?.id, refreshDocumentList]);
+  }, [document?.id, refreshDocumentList, saveReadingPreferences]);
   const changeTextDraft = (draft: TextDraft) => {
     textImportRequest.current = null;
     setTextDraft(draft); setError('');
@@ -525,11 +584,14 @@ export default function App() {
   };
   const clearRestoredBrowserState = useCallback(async (): Promise<string> => {
     try {
-      const warning = clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'), await learningStorageKey('browsing:v1'), await learningStorageKey('dictionary-history:v1'));
+      const warning = clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'), await learningStorageKey('browsing:v1'), await learningStorageKey('dictionary-history:v1'), await learningStorageKey('reading-resume:v1'));
       browsingPreferences.current = emptyBrowsingPreferences();
+      readingPreferences.current = emptyReadingResume(); setReadingResumePosition(null);
+      setReadingStorageWarning(warning.includes('自动阅读续接'));
       return warning;
     } catch {
-      return '学习数据已恢复，但当前浏览器的复习进度、阅读位置、词库浏览位置与查词历史未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
+      setReadingStorageWarning(true);
+      return '学习数据已恢复，但当前浏览器的复习进度、自动阅读续接、词库浏览位置与查词历史未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
     }
   }, []);
   const restoreBackup = useCallback(async (token: string): Promise<RestoreOutcome> => {
@@ -555,6 +617,14 @@ export default function App() {
     } finally { savingRef.current = false; setSaving(false); busyRef.current = false; setBusy(''); }
   }, [health?.auth_mode, clearRestoredBrowserState]);
   const selected = document?.words.find(word => word.id === selectedId) ?? null;
+  const restartReading = useCallback(() => {
+    if (!document || restorationLock.current || readerBlockedRef.current || proofreadLock.current) return;
+    readingPreferences.current = rememberResumeDocument(forgetReadingResumeDocument(readingPreferences.current, document.id), document.id);
+    setReadingResumePosition(null); saveReadingPreferences();
+    setCitationFocus(null); setSelectedId(document.words[0]?.id ?? null); setQuery(''); setFilter('ALL');
+    setReadingRestartToken(value => value + 1);
+    setNotice('已从文章开头重新开始，手动书签仍然保留。');
+  }, [document, saveReadingPreferences]);
   const assistantTextIdentity = useMemo(() => {
     const text = document?.ocr_text ?? '';
     let hash = 2166136261;
@@ -665,8 +735,8 @@ export default function App() {
       {view === 'reader' && <>
         {document ? <>
           <section className="reading-bar studio-spotlight"><div className="document-selector"><span className="document-file-icon"><FileText size={19} /></span><label><span className="overline">CURRENT READING</span><div className="select-wrap"><select aria-label="切换阅读材料" value={document.id} disabled={isLoading || saving} onChange={event => void openDocument(Number(event.target.value))}>{documents.length ? documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>) : <option value={document.id}>{document.title}</option>}</select><ChevronDown size={14} /></div></label></div><div className="reading-progress"><div><span>词汇扫描进度</span><strong><MotionNumber value={markedCount} /><span> / {uniqueWords.length}</span></strong></div><div className="progress-track" role="meter" aria-label="词汇扫描进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div style={{ width: `${progress}%` }} /></div></div></section>
-          <div className="reading-library-tools"><button ref={focusReading.entryButton} type="button" className="text-button reading-focus-entry" disabled={isLoading || saving || readerBlocked || proofread !== null} onClick={focusReading.toggle} aria-label="进入专注阅读"><Maximize2 size={15} />专注阅读</button><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || readerBlocked || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving || readerBlocked} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving || readerBlocked} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
-          <div ref={focusReading.workspace} className="reading-workspace" style={{ '--focus-font-size': `${focusReading.fontSize}px` } as CSSProperties}><DocumentPanel key={`document-${document.id}`} document={document} selectedId={selectedId} revealToken={revealBookmark} citationFocus={citationFocus} disabled={saving || isLoading || readerBlocked || proofread !== null} onProofread={openProofread} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word?.id ?? null); if (word) { mascot.emit({ type: 'WORD_SELECTED', word: word.word }); focusReading.openLookup(); } }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word.id); mascot.emit({ type: 'WORD_SELECTED', word: word.word }); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading || readerBlocked || proofread !== null} /><div id="reading-lookup" className={`reading-lookup${focusReading.lookupOpen ? ' is-open' : ''}`}><div className="focus-lookup-heading" hidden={!focusReading.active}><span>查词与原句发音</span><button ref={focusReading.lookupClose} type="button" className="icon-button" aria-label="关闭专注查词" onClick={focusReading.closeLookup}><X size={17} /></button></div><ContextPanel word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading || readerBlocked || proofread !== null} vocabulary={vocabulary} onLearningChanged={refreshLearning} sentenceCache={sentenceCache} sentencePageStart={sentencePageStart} sentenceKey={sentenceKey} /></div></div>
+          <div className="reading-library-tools"><button ref={focusReading.entryButton} type="button" className="text-button reading-focus-entry" disabled={isLoading || saving || readerBlocked || proofread !== null} onClick={focusReading.toggle} aria-label="进入专注阅读"><Maximize2 size={15} />专注阅读</button><div className="article-tags">{document.tags?.map(tag => <span key={tag} className="article-tag">{tag}</span>)}<button className="text-button" onClick={() => setView('library')}><FolderOpen size={14} />整理文章库</button></div><div className="reading-bookmarks"><span><Bookmark size={14} />{document.bookmark_occurrence_id !== null ? `书签：${document.words.find(word => word.id === document.bookmark_occurrence_id)?.word ?? '已保存位置'}` : '还没有书签'}</span><span className={readingStorageWarning ? 'reading-resume-state is-warning' : 'reading-resume-state'}>{readingStorageWarning ? '自动续接暂不可用' : '阅读位置自动记录'}</span><button className="text-button" aria-label="从文章开头重新阅读" disabled={isLoading || saving || readerBlocked || proofread !== null} onClick={restartReading}>从头开始</button><button className="text-button" aria-label="保存当前阅读位置" disabled={isLoading || saving || readerBlocked || selectedId === null} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: selectedId }).catch(e => setError(errorMessage(e)))}>保存当前位置</button>{document.bookmark_occurrence_id !== null && <><button className="text-button" aria-label="回到书签" disabled={isLoading || saving || readerBlocked} onClick={() => { setSelectedId(document.bookmark_occurrence_id); setQuery(''); setFilter('ALL'); setRevealBookmark(value => value + 1); }}>回到书签</button><button className="icon-button" aria-label="清除阅读书签" disabled={isLoading || saving || readerBlocked} onClick={() => void changeArticle(document.id, 'update', { bookmark_occurrence_id: null }).catch(e => setError(errorMessage(e)))}><X size={14} /></button></>}</div></div>
+          <div ref={focusReading.workspace} className="reading-workspace" style={{ '--focus-font-size': `${focusReading.fontSize}px` } as CSSProperties}><DocumentPanel key={`document-${document.id}-${articleTextRevision}`} document={document} selectedId={selectedId} revealToken={revealBookmark} restartToken={readingRestartToken} citationFocus={citationFocus} disabled={saving || isLoading || readerBlocked || proofread !== null} resumePosition={readingResumePosition} onReadingPosition={rememberReadingPosition} onReadingRestored={readingRestored} onProofread={openProofread} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word?.id ?? null); if (word) { mascot.emit({ type: 'WORD_SELECTED', word: word.word }); focusReading.openLookup(); } }} /><WordList wholeDocument={document.source === 'pdf'} words={filteredWords} selectedId={uniqueWords.find(word => word.lemma === selected?.lemma)?.id ?? null} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} total={uniqueWords.length} onSelect={word => { if (proofreadLock.current || readerBlockedRef.current) return; setCitationFocus(null); setSelectedId(word.id); mascot.emit({ type: 'WORD_SELECTED', word: word.word }); }} onMark={(word, status) => void mark(word.word, status, word)} saving={saving || isLoading || readerBlocked || proofread !== null} /><div id="reading-lookup" className={`reading-lookup${focusReading.lookupOpen ? ' is-open' : ''}`}><div className="focus-lookup-heading" hidden={!focusReading.active}><span>查词与原句发音</span><button ref={focusReading.lookupClose} type="button" className="icon-button" aria-label="关闭专注查词" onClick={focusReading.closeLookup}><X size={17} /></button></div><ContextPanel word={selected} onMark={status => selected && void mark(selected.word, status, selected)} onNext={nextWord} saving={saving || isLoading || readerBlocked || proofread !== null} vocabulary={vocabulary} onLearningChanged={refreshLearning} sentenceCache={sentenceCache} sentencePageStart={sentencePageStart} sentenceKey={sentenceKey} /></div></div>
           {!isLoading && !restorationLocked && <ArticleQuestionPanel key={`article-question-${document.id}-${document.ocr_text}-${articleTextRevision}`} document={document} disabled={saving || readerBlocked || proofread !== null} onClear={() => setCitationFocus(null)} onLocate={citation => { if (!proofreadLock.current && !readerBlockedRef.current) setCitationFocus({ text: citation.quote, start: citation.text_start, end: citation.text_end, token: ++citationToken.current }); }} />}
         </> : !initializing && <StudioLanding upload={uploadZone(true)} disabled={isLoading || saving || restorationLocked} onNavigate={setView} />}
       </>}

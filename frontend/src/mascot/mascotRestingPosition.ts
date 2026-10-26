@@ -1,5 +1,5 @@
-import { clampMascot } from './mascotPosition';
-import type { MascotPoint, MascotSize, MascotViewport } from './mascotPosition';
+import { clampMascot, mascotRectsOverlap } from './mascotPosition';
+import type { MascotPoint, MascotRect, MascotSize, MascotViewport } from './mascotPosition';
 
 type Side = 'left' | 'right';
 
@@ -29,4 +29,34 @@ export function resolveMascotDock(preferred: MascotPoint, size: MascotSize, view
     y: Number.isFinite(preferred.y) ? preferred.y : viewport.y + viewport.height - size.height - 24,
   }, size, viewport, inset);
   return { x: Math.max(minX, Math.min(bounded.x, maxX)), y: bounded.y };
+}
+
+/**
+ * Temporarily nudge a docked character along its current edge when it would
+ * cover an interactive control. The saved position and character size stay
+ * untouched, so the character returns to its chosen dock as soon as the area
+ * is clear again.
+ */
+export function avoidMascotControls(position: MascotPoint, size: MascotSize, viewport: MascotViewport, controls: MascotRect[], gap = 8): MascotPoint {
+  const desired = clampMascot(position, size, viewport, 8);
+  const body = { ...desired, ...size };
+  if (!controls.some(control => mascotRectsOverlap(body, control, gap))) return desired;
+
+  const candidates = new Set<number>([
+    desired.y,
+    viewport.y + 8,
+    viewport.y + viewport.height - size.height - 8,
+  ]);
+  for (const control of controls) {
+    const horizontallyRelevant = desired.x < control.x + control.width + gap
+      && desired.x + size.width + gap > control.x;
+    if (!horizontallyRelevant) continue;
+    candidates.add(control.y - size.height - gap);
+    candidates.add(control.y + control.height + gap);
+  }
+
+  const ordered = [...candidates]
+    .map(y => clampMascot({ x: desired.x, y }, size, viewport, 8))
+    .sort((a, b) => Math.abs(a.y - desired.y) - Math.abs(b.y - desired.y));
+  return ordered.find(point => !controls.some(control => mascotRectsOverlap({ ...point, ...size }, control, gap))) ?? desired;
 }

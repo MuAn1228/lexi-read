@@ -308,6 +308,9 @@ def test_public_mode_has_no_backup_access(backup_app):
     assert preview(client, b"invalid").status_code == 404
     assert restore(client, "0" * 32).status_code == 404
     assert client.get(f"/api/backups/safety/lexi-read-safety-{'0' * 32}.zip").status_code == 404
+    assert client.get("/api/backups/automatic").status_code == 404
+    assert client.post("/api/backups/automatic", json={"force": False}).status_code == 404
+    assert client.get("/api/backups/automatic/latest").status_code == 404
     assert all_rows(factory) == before
 
 
