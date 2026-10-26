@@ -37,7 +37,7 @@
 .vocabulary-undo { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 9px; border: 1px solid #ccd9be; border-radius: 6px; background: #fffef9; color: #365c40; font: inherit; white-space: nowrap; }
 .vocabulary-entry { position: relative; }
 .vocabulary-entry.is-selected { background: #f2f7e9; }
-.vocabulary-select-word { position: absolute; top: 25px; left: 17px; display: flex; align-items: center; justify-content: center; min-height: 28px; min-width: 28px; cursor: pointer; }
+.vocabulary-select-word { position: absolute; top: 12px; left: 17px; display: flex; align-items: center; justify-content: center; min-height: 28px; min-width: 28px; cursor: pointer; }
 .vocabulary-entry-main, .vocabulary-records-toggle, .vocabulary-records { margin-left: 28px; }
 .vocabulary-selection-bar :is(button,select,input):focus-visible, .vocabulary-group-tools :is(button,summary,select,input):focus-visible, .vocabulary-select-word input:focus-visible { outline: 3px solid #658d78; outline-offset: 3px; }
 .vocabulary-selection-bar button:disabled, .vocabulary-group-tools button:disabled { opacity: .5; cursor: not-allowed; }
@@ -58,7 +58,7 @@
   .vocabulary-batch-groups { width: 100%; gap: 6px; }
   .vocabulary-batch-groups select { min-width: 95px; flex: 1; width: 0; }
   .vocabulary-batch-groups > .text-button { font-size: 11px; }
-  .vocabulary-select-word { left: 12px; top: 21px; }
+  .vocabulary-select-word { left: 12px; top: 14px; }
   .vocabulary-entry-main, .vocabulary-records-toggle, .vocabulary-records { margin-left: 24px; }
   .vocabulary-operation-feedback { font-size: 11px; }
   .vocabulary-operation-feedback > div { min-width: 130px; }

@@ -148,7 +148,7 @@ input,textarea,select { accent-color: #507d3f; }
 .vocabulary-panel .filter-tabs button.active { background: transparent; border-color: transparent; box-shadow: inset 0 -2px 0 var(--accent); color: var(--accent); }
 .vocabulary-list-heading { background: #e6ecdf; border-color: #d3ddc6; color: #647253; }
 .vocabulary-entry { border-bottom-color: #dee5d4; }
-.vocabulary-word-heading h3 { color: #444d39; font-size: 25px; }
+.vocabulary-word-heading h3 { color: #444d39; font-size: 22px; }
 .dictionary-word-button:hover { color: var(--accent); }
 .vocabulary-entry-meaning > p { color: #636d56; }
 .vocabulary-entry .word-controls.with-labels .mark-button { border-radius: 2px; }
@@ -281,7 +281,6 @@ input,textarea,select { accent-color: #507d3f; }
 .vocabulary-summary { border-radius: 12px; border: 1px solid #d5dfc8; background: #eaf0df; overflow: hidden; }
 .vocabulary-summary > div { padding-block: 18px; }
 .vocabulary-panel .filter-tabs button.active { background: #e7eed8; box-shadow: none; color: #375f32; }
-.vocabulary-word-heading h3 { font-size: 27px; }
 @keyframes lexi-list-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes lexi-word-arrive { from { opacity: .25; } to { opacity: 1; } }
 @media(max-width:1050px) {

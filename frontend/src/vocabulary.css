@@ -21,24 +21,24 @@
 .vocabulary-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; border-block: 1px solid var(--line); background: #f4f7ed; color: #65765b; font-size: 11px; }
 .vocabulary-list { list-style: none; margin: 0; padding: 0; scroll-margin-top: 16px; }
 .vocabulary-list:focus { outline: none; }
-.vocabulary-entry { padding: 22px 24px 14px; border-bottom: 1px solid #e7ebdf; }
+.vocabulary-entry { padding: 12px 24px 10px; border-bottom: 1px solid #e7ebdf; }
 .vocabulary-entry:last-child { border-bottom: 0; }
-.vocabulary-entry-main { display: grid; grid-template-columns: minmax(135px, .9fr) minmax(0, 1.6fr) 218px; align-items: start; gap: 22px; }
+.vocabulary-entry-main { display: grid; grid-template-columns: minmax(135px, .9fr) minmax(0, 1.6fr) 218px; align-items: start; gap: 16px; }
 .vocabulary-word-block, .vocabulary-entry-meaning { min-width: 0; }
-.vocabulary-word-heading { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.vocabulary-word-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .vocabulary-word-heading h3 { max-width: 100%; margin: 0; font: 22px/1.35 Georgia, 'Times New Roman', serif; color: var(--ink); }
 .vocabulary-word-heading h3 button { text-align: left; overflow-wrap: anywhere; }
-.vocabulary-word-heading .status-badge { min-height: 24px; min-width: 76px; justify-content: center; font-size: 11px; white-space: nowrap; }
-.vocabulary-word-block .vocabulary-phonetic { font-size: 12px; line-height: 1.6; margin-top: 8px; overflow-wrap: anywhere; }
+.vocabulary-word-heading .status-badge { min-height: 22px; min-width: 76px; justify-content: center; font-size: 11px; white-space: nowrap; }
+.vocabulary-word-block .vocabulary-phonetic { display: block; font-size: 12px; line-height: 1.6; margin-top: 3px; overflow-wrap: anywhere; }
 .vocabulary-word-block .vocab-lemma { display: block; overflow-wrap: anywhere; line-height: 1.6; }
-.vocabulary-entry-meaning > p { color: #53694f; font-size: 13px; line-height: 1.9; white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 0; }
-.vocabulary-entry-meaning > .text-button { margin-top: 9px; font-size: 12px; min-height: 26px; }
-.vocabulary-entry-actions { display: flex; flex-direction: column; gap: 10px; }
+.vocabulary-entry-meaning > p { color: #53694f; font-size: 13px; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; }
+.vocabulary-entry-meaning > .text-button { margin-top: 2px; font-size: 12px; min-height: 24px; }
+.vocabulary-entry-actions { display: flex; flex-direction: column; gap: 6px; }
 .vocabulary-entry-actions > span { font-size: 11px; color: #788571; }
 .vocabulary-entry .word-controls.with-labels { display: flex; gap: 6px; width: 100%; }
-.vocabulary-entry .word-controls.with-labels .mark-button { width: auto; flex: 1; min-width: 0; height: 38px; gap: 4px; padding: 0 7px; border-radius: 7px; font-size: 11px; white-space: nowrap; }
+.vocabulary-entry .word-controls.with-labels .mark-button { width: auto; flex: 1; min-width: 0; height: 34px; gap: 4px; padding: 0 7px; border-radius: 7px; font-size: 11px; white-space: nowrap; }
 .vocabulary-entry .word-controls.with-labels .mark-button svg { flex-shrink: 0; }
-.vocabulary-records-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 4px 0; margin-top: 12px; min-height: 30px; border: 0; background: none; color: #77846d; font-size: 11px; }
+.vocabulary-records-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; margin-top: 2px; min-height: 26px; border: 0; background: none; color: #77846d; font-size: 11px; }
 .vocabulary-records-toggle > svg { transition: transform .15s; }
 .vocabulary-records-toggle[aria-expanded="true"] > svg { transform: rotate(180deg); }
 .vocabulary-records { margin-top: 10px; border: 1px solid #e3e9da; border-radius: 9px; padding: 16px; background: #f7f9f1; }
@@ -68,15 +68,15 @@
   .vocabulary-tool-actions { align-items: stretch; flex-direction: column; }
   .vocabulary-tool-actions .button { justify-content: center; white-space: normal; text-align: center; }
   .vocabulary-list-heading { padding: 12px 20px; font-size: 10px; }
-  .vocabulary-entry { padding: 20px 20px 12px; }
-  .vocabulary-entry-main { grid-template-columns: minmax(0, 1fr); gap: 15px; }
+  .vocabulary-entry { padding: 14px 20px 10px; }
+  .vocabulary-entry-main { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .vocabulary-word-heading { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
-  .vocabulary-word-heading h3 { font-size: 23px; }
+  .vocabulary-word-heading h3 { font-size: 22px; }
   .vocabulary-word-heading .status-badge { flex-shrink: 0; }
-  .vocabulary-entry-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .vocabulary-entry-actions { flex-direction: column; align-items: stretch; gap: 4px; }
   .vocabulary-entry .word-controls.with-labels { width: 100%; }
   .vocabulary-entry .word-controls.with-labels .mark-button { height: 40px; font-size: 12px; }
-  .vocabulary-records-toggle { min-height: 36px; margin-top: 10px; }
+  .vocabulary-records-toggle { min-height: 36px; margin-top: 2px; }
   .vocabulary-record-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .vocabulary-records { padding: 14px; }
 }

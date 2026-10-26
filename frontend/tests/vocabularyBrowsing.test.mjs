@@ -21,6 +21,18 @@ test('resume state preserves Chinese search, both filters, page, position and op
   assert.deepEqual(readBrowsingPreferences('other', store).preferences, emptyBrowsingPreferences());
 });
 
+test('a fully expanded hundred-word page restores every record and its last-word anchor', () => {
+  const saved = emptyBrowsingPreferences();
+  saved.resumeVocabulary = true;
+  Object.assign(saved.vocabulary, {
+    page: 2, scrollY: 25_000, expanded: Array.from({ length: 100 }, (_, index) => index + 201),
+    anchorId: 300, anchorOffset: -42.5,
+  });
+  const store = storage();
+  assert.equal(writeBrowsingPreferences('mine', saved, store), true);
+  assert.deepEqual(readBrowsingPreferences('mine', store), { preferences: saved, available: true });
+});
+
 test('old, broken and excessively large preferences fall back without blocking the app', () => {
   const store = storage();
   for (const raw of ['{', 'null', '[]', '{"version":2,"vocabulary":{}}', ' '.repeat(20_001)]) {

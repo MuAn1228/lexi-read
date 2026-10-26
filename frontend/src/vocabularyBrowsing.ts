@@ -1,6 +1,8 @@
 import type { StatusFilter } from './WordList';
 import type { MaimemoFilter } from './maimemoSources';
 
+export const VOCABULARY_PAGE_SIZE = 100;
+
 export interface VocabularyBrowsing {
   query: string;
   filter: StatusFilter;
@@ -45,7 +47,7 @@ export function readBrowsingPreferences(key: string, storage?: StorageLike): { p
         sourceFilter: ['ALL', 'MAIMEMO', 'MAIMEMO_WEAK'].includes(value.sourceFilter) ? value.sourceFilter : 'ALL',
         page: counter(value.page, 1_000_000) ? value.page : 0,
         scrollY: counter(value.scrollY, 10_000_000) ? value.scrollY : 0,
-        expanded: Array.isArray(value.expanded) ? [...new Set<number>(value.expanded.filter((id: unknown) => counter(id, Number.MAX_SAFE_INTEGER) && id > 0))].slice(0, 50) : [],
+        expanded: Array.isArray(value.expanded) ? [...new Set<number>(value.expanded.filter((id: unknown) => counter(id, Number.MAX_SAFE_INTEGER) && id > 0))].slice(0, VOCABULARY_PAGE_SIZE) : [],
         ...anchor,
       },
     } };

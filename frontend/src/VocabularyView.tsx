@@ -11,7 +11,7 @@ import { useDictionary } from './DictionaryPanel';
 import { matchesVocabularyQuery } from './dictionary';
 import VocabularyPagination from './components/VocabularyPagination';
 import { useVocabularyOperations, VocabularyGroupTools, VocabularySelectionBar } from './components/VocabularyOperations';
-import type { VocabularyBrowsing } from './vocabularyBrowsing';
+import { VOCABULARY_PAGE_SIZE, type VocabularyBrowsing } from './vocabularyBrowsing';
 import './vocabulary.css';
 
 export default function VocabularyView({ vocabulary, saving, loading, localMode, onOpenMaimemo, initialBrowsing, onBrowsingChange, storageWarning, onVocabularyChanged, onBusyChange, onReloadVocabulary }: {
@@ -78,9 +78,9 @@ export default function VocabularyView({ vocabulary, saving, loading, localMode,
   // Expanded source records affect the height above a saved position, even with no source filter.
   const awaitingSavedRecords = restoring.current && localMode && expanded.length > 0 && !sourcesLoaded && !sourceError;
   const ready = !loading && (!localMode || sourceFilter === 'ALL' || sourcesLoaded) && !awaitingSavedRecords;
-  const pageCount = Math.max(1, Math.ceil(results.length / 50));
+  const pageCount = Math.max(1, Math.ceil(results.length / VOCABULARY_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const visible = results.slice(currentPage * 50, (currentPage + 1) * 50);
+  const visible = results.slice(currentPage * VOCABULARY_PAGE_SIZE, (currentPage + 1) * VOCABULARY_PAGE_SIZE);
   const difficultCount = results.filter(word => word.status === 'UNKNOWN' || word.status === 'UNCERTAIN').length;
   const stats = [{ label: '全部词汇', count: vocabulary.length, style: 'total' }, { label: '已掌握', count: vocabulary.filter(w => w.status === 'KNOWN').length, style: 'known' }, { label: '不认识', count: vocabulary.filter(w => w.status === 'UNKNOWN').length, style: 'unknown' }, { label: '不确定', count: vocabulary.filter(w => w.status === 'UNCERTAIN').length, style: 'uncertain' }];
 
@@ -90,7 +90,7 @@ export default function VocabularyView({ vocabulary, saving, loading, localMode,
     if (restoring.current && anchor.current) {
       const index = results.findIndex(word => word.id === anchor.current?.id);
       if (index >= 0) {
-        const anchorPage = Math.floor(index / 50);
+        const anchorPage = Math.floor(index / VOCABULARY_PAGE_SIZE);
         if (page !== anchorPage) {
           setBrowsing(value => ({ ...value, page: anchorPage }));
           return;
@@ -186,7 +186,7 @@ export default function VocabularyView({ vocabulary, saving, loading, localMode,
         })}
       </ul>
       {!ready ? <div className="empty-library" role="status"><p>{sourceError && !loading ? '请重试读取来源，或切换为全部来源。' : '正在读取词库…'}</p></div> : !results.length && <div className="empty-library"><BookMarked size={32} /><h3>{query || filter !== 'ALL' || sourceFilter !== 'ALL' || operations.groupFilter !== null ? '没有符合条件的词汇' : '还没有收录单词'}</h3><p>{query || filter !== 'ALL' || sourceFilter !== 'ALL' || operations.groupFilter !== null ? '试试其他搜索词或筛选条件。' : '导入英文材料并标记单词，或从墨墨导入已有词库。'}</p></div>}
-      {ready && <div className="table-footer vocabulary-footer"><div className="vocabulary-page-summary"><span>共 {results.length} 个词汇 · 每页 50 个</span><span aria-live="polite">第 {currentPage + 1} / {pageCount} 页</span></div><VocabularyPagination currentPage={currentPage} pageCount={pageCount} onPageChange={changePage} /></div>}
+      {ready && <div className="table-footer vocabulary-footer"><div className="vocabulary-page-summary"><span>共 {results.length} 个词汇 · 每页 {VOCABULARY_PAGE_SIZE} 个</span><span aria-live="polite">第 {currentPage + 1} / {pageCount} 页</span></div><VocabularyPagination currentPage={currentPage} pageCount={pageCount} onPageChange={changePage} /></div>}
     </section>
   </div>;
 }
