@@ -525,11 +525,11 @@ export default function App() {
   };
   const clearRestoredBrowserState = useCallback(async (): Promise<string> => {
     try {
-      const warning = clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'), await learningStorageKey('browsing:v1'));
+      const warning = clearLearningPreferences(window.localStorage, await reviewStorageKey(), browserStorageKey('document'), await learningStorageKey('browsing:v1'), await learningStorageKey('dictionary-history:v1'));
       browsingPreferences.current = emptyBrowsingPreferences();
       return warning;
     } catch {
-      return '学习数据已恢复，但当前浏览器的复习进度、阅读位置与词库浏览位置未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
+      return '学习数据已恢复，但当前浏览器的复习进度、阅读位置、词库浏览位置与查词历史未能清理。请允许浏览器存储后重新清理，再进入阅读空间。';
     }
   }, []);
   const restoreBackup = useCallback(async (token: string): Promise<RestoreOutcome> => {

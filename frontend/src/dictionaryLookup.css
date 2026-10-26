@@ -14,6 +14,12 @@
 .dictionary-lookup-view .lookup-input-wrap input:focus-visible { outline: 0; outline-offset: 0; box-shadow: none; }
 .lookup-input-wrap input::placeholder { color: #98a18e; font-size: 13px; }
 .lookup-input-row > .button { min-width: 98px; justify-content: center; flex-shrink: 0; }
+.lookup-suggestions { list-style: none; display: grid; gap: 3px; min-width: 0; max-height: 320px; margin: 9px 0 0; padding: 5px; overflow-y: auto; overflow-x: hidden; border: 1px solid #dce4d1; border-radius: 9px; background: #fffefb; }
+.lookup-suggestions > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 14px; min-width: 0; padding: 10px 11px; border-radius: 6px; color: #3d6345; cursor: pointer; }
+.lookup-suggestions > li:hover, .lookup-suggestions > li.is-selected { background: #edf3e5; }
+.lookup-suggestions > li > span:first-child { min-width: 0; overflow-wrap: anywhere; font: 16px/1.5 Georgia, serif; }
+.lookup-suggestions > li > span:last-child { display: -webkit-box; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: #7b876e; font-size: 11px; line-height: 1.7; }
+.lookup-suggestion-warning { margin-top: 9px; font-size: 11px; color: #8a795b; line-height: 1.8; }
 .lookup-search-hint, .lookup-input-error { margin-top: 10px; font-size: 11px; line-height: 1.8; }
 .lookup-search-hint { color: #8b9582; }
 .lookup-input-error { color: #9b663d; }
@@ -44,6 +50,13 @@
 .lookup-word-controls .mark-button.is-marked { cursor: default; opacity: .7; }
 .lookup-saving { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #74875f; }
 .lookup-notice { padding: 0 0 15px; color: #5c8150; font-size: 12px; line-height: 1.9; }
+.lookup-spelling { min-width: 0; margin-bottom: 20px; padding: 13px 14px; border: 1px solid #e1e8d6; border-radius: 9px; background: #fafbf5; }
+.lookup-spelling > p { margin: 0 0 8px; color: #748363; font-size: 12px; }
+.lookup-spelling > div { display: flex; flex-wrap: wrap; gap: 7px; min-width: 0; }
+.lookup-spelling button { display: grid; gap: 3px; min-width: 0; max-width: 100%; padding: 7px 10px; border: 1px solid #dce5d1; border-radius: 6px; background: #fffefb; text-align: left; color: #426744; cursor: pointer; }
+.lookup-spelling button:hover:not(:disabled) { border-color: #abc096; background: #edf3e5; }
+.lookup-spelling button > span:first-child { min-width: 0; font: 16px/1.5 Georgia, serif; overflow-wrap: anywhere; }
+.lookup-spelling button > span:last-child { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7b876e; font-size: 10px; }
 .lookup-generate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; }
 .lookup-generate-actions > .text-button { margin-top: 13px; }
 .lookup-history-panel { padding: 20px 18px 17px; min-width: 0; }
@@ -51,6 +64,7 @@
 .lookup-history-panel h2 { display: flex; align-items: center; gap: 7px; font-size: 13px; color: #4c6845; font-weight: 600; }
 .lookup-history-panel > header .text-button { font-size: 10px; gap: 4px; }
 .lookup-history-note { margin-top: 10px; font-size: 10px; color: #929b85; line-height: 1.9; }
+.lookup-history-warning { margin-top: 8px; font-size: 10px; color: #8a795b; line-height: 1.8; overflow-wrap: anywhere; }
 .lookup-history-panel ol { margin: 15px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
 .lookup-history-panel li { min-width: 0; }
 .lookup-history-panel li button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 9px; background: transparent; border: 0; border-radius: 6px; text-align: left; color: #5f7755; cursor: pointer; }
@@ -82,6 +96,10 @@
   .lookup-input-wrap input::placeholder { font-size: 11px; }
   .lookup-input-row > .button { min-width: 69px; padding-inline: 11px; font-size: 12px; }
   .lookup-input-row > .button > svg { display: none; }
+  .lookup-suggestions > li { padding: 9px 8px; gap: 10px; }
+  .lookup-suggestions > li > span:first-child { font-size: 15px; }
+  .lookup-spelling { padding: 12px; }
+  .lookup-spelling button > span:last-child { max-width: 190px; }
   .lookup-search-hint { font-size: 10px; }
   .lookup-result-panel { padding: 21px 17px; }
   .lookup-word-heading { gap: 10px; }

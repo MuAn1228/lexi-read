@@ -15,10 +15,11 @@ export function backupImportProblem(file: Pick<File, 'name' | 'size'>): string {
 }
 
 /** Attempt every key, so a failed reading preference never prevents clearing pending reviews. */
-export function clearLearningPreferences(storage: Pick<Storage, 'removeItem' | 'getItem'>, reviewKey: string, documentKey: string, browsingKey?: string): string {
+export function clearLearningPreferences(storage: Pick<Storage, 'removeItem' | 'getItem'>, reviewKey: string, documentKey: string, browsingKey?: string, lookupHistoryKey?: string): string {
   const failed: string[] = [];
   const preferences = [[reviewKey, '未完成复习进度'], [documentKey, '上次阅读位置']];
   if (browsingKey) preferences.push([browsingKey, '词库浏览位置']);
+  if (lookupHistoryKey) preferences.push([lookupHistoryKey, '查词历史']);
   for (const [key, label] of preferences) {
     try {
       storage.removeItem(key);

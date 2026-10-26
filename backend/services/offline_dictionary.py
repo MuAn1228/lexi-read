@@ -158,6 +158,59 @@ def _row(key: str) -> tuple | None:
     return None
 
 
+def normalize_spelling(value: object) -> str | None:
+    """Normalize literal English spelling without changing word forms."""
+    return _spelling(value)
+
+
+def _suggestion_rows(sql: str, parameters: tuple) -> tuple[tuple[str, str, str, int], ...]:
+    # Share lookup's lock, read-only connection, and one reconnect attempt. The
+    # queries below select bounded indexed ranges/keys, never all dictionary rows.
+    with _LOCK:
+        for attempt in range(2):
+            try:
+                return tuple(_connection().execute(sql, parameters).fetchall())
+            except (sqlite3.Error, OSError) as error:
+                _reset_caches()
+                if attempt:
+                    raise _unavailable() from error
+    return ()
+
+
+def prefix_rows(prefix: str, limit: int = 512) -> tuple[tuple[str, str, str, int], ...]:
+    """Return a bounded literal-prefix pool in indexed spelling order."""
+    key = _spelling(prefix)
+    if key is None or sum(character.isalpha() for character in key) < 2:
+        return ()
+    # Every accepted spelling ends in an ASCII letter. Its next code point is
+    # an exclusive bound for every continuation of this exact prefix.
+    upper = key[:-1] + chr(ord(key[-1]) + 1)
+    return _suggestion_rows(
+        "SELECT spelling, headword, chinese, (phonetic<>'' AND english<>'') FROM entries "
+        "WHERE spelling>=? AND spelling<? ORDER BY spelling LIMIT ?",
+        (key, upper, max(0, min(limit, 512))),
+    )
+
+
+def spelling_rows(spellings: tuple[str, ...]) -> tuple[tuple[str, str, str, int], ...]:
+    """Look up a bounded set of generated spellings through the primary key."""
+    if len(spellings) > 4096:
+        raise ValueError("Too many spelling candidates")
+    keys = tuple(sorted({key for value in spellings if (key := _spelling(value)) is not None}))
+    rows: list[tuple[str, str, str, int]] = []
+    # Stay below SQLite builds with the historical 999 parameter limit. Holding
+    # the outer lock also prevents cache resets between this operation's chunks.
+    with _LOCK:
+        for offset in range(0, len(keys), 400):
+            batch = keys[offset:offset + 400]
+            placeholders = ",".join("?" for _ in batch)
+            rows.extend(_suggestion_rows(
+                "SELECT spelling, headword, chinese, (phonetic<>'' AND english<>'') FROM entries "
+                f"WHERE spelling IN ({placeholders})", batch,
+            ))
+    return tuple(rows)
+
+
 def _senses(value: str) -> list[str]:
     return list(dict.fromkeys(part.strip() for part in value.splitlines() if part.strip()))
 

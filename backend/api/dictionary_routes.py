@@ -7,6 +7,7 @@ from backend.config import get_settings
 from backend.database import get_session
 from backend.services.dictionary import (DictionaryResult, explain_dictionary, read_dictionary,
                                          fetch_dictionary_annotations)
+from backend.services.dictionary_suggestions import DictionarySuggestions, read_suggestions
 
 router = APIRouter(prefix="/api/dictionary")
 
@@ -14,6 +15,16 @@ router = APIRouter(prefix="/api/dictionary")
 class AnnotationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refresh: StrictBool = False
+
+
+@router.get("/suggestions/query", response_model=DictionarySuggestions)
+def suggestions(response: Response, q: str = "", mode: str = "prefix",
+                user_id: int = Depends(get_current_user_id)):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        return read_suggestions(q, mode)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc), headers={"Cache-Control": "private, no-store"}) from exc
 
 
 @router.get("/{word}", response_model=DictionaryResult)

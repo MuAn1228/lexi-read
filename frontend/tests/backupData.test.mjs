@@ -40,3 +40,14 @@ test('restoring a backup also clears only the current vocabulary browsing prefer
   const ignored = { removeItem() {}, getItem: key => key === 'browsing' ? 'retained' : null };
   assert.match(clearLearningPreferences(ignored, 'review', 'document', 'browsing'), /词库浏览位置/);
 });
+
+test('restoration clears this identity lookup history and reports retained history without touching other scopes', () => {
+  const values = new Map([['review', 'pending'], ['document', '1'], ['browsing', 'old-page'], ['lookup', 'old-queries'], ['other:lookup', 'keep']]);
+  const store = { removeItem: key => values.delete(key), getItem: key => values.get(key) ?? null };
+  assert.equal(clearLearningPreferences(store, 'review', 'document', 'browsing', 'lookup'), '');
+  assert.deepEqual([...values], [['other:lookup', 'keep']]);
+  const attempted = [];
+  const blocked = { removeItem(key) { attempted.push(key); if (key === 'lookup') throw new Error('blocked'); }, getItem: () => null };
+  assert.match(clearLearningPreferences(blocked, 'review', 'document', 'browsing', 'lookup'), /查词历史/);
+  assert.deepEqual(attempted, ['review', 'document', 'browsing', 'lookup']);
+});
