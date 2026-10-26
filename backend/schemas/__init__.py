@@ -67,11 +67,18 @@ class MarkRequest(Schema):
     document_id: int | None = None
     origin: Literal["review"] | None = None
     request_id: UUID | None = None
+    response_ms: int | None = Field(default=None, strict=True, ge=500, le=600_000)
+    plan_minutes: int | None = Field(default=None, strict=True)
 
     @model_validator(mode="after")
     def validate_review_request_id(self):
         if self.request_id is not None and self.origin != "review":
             raise ValueError("request_id 仅适用于 origin 为 review 的复习标记。")
+        if self.plan_minutes is not None and self.plan_minutes not in {10, 20, 30}:
+            raise ValueError("每日学习时长只能选择 10、20 或 30 分钟。")
+        if (self.response_ms is not None or self.plan_minutes is not None) and (
+                self.origin != "review" or self.request_id is None):
+            raise ValueError("复习耗时与学习计划需要有效的复习请求编号。")
         return self
 
 
@@ -92,6 +99,25 @@ class ReviewItem(Schema):
     due_at: datetime | None
     known_streak: int = Field(ge=0, le=5)
     next_intervals_seconds: dict[Status, int]
+    priority: int = Field(ge=0, le=100)
+    plan_reason: Literal["FIRST_REVIEW", "OVERDUE", "RECENT_LAPSE", "REPEATED_DIFFICULTY",
+                         "FREQUENT_IN_READING", "DUE"]
+    memory_state: Literal["FRAGILE", "BUILDING", "STABLE"]
+    schedule_version: Literal["adaptive_v2"] = "adaptive_v2"
+
+
+class ReviewPlan(Schema):
+    target_minutes: Literal[10, 20, 30]
+    estimated_seconds_per_card: int = Field(ge=15, le=120)
+    capacity_cards: int = Field(ge=0, le=50)
+    target_cards: int = Field(ge=0, le=50)
+    completed_cards: int = Field(ge=0)
+    remaining_cards: int = Field(ge=0)
+    available_now: int = Field(ge=0)
+    due_now: int = Field(ge=0)
+    later_today: int = Field(ge=0)
+    progress_percent: int = Field(ge=0, le=100)
+    status: Literal["READY", "WAITING", "COMPLETE", "LIGHT"]
 
 
 class ReviewOut(Schema):
@@ -101,6 +127,7 @@ class ReviewOut(Schema):
     later_today: int = Field(ge=0)
     next_due_at: datetime | None
     as_of: datetime
+    plan: ReviewPlan | None = None
 
 
 class WordOut(Schema):

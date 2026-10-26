@@ -1,9 +1,11 @@
-import type { ReviewItem, WordStatus } from './types';
+import type { ReviewItem, StudyPlanMinutes, WordStatus } from './types';
 
 export interface PendingReview {
   item: ReviewItem;
   status: WordStatus;
   requestId: string;
+  responseMs?: number;
+  planMinutes?: StudyPlanMinutes;
 }
 export interface ReviewSession {
   version: 1;
@@ -17,6 +19,9 @@ export interface ReviewSession {
 }
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 const statuses = new Set(['KNOWN', 'UNKNOWN', 'UNCERTAIN']);
+const planReasons = new Set(['FIRST_REVIEW', 'OVERDUE', 'RECENT_LAPSE', 'REPEATED_DIFFICULTY', 'FREQUENT_IN_READING', 'DUE']);
+const memoryStates = new Set(['FRAGILE', 'BUILDING', 'STABLE']);
+const planMinutes = new Set([10, 20, 30]);
 const positiveId = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0;
 const counter = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -34,6 +39,11 @@ function validItem(value: unknown): value is ReviewItem {
     && counter(word.seen_count) && counter(word.lookup_count) && date(word.created_at) && date(word.updated_at)
     && nullableDate(word.first_seen_at) && nullableDate(word.last_seen_at)
     && nullableDate(value.last_reviewed_at) && nullableDate(value.due_at) && counter(value.known_streak)
+    && (value.plan_reason === undefined || planReasons.has(String(value.plan_reason)))
+    && (value.memory_state === undefined || memoryStates.has(String(value.memory_state)))
+    && (value.priority === undefined || (Number.isSafeInteger(value.priority) && Number(value.priority) >= 0 && Number(value.priority) <= 100))
+    // v1 browser sessions predate this field; the current backend sends the string tag.
+    && (value.schedule_version === undefined || value.schedule_version === 'adaptive_v2' || positiveId(value.schedule_version))
     && [...statuses].every(status => typeof value.next_intervals_seconds === 'object'
       && positiveId((value.next_intervals_seconds as Record<string, unknown>)[status]))
     && (occurrence === null || (record(occurrence) && positiveId(occurrence.id) && positiveId(occurrence.document_id)
@@ -54,11 +64,22 @@ export function parseReviewSession(raw: string): ReviewSession {
     const current = value.items[value.cursor];
     if (!record(pending) || !validItem(pending.item) || !statuses.has(String(pending.status))
       || !text(pending.requestId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pending.requestId)
+      || (pending.responseMs !== undefined && (typeof pending.responseMs !== 'number' || !Number.isSafeInteger(pending.responseMs) || pending.responseMs < 500 || pending.responseMs > 600_000))
+      || (pending.planMinutes !== undefined && (typeof pending.planMinutes !== 'number' || !planMinutes.has(pending.planMinutes)))
       || !current || pending.item.vocabulary.id !== current.vocabulary.id
       || pending.item.vocabulary.word !== current.vocabulary.word || pending.item.vocabulary.lemma !== current.vocabulary.lemma
       || pending.item.occurrence?.document_id !== current.occurrence?.document_id) throw new Error('Invalid pending review');
   }
-  return value as unknown as ReviewSession;
+  const stripLegacyScheduleVersion = (item: ReviewItem): ReviewItem => {
+    if (typeof item.schedule_version !== 'number') return item;
+    return { ...item, schedule_version: undefined };
+  };
+  const session = value as unknown as ReviewSession;
+  return {
+    ...session,
+    items: session.items.map(stripLegacyScheduleVersion),
+    pending: session.pending ? { ...session.pending, item: stripLegacyScheduleVersion(session.pending.item) } : null,
+  };
 }
 
 export function readReviewSession(key: string, storage?: StorageLike): { session: ReviewSession | null; warning: string } {
@@ -101,8 +122,8 @@ export function finishReviewCard(session: ReviewSession, result: 'assessed' | 's
   return { ...session, cursor: session.cursor + 1, [result]: session[result] + 1, pending: null };
 }
 
-export function reviewQuery(ids?: number[]): string {
-  const query = new URLSearchParams({ limit: '10', tz_offset_minutes: String(-new Date().getTimezoneOffset()) });
+export function reviewQuery(ids?: number[], targetMinutes: StudyPlanMinutes = 20): string {
+  const query = new URLSearchParams({ limit: '10', tz_offset_minutes: String(-new Date().getTimezoneOffset()), plan_minutes: String(targetMinutes) });
   ids?.forEach(id => query.append('vocabulary_ids', String(id)));
   return `/review?${query}`;
 }

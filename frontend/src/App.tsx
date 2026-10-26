@@ -47,15 +47,15 @@ import StudyDock from './components/StudyDock';
 import type { StatusFilter } from './WordList';
 import type { SentenceAnalysisCache } from './sentenceAnalysis';
 import { sentenceOccurrenceKey } from './sentenceAnalysis';
-import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, View, Vocabulary, WordStatus } from './types';
+import type { DocumentSummary, Health, LearningEvent, Occurrence, ReadingDocument, ReviewItem, StudyPlanMinutes, View, Vocabulary, WordStatus } from './types';
 
-const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'dictionary', label: '查单词', icon: Search }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '生词复习', icon: RefreshCw }, { value: 'practice', label: '短文练习', icon: Sparkles }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '词汇关联', icon: Network }, { value: 'history', label: '学习记录', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
+const navigation = [{ value: 'reader', label: '阅读空间', icon: BookOpen }, { value: 'dictionary', label: '查单词', icon: Search }, { value: 'library', label: '文章库', icon: FolderOpen }, { value: 'vocabulary', label: '我的词库', icon: BookMarked }, { value: 'review', label: '今日计划', icon: RefreshCw }, { value: 'practice', label: '短文练习', icon: Sparkles }, { value: 'dashboard', label: '学习概览', icon: BarChart3 }, { value: 'relations', label: '词汇关联', icon: Network }, { value: 'history', label: '学习记录', icon: Clock3 }, { value: 'data', label: '数据管理', icon: Archive }] as const;
 const titles: Record<View, { title: string; subtitle: string }> = {
   reader: { title: '阅读空间', subtitle: '导入英文材料，阅读查词，收录需要复习的生词。' },
   dictionary: { title: '查单词', subtitle: '输入英文单词或短语，查看中文释义、听发音，收录生词。' },
   library: { title: '文章库', subtitle: '查找文章、管理标签和书签，继续上次的阅读。' },
   vocabulary: { title: '我的词库', subtitle: '查看中文释义，搜索单词，更新掌握程度。' },
-  review: { title: '生词复习', subtitle: '复习到期单词，先回想释义或完成原句填空，再记录掌握程度。' },
+  review: { title: '今日计划', subtitle: '按今日安排复习到期单词，先回想释义或完成原句填空，再记录掌握程度。' },
   practice: { title: '短文练习', subtitle: '用需要巩固的单词生成英文短文，在新语境中练习。' },
   history: { title: '学习记录', subtitle: '按日复盘，找出没记牢的词，接着学。' },
   dashboard: { title: '学习概览', subtitle: '查看词汇掌握情况和学习统计。' },
@@ -674,12 +674,12 @@ export default function App() {
     } catch (e) { setError(errorMessage(e)); }
     finally { savingRef.current = false; setSaving(false); }
   }, [document, filteredWords, mascot]);
-  const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string): Promise<void> => {
+  const assessReview = useCallback(async (item: ReviewItem, status: WordStatus, requestId: string, responseMs: number, planMinutes: StudyPlanMinutes): Promise<void> => {
     if (restorationLock.current || proofreadLock.current || readerBlockedRef.current || savingRef.current || busyRef.current) throw new Error('正在保存其他学习记录，请稍后重试。');
     savingRef.current = true; setSaving(true); setError('');
     try {
       const updated = await request<Vocabulary>(`/vocabulary/${encodeURIComponent(item.vocabulary.word)}`, {
-        method: 'PUT', body: JSON.stringify({ status, origin: 'review', request_id: requestId, ...(item.occurrence ? { document_id: item.occurrence.document_id } : {}) }),
+        method: 'PUT', body: JSON.stringify({ status, origin: 'review', request_id: requestId, response_ms: responseMs, plan_minutes: planMinutes, ...(item.occurrence ? { document_id: item.occurrence.document_id } : {}) }),
       });
       if (updated.status) mascot.emit({ type: 'WORD_MARKED', word: updated.word, status: updated.status });
       ++libraryGeneration.current;

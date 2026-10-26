@@ -55,11 +55,14 @@ def dashboard(session: Session = Depends(get_session), user_id: int = Depends(ge
 
 @router.get("/review", response_model=ReviewOut)
 def review(limit: int = Query(10, ge=1, le=50), tz_offset_minutes: int = Query(480, ge=-720, le=840),
+           plan_minutes: int | None = Query(None, ge=10, le=30),
            vocabulary_ids: list[int] | None = Query(None, max_length=50), session: Session = Depends(get_session),
            user_id: int = Depends(get_current_user_id)):
+    if plan_minutes is not None and plan_minutes not in {10, 20, 30}:
+        raise HTTPException(422, "每日学习时长只能选择 10、20 或 30 分钟。")
     if vocabulary_ids is not None and any(value <= 0 for value in vocabulary_ids):
         raise HTTPException(422, "词条编号必须为正整数。")
-    return ReviewService(session, user_id).read(limit, tz_offset_minutes, vocabulary_ids)
+    return ReviewService(session, user_id).read(limit, tz_offset_minutes, vocabulary_ids, plan_minutes)
 
 
 @router.get("/documents", response_model=list[DocumentSummary])
@@ -204,13 +207,19 @@ def mark_word(word: str, payload: MarkRequest, session: Session = Depends(get_se
     try:
         repository = VocabularyRepository(session, user_id)
         if payload.origin == "review" and payload.request_id is not None:
-            return ReviewMarkService(repository).apply(word, payload.status, payload.document_id, payload.request_id)
+            return ReviewMarkService(repository).apply(
+                word, payload.status, payload.document_id, payload.request_id,
+                response_ms=payload.response_ms, plan_minutes=payload.plan_minutes,
+            )
         # Ordinary marks also modify the schedule. Reserve the writer before
         # checking ownership or reading existing vocabulary to avoid lost state.
         session.execute(text("BEGIN IMMEDIATE"))
         if payload.document_id is not None:
             require_document(session, payload.document_id, user_id)
-        metadata = {"origin": "review"} if payload.origin == "review" else None
+        metadata = ({"origin": "review",
+                     **({"response_ms": payload.response_ms} if payload.response_ms is not None else {}),
+                     **({"plan_minutes": payload.plan_minutes} if payload.plan_minutes is not None else {})}
+                    if payload.origin == "review" else None)
         return VocabularyService(repository).mark(
             word, payload.status, payload.document_id, metadata=metadata,
         )

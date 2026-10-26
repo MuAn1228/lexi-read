@@ -13,6 +13,7 @@ from backend.models import Base, GuestCredential, LearningEvent, ReviewSchedule,
 from backend.repositories.vocabulary import VocabularyRepository
 from backend.schemas import Status
 from backend.services.review import ReviewService
+from backend.services.review_marks import ReviewMarkService
 from backend.services.scheduling import utc
 from backend.services.vocabulary import VocabularyService
 from backend.tests.test_feedback import batch, feedback, feedback_app  # noqa: F401
@@ -41,7 +42,7 @@ def scheduled(session, lemma, due_at, status="UNKNOWN", *, user_id=1, streak=0):
     return entry
 
 
-@pytest.mark.parametrize("status,seconds", [(Status.UNKNOWN, 600), (Status.UNCERTAIN, 86400)])
+@pytest.mark.parametrize("status,seconds", [(Status.UNKNOWN, 600), (Status.UNCERTAIN, 3 * 86400)])
 def test_unfamiliar_review_sets_short_interval_resets_streak_and_returns_at_exact_due(session, status, seconds):
     scheduled(session, "model", NOW, streak=4)
     session.commit()
@@ -53,7 +54,7 @@ def test_unfamiliar_review_sets_short_interval_resets_streak_and_returns_at_exac
     result = ReviewService(session, now=NOW + timedelta(seconds=seconds)).read()
     assert lemmas(result) == ["model"]
     assert result.items[0].next_intervals_seconds == {
-        Status.UNKNOWN: 600, Status.UNCERTAIN: 86400, Status.KNOWN: 3 * 86400,
+        Status.UNKNOWN: 600, Status.UNCERTAIN: 86400, Status.KNOWN: 2 * 86400,
     }
 
 
@@ -190,6 +191,89 @@ def test_queue_api_accepts_repeated_ids_and_timezone_extremes(client, session):
     assert result.status_code == 200, result.text
     assert result.json()["total"] == 2 and len(result.json()["items"]) == 2
     assert client.get("/api/review?tz_offset_minutes=840").status_code == 200
+
+
+def test_adaptive_plan_counts_later_today_but_only_returns_due_cards(client, session, monkeypatch):
+    monkeypatch.setattr("backend.services.review.utcnow", lambda: NOW)
+    due = scheduled(session, "due", NOW - timedelta(minutes=1), "KNOWN", streak=2)
+    scheduled(session, "later", NOW + timedelta(hours=2), "KNOWN", streak=2)
+    record(session, "done", NOW - timedelta(minutes=1), details={"origin": "review", "response_ms": 20_000})
+    session.commit()
+
+    response = client.get("/api/review?plan_minutes=10")
+    assert response.status_code == 200, response.text
+    result = response.json()
+    plan = result["plan"]
+    assert result["total"] == 1
+    assert [item["vocabulary"]["id"] for item in result["items"]] == [due.id]
+    assert result["items"][0]["plan_reason"] == "FIRST_REVIEW"
+    assert result["items"][0]["memory_state"] == "BUILDING"
+    assert result["items"][0]["schedule_version"] == "adaptive_v2"
+    assert plan == {
+        "target_minutes": 10,
+        "estimated_seconds_per_card": 20,
+        "capacity_cards": 30,
+        "target_cards": 3,
+        "completed_cards": 1,
+        "remaining_cards": 2,
+        "available_now": 1,
+        "due_now": 1,
+        "later_today": 1,
+        "progress_percent": 33,
+        "status": "LIGHT",
+    }
+
+
+def test_response_time_preview_matches_mark_and_only_prior_attempts_affect_it(session, monkeypatch):
+    monkeypatch.setattr("backend.services.vocabulary.utcnow", lambda: NOW)
+    entry = scheduled(session, "model", NOW, "KNOWN", streak=2)
+    for index, value in enumerate((4_000, 4_500, 5_000)):
+        record(session, "model", NOW - timedelta(days=index + 1), "MARK_KNOWN",
+               details={"origin": "review", "response_ms": value})
+    session.commit()
+
+    preview = ReviewService(session, now=NOW).read().items[0]
+    expected = preview.next_intervals_seconds[Status.KNOWN]
+    marked = ReviewMarkService(VocabularyRepository(session)).apply(
+        "model", Status.KNOWN, None, uuid4(), response_ms=30_000,
+    )
+    event = session.scalar(select(LearningEvent).order_by(LearningEvent.id.desc()))
+    assert snapshot(session) == (NOW + timedelta(seconds=expected), 3)
+    assert event.details["review_interval_seconds"] == expected
+    assert event.details["schedule_version"] == "adaptive_v2"
+    assert event.details["adaptive_reason"]
+    assert event.details["memory_state"] in {"FRAGILE", "BUILDING", "STABLE"}
+    assert event.details["response_ms"] == 30_000
+    assert marked.status == "KNOWN"
+
+
+@pytest.mark.parametrize("query", ["plan_minutes=0", "plan_minutes=15", "plan_minutes=31", "plan_minutes=bad"])
+def test_adaptive_plan_rejects_unsupported_duration_without_writes(client, session, query):
+    assert client.get(f"/api/review?{query}").status_code == 422
+    assert list(session.scalars(select(ReviewSchedule))) == []
+    assert list(session.scalars(select(LearningEvent))) == []
+
+
+def test_resumed_plan_group_keeps_all_requested_due_cards_without_pulling_future_or_foreign(
+        client, session, monkeypatch):
+    monkeypatch.setattr("backend.services.review.utcnow", lambda: NOW)
+    due = [scheduled(session, f"due{index}", NOW - timedelta(minutes=index + 1), "KNOWN", streak=2)
+           for index in range(5)]
+    future = scheduled(session, "future", NOW + timedelta(hours=1), "KNOWN", streak=2)
+    foreign = scheduled(session, "foreign", NOW - timedelta(days=1), "KNOWN", user_id=2, streak=2)
+    for index in range(16):
+        record(session, f"done{index}", NOW - timedelta(minutes=index + 1), "MARK_KNOWN",
+               details={"origin": "review", "response_ms": 35_000})
+    session.commit()
+
+    fresh = client.get("/api/review?plan_minutes=10").json()
+    assert fresh["plan"]["remaining_cards"] == 1
+    assert len(fresh["items"]) == 1
+    ids = [entry.id for entry in due] + [future.id, foreign.id]
+    query = "&".join(f"vocabulary_ids={value}" for value in ids)
+    resumed = client.get(f"/api/review?plan_minutes=10&{query}")
+    assert resumed.status_code == 200, resumed.text
+    assert {item["vocabulary"]["id"] for item in resumed.json()["items"]} == {entry.id for entry in due}
 
 
 def test_public_schedules_and_today_totals_are_owned_even_with_forged_batch_ids(client, session, monkeypatch):

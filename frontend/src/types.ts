@@ -29,14 +29,32 @@ export interface ReviewOccurrence {
   id: number; document_id: number; document_title: string; word: string; sentence: string;
   target_start?: number | null; target_end?: number | null;
 }
+export type StudyPlanMinutes = 10 | 20 | 30;
+export type StudyPlanStatus = 'READY' | 'WAITING' | 'COMPLETE' | 'LIGHT';
+export type PlanReason = 'FIRST_REVIEW' | 'OVERDUE' | 'RECENT_LAPSE' | 'REPEATED_DIFFICULTY' | 'FREQUENT_IN_READING' | 'DUE';
+export type MemoryState = 'FRAGILE' | 'BUILDING' | 'STABLE';
+export interface StudyPlan {
+  target_minutes: StudyPlanMinutes;
+  estimated_seconds_per_card: number;
+  capacity_cards: number;
+  target_cards: number;
+  completed_cards: number;
+  remaining_cards: number;
+  available_now: number;
+  due_now: number;
+  later_today: number;
+  progress_percent: number;
+  status: StudyPlanStatus;
+}
 export interface ReviewItem {
   vocabulary: Vocabulary; occurrence: ReviewOccurrence | null; last_reviewed_at: string | null;
   due_at: string | null; known_streak: number; next_intervals_seconds: Record<WordStatus, number>;
+  plan_reason?: PlanReason; memory_state?: MemoryState; priority?: number; schedule_version?: string;
 }
 export interface ReviewSummary {
   total: number; reviewed_today: number; later_today: number; next_due_at: string | null; as_of: string;
 }
-export interface ReviewBatch extends ReviewSummary { items: ReviewItem[] }
+export interface ReviewBatch extends ReviewSummary { items: ReviewItem[]; plan?: StudyPlan }
 export interface ReviewMeaning {
   word: string; lemma: string; meaning_in_context: string | null; simple_explanation: string | null;
   part_of_speech: string | null; source: 'llm' | 'offline' | 'unavailable'; cached: boolean; warning: string | null;

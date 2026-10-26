@@ -80,6 +80,30 @@ test('corrupt, obsolete, or inconsistent persisted state is rejected before retr
   ]) assert.throws(() => parseReviewSession(raw));
 });
 
+test('v1 sessions accept adaptive_v2 string tags and pending assessment times in backend range', () => {
+  const session = newReviewSession([makeItem(1)]);
+  session.items[0].schedule_version = 'adaptive_v2';
+  session.pending = { ...pending(session.items[0]), responseMs: 500, planMinutes: 20 };
+  assert.deepEqual(roundTrip(session), session);
+  const tooShort = structuredClone(session);
+  tooShort.pending.responseMs = 499;
+  assert.throws(() => roundTrip(tooShort));
+  const legacy = structuredClone(session);
+  delete legacy.items[0].schedule_version;
+  delete legacy.pending.responseMs;
+  delete legacy.pending.planMinutes;
+  assert.deepEqual(roundTrip(legacy), legacy);
+  const oldNumericTag = structuredClone(session);
+  oldNumericTag.items[0].schedule_version = 1;
+  assert.equal(roundTrip(oldNumericTag).items[0].schedule_version, undefined);
+  const unknownTag = structuredClone(session);
+  unknownTag.items[0].schedule_version = 'future-version';
+  assert.throws(() => roundTrip(unknownTag));
+  const invalidPriority = structuredClone(session);
+  invalidPriority.items[0].priority = 101;
+  assert.throws(() => roundTrip(invalidPriority));
+});
+
 test('unreadable progress has an explicit warning without erasing server records', () => {
   const read = readReviewSession('key', { getItem: () => '{broken', setItem: () => assert.fail('read must not write') });
   assert.equal(read.session, null);

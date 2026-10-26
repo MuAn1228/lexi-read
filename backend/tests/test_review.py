@@ -186,7 +186,9 @@ def test_reads_are_bounded_selects_and_never_flush_pending_work_or_record_events
         assert {k: v for k, v in first.json().items() if k != "as_of"} == {
             k: v for k, v in second.json().items() if k != "as_of"}
         assert first.json()["total"] == 12 and len(first.json()["items"]) == 10
-        assert statements == ["SELECT"] * 6
+        # Summary, bounded queue, bounded adaptive profile and context: four
+        # SELECTs per read, with no per-card queries or writes.
+        assert statements == ["SELECT"] * 8
         assert pending in session.new
         with session.no_autoflush:
             assert session.scalar(select(func.count(LearningEvent.id))) == 0
@@ -212,10 +214,13 @@ def test_mark_rejects_invalid_review_origins_without_mutating(session, client, o
     assert entry.status == "UNKNOWN" and entry.mastery_score == .45
 
 
-@pytest.mark.parametrize("status,expected_score,expected_total", [
-    ("KNOWN", .6, 0), ("UNKNOWN", .25, 0), ("UNCERTAIN", .37, 0),
+@pytest.mark.parametrize("status,expected_score,expected_total,interval,memory", [
+    ("KNOWN", .6, 0, 3 * 86400, "BUILDING"),
+    ("UNKNOWN", .25, 0, 600, "FRAGILE"),
+    ("UNCERTAIN", .37, 0, 86400, "BUILDING"),
 ])
-def test_review_mark_reuses_existing_mastery_rule_and_updates_queue(session, client, status, expected_score, expected_total):
+def test_review_mark_reuses_existing_mastery_rule_and_updates_queue(
+        session, client, status, expected_score, expected_total, interval, memory):
     vocabulary(session, "model", mastery_score=.45, seen_count=4, lookup_count=2)
     doc = document(session, ["model"])
     session.commit()
@@ -232,7 +237,10 @@ def test_review_mark_reuses_existing_mastery_rule_and_updates_queue(session, cli
     assert events[0].details == {
         "origin": "review", "previous_status": "UNKNOWN", "mastery_before": .45,
         "mastery_after": expected_score, "rule_version": "heuristic_v1",
+        "schedule_version": "adaptive_v2", "review_interval_seconds": interval,
+        "adaptive_reason": events[0].details["adaptive_reason"], "memory_state": memory,
     }
+    assert events[0].details["adaptive_reason"]
     queue = client.get("/api/review").json()
     assert queue["total"] == expected_total
     if expected_total:
@@ -396,6 +404,34 @@ def test_reused_review_key_with_different_payload_conflicts_without_writing(revi
         assert db.scalar(select(func.count(Vocabulary.id))) == 1
 
 
+def test_reused_review_key_rejects_changed_adaptive_metadata_without_writing(review_file_app):
+    client, factory, own_id, _ = review_file_app
+    payload = {**review_payload(document_id=own_id), "response_ms": 2_500, "plan_minutes": 20}
+    expected = client.put("/api/vocabulary/model", json=payload)
+    assert expected.status_code == 200, expected.text
+    for field, value in (("response_ms", 2_501), ("plan_minutes", 30)):
+        changed = {**payload, field: value}
+        response = client.put("/api/vocabulary/model", json=changed)
+        assert response.status_code == 409, response.text
+    exact = client.put("/api/vocabulary/model", json=payload)
+    assert exact.status_code == 200 and exact.json() == expected.json()
+    with factory() as db:
+        assert db.scalar(select(func.count(LearningEvent.id))) == 1
+        assert db.scalar(select(func.count(ReviewReceipt.id))) == 1
+
+
+def test_v2_review_without_optional_metadata_cannot_gain_it_during_retry(review_file_app):
+    client, factory, own_id, _ = review_file_app
+    payload = review_payload(document_id=own_id)
+    assert client.put("/api/vocabulary/model", json=payload).status_code == 200
+    changed = {**payload, "response_ms": 2_500, "plan_minutes": 20}
+    response = client.put("/api/vocabulary/model", json=changed)
+    assert response.status_code == 409, response.text
+    with factory() as db:
+        assert db.scalar(select(func.count(LearningEvent.id))) == 1
+        assert db.scalar(select(func.count(ReviewReceipt.id))) == 1
+
+
 @pytest.mark.parametrize("origin", [None, "omitted"])
 def test_request_id_requires_explicit_review_origin_and_valid_uuid(session, client, origin):
     payload = {"status": "KNOWN", "request_id": str(uuid4())}
@@ -404,6 +440,24 @@ def test_request_id_requires_explicit_review_origin_and_valid_uuid(session, clie
     assert client.put("/api/vocabulary/model", json=payload).status_code == 422
     assert client.put("/api/vocabulary/model", json={"status": "KNOWN", "origin": "review",
                                                   "request_id": "invalid-uuid"}).status_code == 422
+    assert session.scalar(select(func.count(Vocabulary.id))) == 0
+    assert session.scalar(select(func.count(LearningEvent.id))) == 0
+    assert session.scalar(select(func.count(ReviewReceipt.id))) == 0
+
+
+@pytest.mark.parametrize("payload", [
+    {"status": "KNOWN", "origin": "review", "request_id": str(uuid4()), "response_ms": 499},
+    {"status": "KNOWN", "origin": "review", "request_id": str(uuid4()), "response_ms": 600_001},
+    {"status": "KNOWN", "origin": "review", "request_id": str(uuid4()), "response_ms": 500.5},
+    {"status": "KNOWN", "origin": "review", "request_id": str(uuid4()), "response_ms": True},
+    {"status": "KNOWN", "origin": "review", "request_id": str(uuid4()), "plan_minutes": 15},
+    {"status": "KNOWN", "origin": "review", "response_ms": 2_500},
+    {"status": "KNOWN", "origin": "review", "plan_minutes": 20},
+    {"status": "KNOWN", "request_id": str(uuid4()), "response_ms": 2_500},
+])
+def test_adaptive_review_metadata_requires_strict_bounds_origin_and_request_id(session, client, payload):
+    response = client.put("/api/vocabulary/model", json=payload)
+    assert response.status_code == 422, response.text
     assert session.scalar(select(func.count(Vocabulary.id))) == 0
     assert session.scalar(select(func.count(LearningEvent.id))) == 0
     assert session.scalar(select(func.count(ReviewReceipt.id))) == 0

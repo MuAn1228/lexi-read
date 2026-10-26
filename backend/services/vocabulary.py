@@ -33,9 +33,14 @@ class VocabularyService:
         entry.mastery_score = details["mastery_after"]
         now = now or utcnow()
         entry.updated_at = now
-        schedule_mark(self.repo.session, entry, status, review=(metadata or {}).get("origin") == "review", now=now)
+        schedule_details = schedule_mark(
+            self.repo.session, entry, status,
+            review=(metadata or {}).get("origin") == "review", now=now,
+            mastery_before=details["mastery_before"],
+        )
         event = self.repo.event(word.strip(), event_type, document_id,
-                               {**(metadata or {}), "previous_status": previous, **details})
+                               {**(metadata or {}), "previous_status": previous,
+                                **details, **schedule_details})
         event.created_at = now
         if recorded_events is not None:
             recorded_events.append(event)

@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from backend.models import Document, LearningEvent, ReviewSchedule, Vocabulary, WordOccurrence
 from backend.models.entities import utcnow
 from backend.schemas import ReviewItem, ReviewOccurrence, ReviewOut
+from backend.services.adaptive_review import (ReviewProfile, memory_state, priority_score,
+                                               read_review_profiles, review_plan_metrics,
+                                               selection_reason)
 from backend.services.scheduling import next_intervals, utc
 from backend.services.review_context import review_target_range
 
@@ -18,13 +21,17 @@ class ReviewService:
         self.now = utc(now) if now is not None else None
 
     def read(self, limit: int = 10, tz_offset_minutes: int = 480,
-             vocabulary_ids: list[int] | None = None) -> ReviewOut:
+             vocabulary_ids: list[int] | None = None,
+             plan_minutes: int | None = None) -> ReviewOut:
         # A shared session may contain unrelated pending writes. Reading the
         # queue must never flush those writes or record a review impression.
         with self.session.no_autoflush:
-            return self._read(limit, tz_offset_minutes, vocabulary_ids)
+            return self._read(limit, tz_offset_minutes, vocabulary_ids, plan_minutes)
 
-    def _read(self, limit: int, tz_offset_minutes: int, vocabulary_ids: list[int] | None) -> ReviewOut:
+    def _read(self, limit: int, tz_offset_minutes: int, vocabulary_ids: list[int] | None,
+              plan_minutes: int | None) -> ReviewOut:
+        if plan_minutes is not None and (type(plan_minutes) is not int or plan_minutes not in {10, 20, 30}):
+            raise ValueError("Invalid daily study duration")
         now = self.now or utcnow()
         local_zone = timezone(timedelta(minutes=tz_offset_minutes))
         local_date = now.astimezone(local_zone).date()
@@ -55,7 +62,12 @@ class ReviewService:
         ).select_from(Vocabulary).outerjoin(ReviewSchedule, join).where(
             Vocabulary.user_id == self.user_id, Vocabulary.status.is_not(None),
         )).mappings().one()
-        result = dict(summary, as_of=now)
+        plan = review_plan_metrics(
+            self.session, self.user_id, today=today, tomorrow=tomorrow,
+            minutes=plan_minutes, due_now=int(summary["total"]),
+            later_today=int(summary["later_today"]),
+        ) if plan_minutes is not None else None
+        result = dict(summary, as_of=now, plan=plan)
         reviewed = select(
             LearningEvent.lemma.label("lemma"),
             func.max(LearningEvent.created_at).label("last_reviewed_at"),
@@ -67,6 +79,7 @@ class ReviewService:
         )
         if vocabulary_ids is not None:
             query = query.where(Vocabulary.id.in_(vocabulary_ids))
+        candidate_limit = min(200, max(limit * 4, 50)) if plan is not None and vocabulary_ids is None else limit
         rows = list(self.session.execute(query.order_by(
             ReviewSchedule.due_at.asc(),
             case((reviewed.c.last_reviewed_at.is_(None), 0), else_=1),
@@ -74,7 +87,32 @@ class ReviewService:
             func.coalesce(Vocabulary.mastery_score, .5).asc(),
             Vocabulary.seen_count.desc(),
             Vocabulary.lemma.asc(), Vocabulary.id.asc(),
-        ).limit(limit)))
+        ).limit(candidate_limit)))
+        if not rows:
+            return ReviewOut(items=[], **result)
+
+        profiles = read_review_profiles(self.session, self.user_id, [entry.lemma for entry, _, _ in rows])
+        metadata = {}
+        for entry, state, _ in rows:
+            profile = profiles.get(entry.lemma, ReviewProfile())
+            streak = state.known_streak if state else 0
+            due_at = state.due_at if state else None
+            metadata[entry.id] = {
+                "profile": profile,
+                "priority": priority_score(entry.status, entry.mastery_score, entry.seen_count,
+                                             due_at, now, profile),
+                "reason": selection_reason(entry.status, streak, profile, due_at, now, entry.seen_count),
+                "memory_state": memory_state(entry.status, streak, profile),
+            }
+        if plan is not None and vocabulary_ids is None:
+            rows.sort(key=lambda row: (-metadata[row[0].id]["priority"],
+                                      utc(row[1].due_at).timestamp() if row[1] else float("-inf"),
+                                      row[0].lemma, row[0].id))
+        if plan is not None:
+            effective_limit = min(limit, 10, plan["available_now"]) if vocabulary_ids is None else min(limit, 10)
+        else:
+            effective_limit = limit
+        rows = rows[:effective_limit]
         if not rows:
             return ReviewOut(items=[], **result)
 
@@ -111,5 +149,9 @@ class ReviewService:
         return ReviewOut(items=[ReviewItem(
             vocabulary=entry, occurrence=contexts.get(entry.lemma), last_reviewed_at=last_at,
             due_at=state.due_at if state else None, known_streak=state.known_streak if state else 0,
-            next_intervals_seconds=next_intervals(state.known_streak if state else 0),
+            next_intervals_seconds=next_intervals(
+                state.known_streak if state else 0, entry.mastery_score,
+                metadata[entry.id]["profile"],
+            ), priority=metadata[entry.id]["priority"], plan_reason=metadata[entry.id]["reason"],
+            memory_state=metadata[entry.id]["memory_state"],
         ) for entry, state, last_at in rows], **result)
