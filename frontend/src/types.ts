@@ -25,6 +25,12 @@ export interface Vocabulary {
   mastery_score: number | null; seen_count: number; lookup_count: number;
   created_at: string; updated_at: string; first_seen_at: string | null; last_seen_at: string | null;
 }
+export interface VocabularySense {
+  id: number | null; sense_key: string; source: string; source_revision: string | null; source_ordinal: number;
+  part_of_speech: string | null; meaning: string; status: WordStatus | null; mastery_score: number | null;
+  due_at: string | null; known_streak: number; available: boolean;
+}
+export interface VocabularySenses { word: string; lemma: string; senses: VocabularySense[] }
 export interface ReviewOccurrence {
   id: number; document_id: number; document_title: string; word: string; sentence: string;
   target_start?: number | null; target_end?: number | null;
@@ -55,6 +61,12 @@ export interface ReviewSummary {
   total: number; reviewed_today: number; later_today: number; next_due_at: string | null; as_of: string;
 }
 export interface ReviewBatch extends ReviewSummary { items: ReviewItem[]; plan?: StudyPlan }
+export interface SenseReviewItem {
+  sense: VocabularySense; vocabulary: Vocabulary; last_reviewed_at: string | null; due_at: string | null;
+  known_streak: number; next_intervals_seconds: Record<WordStatus, number>; priority: number;
+  plan_reason: PlanReason; memory_state: MemoryState; schedule_version: 'adaptive_v2';
+}
+export interface SenseReviewBatch extends ReviewSummary { items: SenseReviewItem[]; plan?: StudyPlan }
 export interface ReviewMeaning {
   word: string; lemma: string; meaning_in_context: string | null; simple_explanation: string | null;
   part_of_speech: string | null; source: 'llm' | 'offline' | 'unavailable'; cached: boolean; warning: string | null;

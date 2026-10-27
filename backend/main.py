@@ -25,6 +25,7 @@ from backend.api.vocabulary_groups import router as vocabulary_groups_router
 from backend.api.pronunciation_routes import router as pronunciation_router
 from backend.api.history_routes import router as history_router
 from backend.api.relation_workspace_routes import router as relation_workspace_router
+from backend.api.sense_routes import router as sense_router
 from backend.services.maintenance import MaintenanceMiddleware
 from backend.services.word_recordings import close_recording_client
 from backend.ocr.service import OCRUnavailable
@@ -99,6 +100,7 @@ app.include_router(vocabulary_groups_router)
 app.include_router(pronunciation_router)
 app.include_router(history_router)
 app.include_router(relation_workspace_router)
+app.include_router(sense_router)
 frontend_dist = PROJECT_ROOT / "frontend" / "dist"
 if frontend_dist.is_dir():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

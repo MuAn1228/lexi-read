@@ -2,16 +2,19 @@ import type { ReactNode } from 'react';
 import { Check, NotebookPen, Sparkles } from 'lucide-react';
 import { hasMaimemoAnnotations } from './dictionary';
 import type { DictionaryDetail, DictionaryResult, MaimemoAnnotations as MaimemoData } from './dictionary';
+import SenseLearningPanel from './SenseLearningPanel';
 import './dictionary.css';
 
 /** Shared, read-only word content. The owner decides when to fetch or generate. */
-export default function WordAnnotations({ result, compact = false, showPhonetic = false, annotationAction, detailAction, afterDefinitions }: {
+export default function WordAnnotations({ result, compact = false, showPhonetic = false, enableSenseLearning = false, senseLearningDisabled = false, onSenseLearningChanged, annotationAction, detailAction, afterDefinitions }: {
   result: DictionaryResult; compact?: boolean; showPhonetic?: boolean;
+  enableSenseLearning?: boolean; senseLearningDisabled?: boolean; onSenseLearningChanged?: () => void | Promise<void>;
   annotationAction?: ReactNode; detailAction?: ReactNode; afterDefinitions?: ReactNode;
 }) {
   return <div className={`word-annotations${compact ? ' word-annotations--compact' : ''}`}>
     {(result.maimemo || annotationAction) && <MaimemoAnnotations annotations={result.maimemo} action={annotationAction} />}
     <DictionaryBasics entry={result.dictionary} showPhonetic={showPhonetic} />
+    {enableSenseLearning && <SenseLearningPanel word={result.word} compact={compact} disabled={senseLearningDisabled} onLearningChanged={onSenseLearningChanged} />}
     {afterDefinitions}
     {(result.detail || detailAction) && <section className="dictionary-section dictionary-ai" aria-label="详细讲解">
       <div className="dictionary-section-heading"><h3><Sparkles size={17} />详细讲解</h3>{result.detail && <span className="dictionary-badge dictionary-badge--ai">AI 生成{result.cached ? ' · 已缓存' : ''}</span>}</div>

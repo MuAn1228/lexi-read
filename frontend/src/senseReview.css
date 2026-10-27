@@ -1,0 +1,24 @@
+.review-scope-switch { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; padding: 13px 16px; border: 1px solid #dce5d6; border-radius: 13px; background: #fbfcf7; }
+.review-scope-switch > div:first-child { display: flex; gap: 7px; }
+.review-scope-switch button { min-height: 40px; padding: 8px 15px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #667367; font-size: 12px; }
+.review-scope-switch button[aria-pressed="true"] { border-color: #b9ceb2; background: #e7f0e2; color: #315d41; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .7); }
+.review-scope-switch p { margin: 0; color: #778278; font-size: 11px; line-height: 1.55; text-align: right; }
+.sense-review-mode[hidden] { display: none; }
+.sense-review-panel { margin-top: 18px; }
+.sense-review-prompt { text-align: center; }
+.sense-review-prompt h3 { margin: 12px 0 6px; color: #294d39; font: 600 clamp(34px, 7vw, 56px)/1.05 Georgia, serif; outline: none; overflow-wrap: anywhere; }
+.sense-review-prompt > p { margin: 20px 0 7px; color: #52685a; font-size: 13px; }
+.sense-review-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 7px; color: #748174; font-size: 10px; }
+.sense-review-meta > span:not(.status-badge) { padding: 4px 7px; border-radius: 999px; background: #f0f3eb; }
+.sense-review-reveal { display: flex; margin: 24px auto 8px; }
+.sense-review-answer { margin: 22px auto 11px; max-width: 660px; padding: 18px 20px; border: 1px solid #cbdcc3; border-radius: 12px; background: linear-gradient(145deg, #f6faef, #fffefa); }
+.sense-review-answer > span { color: #789071; font-size: 10px; letter-spacing: .12em; }
+.sense-review-answer p { margin: 8px 0 0; color: #2f513d; font-size: 18px; line-height: 1.7; overflow-wrap: anywhere; }
+.sense-review-snapshot { margin: 11px auto 0; color: #7b705e; font-size: 11px; text-align: center; }
+@media (max-width: 620px) {
+  .review-scope-switch { align-items: stretch; flex-direction: column; }
+  .review-scope-switch > div:first-child { display: grid; grid-template-columns: 1fr 1fr; }
+  .review-scope-switch p { text-align: left; }
+  .sense-review-answer { padding: 15px; }
+}
+@media (prefers-reduced-motion: reduce) { .sense-review-mode * { transition: none !important; animation: none !important; } }

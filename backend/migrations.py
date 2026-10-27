@@ -396,6 +396,20 @@ def _create_vocabulary_tools(connection: sqlite3.Connection, tables: set[str]) -
             connection.execute(str(CreateIndex(index, if_not_exists=True).compile(dialect=dialect())))
 
 
+def _create_sense_learning(connection: sqlite3.Connection, tables: set[str]) -> None:
+    """Install empty sense state; whole-word assessments cannot identify known meanings."""
+    if not {"users", "vocabulary", "documents"} <= tables:
+        return
+    from sqlalchemy.dialects.sqlite import dialect
+    from sqlalchemy.schema import CreateIndex, CreateTable
+    from backend.models import Base
+    for name in ("vocabulary_senses", "sense_review_receipts"):
+        table = Base.metadata.tables[name]
+        connection.execute(str(CreateTable(table, if_not_exists=True).compile(dialect=dialect())))
+        for index in table.indexes:
+            connection.execute(str(CreateIndex(index, if_not_exists=True).compile(dialect=dialect())))
+
+
 MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic", _backfill_mastery),
               ("003_latest_explicit_assessment", _restore_latest_assessment),
               ("004_stable_vocabulary_identity", _stabilize_vocabulary_identity),
@@ -407,7 +421,8 @@ MIGRATIONS = [(VERSION, _upgrade_vocabulary_identity), ("002_mastery_heuristic",
               ("010_pdf_reading", _create_pdf_reading),
               ("011_restore_receipts", _create_restore_receipts),
               ("012_web_import", _create_web_import),
-              ("013_vocabulary_tools", _create_vocabulary_tools)]
+              ("013_vocabulary_tools", _create_vocabulary_tools),
+              ("014_sense_learning", _create_sense_learning)]
 
 
 def migrate_database(engine: Engine) -> Path | None:

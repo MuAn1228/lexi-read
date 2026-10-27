@@ -7,6 +7,7 @@ from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from sqlalchemy import text
 
 from backend import migrations
 from backend.services import backups
@@ -24,12 +25,14 @@ def rows_by_table(path, tables):
 def test_013_preserves_all_existing_tables_and_is_repeatable(legacy, monkeypatch):
     path, engine, _ = legacy
     versions = migrations.MIGRATIONS
-    monkeypatch.setattr(migrations, 'MIGRATIONS', versions[:-1])
+    v013 = versions[:next(index for index, item in enumerate(versions)
+                          if item[0] == backups.VOCABULARY_TOOLS_MIGRATION) + 1]
+    monkeypatch.setattr(migrations, 'MIGRATIONS', v013[:-1])
     migrations.migrate_database(engine)
     with closing(sqlite3.connect(path)) as db:
         tables = backups.table_names(db) - {'schema_migrations'}
     before = rows_by_table(path, tables)
-    monkeypatch.setattr(migrations, 'MIGRATIONS', versions)
+    monkeypatch.setattr(migrations, 'MIGRATIONS', v013)
     safety = migrations.migrate_database(engine)
     assert safety and safety.is_file() and rows_by_table(path, tables) == before
     with closing(sqlite3.connect(path)) as db:
@@ -43,20 +46,22 @@ def test_013_preserves_all_existing_tables_and_is_repeatable(legacy, monkeypatch
 def test_013_ddl_failure_rolls_back_without_marking_upgrade_complete(legacy, monkeypatch):
     path, engine, _ = legacy
     versions = migrations.MIGRATIONS
-    monkeypatch.setattr(migrations, 'MIGRATIONS', versions[:-1])
+    v013 = versions[:next(index for index, item in enumerate(versions)
+                          if item[0] == backups.VOCABULARY_TOOLS_MIGRATION) + 1]
+    monkeypatch.setattr(migrations, 'MIGRATIONS', v013[:-1])
     migrations.migrate_database(engine)
 
     def interrupted(connection, tables):
         migrations._create_vocabulary_tools(connection, tables)
         raise RuntimeError('Synthetic migration interruption')
 
-    monkeypatch.setattr(migrations, 'MIGRATIONS', [*versions[:-1], (versions[-1][0], interrupted)])
+    monkeypatch.setattr(migrations, 'MIGRATIONS', [*v013[:-1], (v013[-1][0], interrupted)])
     with pytest.raises(RuntimeError):
         migrations.migrate_database(engine)
     with closing(sqlite3.connect(path)) as db:
         assert not backups.VOCABULARY_TOOL_TABLES & backups.table_names(db)
-        assert db.execute('SELECT count(*) FROM schema_migrations WHERE version=?', (versions[-1][0],)).fetchone()[0] == 0
-    monkeypatch.setattr(migrations, 'MIGRATIONS', versions)
+        assert db.execute('SELECT count(*) FROM schema_migrations WHERE version=?', (v013[-1][0],)).fetchone()[0] == 0
+    monkeypatch.setattr(migrations, 'MIGRATIONS', v013)
     migrations.migrate_database(engine)
 
 
@@ -92,17 +97,53 @@ def test_complete_backup_restores_groups_members_and_reversible_operation(backup
     assert all(item['status'] is None for item in undone.json()['items'])
 
 
+def test_v013_backup_restores_with_empty_sense_tables_and_current_version(backup_app, tmp_path):
+    client, factory, _ = backup_app
+    post(client, payload('Version thirteen reading data.', title='V013 archive'))
+    with ZipFile(BytesIO(archive_data(client))) as archive:
+        entries = {name: archive.read(name) for name in archive.namelist()}
+    path = tmp_path / 'v013.sqlite3'
+    path.write_bytes(entries['data.sqlite3'])
+    with closing(sqlite3.connect(path)) as db:
+        db.execute('DROP TABLE "sense_review_receipts"')
+        db.execute('DROP TABLE "vocabulary_senses"')
+        db.execute("DELETE FROM schema_migrations WHERE version='014_sense_learning'")
+        db.commit()
+    manifest = json.loads(entries['manifest.json'])
+    manifest['files']['data.sqlite3'] = backups.digest(path)
+    entries.update({'data.sqlite3': path.read_bytes(), 'manifest.json': json.dumps(manifest).encode()})
+    output = BytesIO()
+    with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
+        for name, data in entries.items():
+            archive.writestr(name, data)
+
+    marked_fixture(client)
+    inspected = preview(client, output.getvalue())
+    assert inspected.status_code == 200, inspected.text
+    restored = restore(client, inspected.json()['token'])
+    assert restored.status_code == 200, restored.text
+    assert client.get('/api/vocabulary-groups').json() == {'groups': []}
+    with factory() as session:
+        assert all(session.execute(text(f'SELECT count(*) FROM "{table}"')).scalar_one() == 0
+                   for table in backups.SENSE_LEARNING_TABLES)
+        assert {row[0] for row in session.execute(text('SELECT version FROM schema_migrations'))} == {
+            version for version, _ in migrations.MIGRATIONS}
+    fresh = preview(client, archive_data(client))
+    assert fresh.status_code == 200, fresh.text
+
+
 def test_v012_backup_restores_with_empty_new_tables_and_current_version(backup_app, tmp_path):
-    client, _, _ = backup_app
+    client, factory, _ = backup_app
     post(client, payload('Old reading data.', title='Old archive'))
     with ZipFile(BytesIO(archive_data(client))) as archive:
         entries = {name: archive.read(name) for name in archive.namelist()}
     path = tmp_path / 'previous.sqlite3'
     path.write_bytes(entries['data.sqlite3'])
     with closing(sqlite3.connect(path)) as db:
-        for table in ('vocabulary_group_members', 'vocabulary_groups', 'vocabulary_operations'):
+        for table in ('sense_review_receipts', 'vocabulary_senses',
+                      'vocabulary_group_members', 'vocabulary_groups', 'vocabulary_operations'):
             db.execute(f'DROP TABLE "{table}"')
-        db.execute("DELETE FROM schema_migrations WHERE version='013_vocabulary_tools'")
+        db.execute("DELETE FROM schema_migrations WHERE version IN ('013_vocabulary_tools','014_sense_learning')")
         db.commit()
     manifest = json.loads(entries['manifest.json'])
     manifest['files']['data.sqlite3'] = backups.digest(path)
@@ -117,6 +158,11 @@ def test_v012_backup_restores_with_empty_new_tables_and_current_version(backup_a
     assert restore(client, before.json()['token']).status_code == 200
     assert client.get('/api/vocabulary-groups').json() == {'groups': []}
     assert [doc['title'] for doc in client.get('/api/documents').json()] == ['Old archive']
+    with factory() as session:
+        assert all(session.execute(text(f'SELECT count(*) FROM "{table}"')).scalar_one() == 0
+                   for table in backups.SENSE_LEARNING_TABLES | backups.VOCABULARY_TOOL_TABLES)
+        assert {row[0] for row in session.execute(text('SELECT version FROM schema_migrations'))} == {
+            version for version, _ in migrations.MIGRATIONS}
     # Export the restored result as a valid current-version archive, without a restart.
     fresh = preview(client, archive_data(client))
     assert fresh.status_code == 200, fresh.text

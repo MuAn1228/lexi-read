@@ -4,6 +4,8 @@ Definitions and examples below are authored for Lexi Read. Source links support
 the terminology and spelling notes, rather than claiming copied dictionary text.
 """
 from copy import deepcopy
+from hashlib import sha256
+import json
 
 _ENTRIES = {
     "horizontal wind vector": {
@@ -43,6 +45,12 @@ _ENTRIES = {
         "source_url": "https://dictionary.cambridge.org/dictionary/english/microwavable",
     },
 }
+
+
+def source_revision() -> str:
+    """Content-address the reviewed additions used to create sense snapshots."""
+    payload = json.dumps(_ENTRIES, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return sha256(payload.encode()).hexdigest()
 
 
 def lookup_supplement(spelling: str) -> dict | None:

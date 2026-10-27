@@ -16,15 +16,17 @@ import re
 import sqlite3
 import tempfile
 import threading
+import unicodedata
 
 from backend.services.lemmatization import normalize_word
-from backend.services.supplemental_dictionary import lookup_supplement
+from backend.services.supplemental_dictionary import lookup_supplement, source_revision as supplement_revision
 
 
 SOURCE_URL = "https://github.com/skywind3000/ECDICT"
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "data_assets" / "dictionary"
 _SPELLING = re.compile(r"[a-z]+(?:[' -][a-z]+)*", re.ASCII)
 _DIGEST = re.compile(r"[a-f0-9]{64}", re.ASCII)
+_PART_OF_SPEECH = re.compile(r"^(?P<value>(?:[a-z]{1,10}\.)+(?:\s*/\s*(?:[a-z]{1,10}\.)+)*)\s*", re.I)
 _LOCK = threading.RLock()
 _connection_handle: sqlite3.Connection | None = None
 _FORM_LABELS = {
@@ -261,6 +263,44 @@ def lookup(word: str, lemma: str | None = None) -> dict | None:
         "chinese": _senses(row[2]), "english": _senses(row[3]), "forms": _forms(row[4]),
         "source": "ecdict", "source_url": SOURCE_URL,
     }
+
+
+def _sense_text(value: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value).strip())
+
+
+def sense_key(source: str, headword: str, meaning: str) -> str:
+    """Return an opaque content identity; display order and dictionary revision are not identity."""
+    identity = "\0".join(("sense-v1", source, _sense_text(headword).casefold(), _sense_text(meaning)))
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def sense_catalog(word: str, lemma: str | None = None) -> list[dict]:
+    """Return stable, offline-only learnable senses for one exact dictionary result."""
+    entry = lookup(word, lemma)
+    if entry is None:
+        return []
+    source = entry["source"]
+    revision = (_manifest()["database_sha256"] if source == "ecdict" else supplement_revision())
+    result: list[dict] = []
+    keys: set[str] = set()
+    for ordinal, raw in enumerate(entry["chinese"]):
+        meaning = raw.strip()
+        key = sense_key(source, entry["headword"], meaning)
+        if not meaning or key in keys:
+            continue
+        match = _PART_OF_SPEECH.match(meaning)
+        result.append({
+            "sense_key": key,
+            "source": source,
+            "source_revision": revision,
+            "headword": entry["headword"],
+            "source_ordinal": ordinal,
+            "part_of_speech": match.group("value").lower() if match else None,
+            "meaning": meaning,
+        })
+        keys.add(key)
+    return result
 
 
 def summary(word: str, lemma: str | None = None) -> str | None:

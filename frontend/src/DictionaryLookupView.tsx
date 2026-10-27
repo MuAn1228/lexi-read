@@ -28,10 +28,11 @@ function dictionaryUnavailable(warning: string | null): boolean {
   return Boolean(warning && /词典[^。；\n]*(?:不可用|故障|失败|损坏)/.test(warning));
 }
 
-export default function DictionaryLookupView({ active, vocabulary, disabled, onSaved, onBusyChange, onGenerated }: {
+export default function DictionaryLookupView({ active, vocabulary, disabled, onSaved, onBusyChange, onGenerated, onLearningChanged }: {
   active: boolean; vocabulary: Vocabulary[]; disabled: boolean;
   onSaved: (item: Vocabulary) => void; onBusyChange: (busy: boolean) => void;
   onGenerated?: (result: DictionaryResult) => void;
+  onLearningChanged?: () => void | Promise<void>;
 }) {
   const mascot = useMascot();
   const inputId = useId();
@@ -409,7 +410,7 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
           <header className="lookup-word-heading"><div><div className="lookup-word-title"><h2 lang="en">{result.word}</h2>{personalEntry && <StatusBadge status={personalEntry.status} />}</div>{result.dictionary?.phonetic && <p className="dictionary-phonetic">/{result.dictionary.phonetic.replace(/^\/+|\/+$/g, '')}/</p>}{result.dictionary && result.dictionary.headword.toLowerCase() !== result.word.toLowerCase() && <p className="dictionary-headword">词典词形 · <span lang="en">{result.dictionary.headword}</span></p>}</div><PronunciationButton key={result.word} text={result.word} label="朗读单词" /></header>
           <details className="lookup-speech-settings"><summary>发音设置</summary><SpeechSettings /></details>
           <div className="lookup-vocabulary-actions">
-            {personalEntry ? <><span className="lookup-status-caption">已在生词本 · 调整掌握状态</span><div className="lookup-word-controls"><WordControls word={result.word} status={personalEntry.status} disabled={actionsDisabled} compact showLabels disableCurrent onMark={status => void saveStatus(status)} /></div></> : <><p>想在之后复习这个词？</p><button type="button" className="button secondary" disabled={actionsDisabled} onClick={() => void saveStatus('UNKNOWN')}>{saving ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}{saving ? '正在加入…' : '加入生词本'}</button></>}
+            {personalEntry ? <><span className="lookup-status-caption">整词判断 · 调整整个单词的掌握状态</span><div className="lookup-word-controls"><WordControls word={result.word} status={personalEntry.status} disabled={actionsDisabled} compact showLabels disableCurrent onMark={status => void saveStatus(status)} /></div></> : <><p>想把整个单词加入之后的复习？</p><button type="button" className="button secondary" disabled={actionsDisabled} onClick={() => void saveStatus('UNKNOWN')}>{saving ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}{saving ? '正在加入…' : '按整词加入生词本'}</button></>}
             {saving && personalEntry && <span className="lookup-saving" role="status"><LoaderCircle size={14} className="spin" />正在保存…</span>}
           </div>
           {saveError && <div className="dictionary-error" role="alert"><p>保存失败：{saveError}</p>{failedStatus && <button type="button" className="text-button" disabled={actionsDisabled} onClick={() => void saveStatus(failedStatus)}>重试保存</button>}</div>}
@@ -420,7 +421,7 @@ export default function DictionaryLookupView({ active, vocabulary, disabled, onS
             <div>{spellingItems.map(item => <button type="button" key={item.word.toLowerCase()} disabled={actionsDisabled}
               onClick={() => void search(item.word)}><span lang="en">{item.word}</span><span>{item.meaning || '查看释义'}</span></button>)}</div>
           </section>}
-          <WordAnnotations result={result}
+          <WordAnnotations result={result} enableSenseLearning senseLearningDisabled={actionsDisabled} onSenseLearningChanged={onLearningChanged}
             annotationAction={result.can_fetch_annotations ? <div className="dictionary-annotation-actions"><button type="button" className="text-button" disabled={actionsDisabled || readingAnnotations || generating} onClick={() => void readAnnotations()}>{readingAnnotations ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}{readingAnnotations ? '正在读取墨墨个人注解…' : result.maimemo ? '更新墨墨个人注解' : '读取墨墨个人注解'}</button></div> : undefined}
             detailAction={<div className="dictionary-generate"><p>补充常见义项、双语例句和搭配。点击后调用 AI，生成的讲解会保存在本地。</p>{generating ? <AIWaitPanel label="正在补充详细讲解" phase={generationPhase} preview={generationPreview} onStop={stopGeneration} /> : <div className="lookup-generate-actions"><button type="button" className="button primary" disabled={actionsDisabled || readingAnnotations || !result.can_generate} onClick={() => void generate()}><Sparkles size={16} />{dictionaryGenerationLabel(result)}</button></div>}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；本地释义仍可查看。</p>}</div>}
           />

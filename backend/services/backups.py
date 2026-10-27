@@ -13,7 +13,7 @@ import sqlite3
 import stat
 from tempfile import TemporaryDirectory
 from threading import Condition
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zipfile import BadZipFile, ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from fastapi import HTTPException, UploadFile
@@ -32,6 +32,9 @@ TOKEN = re.compile(r"^[a-f0-9]{32}$")
 ASSET = re.compile(r"^assets/[a-f0-9]{32}\.(png|pdf)$")
 SAFETY = re.compile(r"^lexi-read-safety-[a-f0-9]{32}\.zip$")
 VOCABULARY_TOOL_TABLES = {"vocabulary_operations", "vocabulary_groups", "vocabulary_group_members"}
+SENSE_LEARNING_TABLES = {"vocabulary_senses", "sense_review_receipts"}
+VOCABULARY_TOOLS_MIGRATION = "013_vocabulary_tools"
+SENSE_LEARNING_MIGRATION = "014_sense_learning"
 TTL = timedelta(minutes=30)
 AUTOMATIC_INTERVAL = timedelta(hours=24)
 AUTOMATIC_RETENTION = 7
@@ -53,6 +56,26 @@ class AutomaticPoint:
     created_at: datetime
     size: int
     sha256: str
+
+
+@dataclass(frozen=True)
+class DatabaseLayout:
+    """A trusted historical schema shape; archived DDL is never executed."""
+
+    name: str
+    missing_tables: frozenset[str]
+    missing_migrations: tuple[str, ...]
+
+
+DATABASE_LAYOUTS = (
+    DatabaseLayout("current", frozenset(), ()),
+    DatabaseLayout("v013", frozenset(SENSE_LEARNING_TABLES), (SENSE_LEARNING_MIGRATION,)),
+    DatabaseLayout(
+        "v012",
+        frozenset(SENSE_LEARNING_TABLES | VOCABULARY_TOOL_TABLES),
+        (VOCABULARY_TOOLS_MIGRATION, SENSE_LEARNING_MIGRATION),
+    ),
+)
 
 
 def now():
@@ -99,6 +122,81 @@ def table_names(connection):
             if not row[0].startswith("sqlite_")}
 
 
+def _database_layout(actual: set[str]) -> DatabaseLayout:
+    expected = set(Base.metadata.tables) | {"schema_migrations"}
+    matches = [layout for layout in DATABASE_LAYOUTS if actual == expected - layout.missing_tables]
+    if len(matches) != 1:
+        raise invalid("备份的数据结构与当前版本不一致，请使用相同版本的完整备份。")
+    return matches[0]
+
+
+def _valid_id(value) -> bool:
+    return type(value) is int and 1 <= value <= 2**63 - 1
+
+
+def _valid_text(value, maximum: int) -> bool:
+    return isinstance(value, str) and 1 <= len(value) <= maximum and bool(value.strip())
+
+
+def _validate_sense_learning(connection: sqlite3.Connection, documents: dict[int, sqlite3.Row]) -> None:
+    """Validate cross-owner semantics which SQLite foreign keys cannot express."""
+    users = {row[0] for row in connection.execute("SELECT id FROM users")}
+    vocabulary = {row["id"]: row["user_id"] for row in connection.execute(
+        "SELECT id,user_id FROM vocabulary"
+    )}
+    senses, identities = {}, set()
+    for sense in connection.execute("SELECT * FROM vocabulary_senses"):
+        sense_id, user_id, vocabulary_id = sense["id"], sense["user_id"], sense["vocabulary_id"]
+        identity = (user_id, vocabulary_id, sense["sense_key"])
+        score = sense["mastery_score"]
+        if (not _valid_id(sense_id) or sense_id in senses or not _valid_id(user_id) or user_id not in users
+                or not _valid_id(vocabulary_id) or vocabulary.get(vocabulary_id) != user_id
+                or identity in identities
+                or not isinstance(sense["sense_key"], str)
+                or re.fullmatch(r"[a-f0-9]{64}", sense["sense_key"]) is None
+                or sense["source"] not in {"ecdict", "lexi_supplement"}
+                or not isinstance(sense["source_revision"], str)
+                or re.fullmatch(r"[a-f0-9]{64}", sense["source_revision"]) is None
+                or not _valid_text(sense["headword"], 200)
+                or type(sense["source_ordinal"]) is not int or not 0 <= sense["source_ordinal"] <= 1000
+                or (sense["part_of_speech"] is not None
+                    and not _valid_text(sense["part_of_speech"], 80))
+                or not _valid_text(sense["meaning"], 10_000)
+                or sense["status"] not in {"KNOWN", "UNKNOWN", "UNCERTAIN"}
+                or type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= 1
+                or type(sense["known_streak"]) is not int or not 0 <= sense["known_streak"] <= 5):
+            raise invalid("备份中的字义学习记录无效。")
+        senses[sense_id] = user_id
+        identities.add(identity)
+
+    receipt_ids, request_ids = set(), set()
+    for receipt in connection.execute("SELECT * FROM sense_review_receipts"):
+        receipt_id, user_id, sense_id = receipt["id"], receipt["user_id"], receipt["sense_id"]
+        request_id = receipt["request_id"]
+        document_id = receipt["document_id"]
+        try:
+            canonical_request = isinstance(request_id, str) and str(UUID(request_id)) == request_id
+        except (ValueError, TypeError, AttributeError):
+            canonical_request = False
+        if (not _valid_id(receipt_id) or receipt_id in receipt_ids
+                or not _valid_id(user_id) or user_id not in users
+                or not _valid_id(sense_id) or senses.get(sense_id) != user_id
+                or not canonical_request or (user_id, request_id) in request_ids
+                or receipt["status"] not in {"KNOWN", "UNKNOWN", "UNCERTAIN"}
+                or (document_id is not None
+                    and (not _valid_id(document_id) or document_id not in documents
+                         or documents[document_id]["user_id"] != user_id))
+                or (receipt["response_ms"] is not None
+                    and (type(receipt["response_ms"]) is not int
+                         or not 500 <= receipt["response_ms"] <= 600_000))
+                or (receipt["plan_minutes"] is not None
+                    and (type(receipt["plan_minutes"]) is not int
+                         or receipt["plan_minutes"] not in {10, 20, 30}))):
+            raise invalid("备份中的字义复习记录无效。")
+        receipt_ids.add(receipt_id)
+        request_ids.add((user_id, request_id))
+
+
 def validate_database(connection: sqlite3.Connection):
     """Never execute incoming DDL. Match the known tables and validate data first."""
     if [row[0] for row in connection.execute("PRAGMA integrity_check")] != ["ok"]:
@@ -107,16 +205,13 @@ def validate_database(connection: sqlite3.Connection):
         raise invalid("备份数据库的关联数据不完整。")
     if list(connection.execute("SELECT name FROM sqlite_master WHERE type IN ('trigger','view')")):
         raise invalid("备份数据库包含不支持的结构。")
-    expected = set(Base.metadata.tables) | {"schema_migrations"}
     actual = table_names(connection)
-    previous_structure = actual == expected - VOCABULARY_TOOL_TABLES
-    if actual != expected and not previous_structure:
-        raise invalid("备份的数据结构与当前版本不一致，请使用相同版本的完整备份。")
+    layout = _database_layout(actual)
     if {row[1] for row in connection.execute("PRAGMA table_info(schema_migrations)")} != {"version", "applied_at"}:
         raise invalid("备份的版本记录结构与当前版本不一致。")
     versions = [row[0] for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")]
-    supported = MIGRATIONS[:-1] if previous_structure and MIGRATIONS[-1][0] == "013_vocabulary_tools" else MIGRATIONS
-    if versions != sorted(version for version, _ in supported):
+    supported = [version for version, _ in MIGRATIONS if version not in layout.missing_migrations]
+    if versions != sorted(supported):
         raise invalid("备份版本与当前版本不一致，请使用相同版本的完整备份。")
     for table in Base.metadata.sorted_tables:
         if table.name not in actual:
@@ -195,7 +290,9 @@ def validate_database(connection: sqlite3.Connection):
     for table, column in (("learning_events", "details"), ("restore_receipts", "result")):
         if any(not isinstance(json.loads(row[0]), dict) for row in connection.execute(f'SELECT "{column}" FROM "{table}"')):
             raise invalid("备份中的学习记录格式无效。")
-    if not previous_structure:
+    if SENSE_LEARNING_TABLES <= actual:
+        _validate_sense_learning(connection, documents)
+    if VOCABULARY_TOOL_TABLES <= actual:
         from backend.services.vocabulary_backup_validation import validate_vocabulary_tools
         try:
             validate_vocabulary_tools(connection)
@@ -690,11 +787,12 @@ def _replace_data(engine, source, documents, paths, token, result):
         connection.executemany("INSERT INTO schema_migrations(version,applied_at) VALUES (?,?)",
                                [tuple(row) for row in source.execute("SELECT version,applied_at FROM schema_migrations")])
         source_tables = table_names(source)
-        if not VOCABULARY_TOOL_TABLES & source_tables:
-            # A validated v012 archive restores into the current known schema;
-            # new organization/undo tables start empty. No incoming DDL is run.
+        layout = _database_layout(source_tables)
+        for version in layout.missing_migrations:
+            # Validated v012/v013 archives restore into the current application-owned
+            # schema. Newer tables remain empty and no archived DDL is ever run.
             connection.execute("INSERT INTO schema_migrations(version,applied_at) VALUES (?,?)",
-                               ("013_vocabulary_tools", now().isoformat()))
+                               (version, now().isoformat()))
         for table in reversed(Base.metadata.sorted_tables):
             connection.execute(f'DELETE FROM "{table.name}"')
         for table in Base.metadata.sorted_tables:

@@ -10,6 +10,7 @@ import type { MaimemoFilter, MaimemoSources } from './maimemoSources';
 import { useDictionary } from './DictionaryPanel';
 import { matchesVocabularyQuery } from './dictionary';
 import VocabularyPagination from './components/VocabularyPagination';
+import SenseLearningPanel from './SenseLearningPanel';
 import { useVocabularyOperations, VocabularyGroupTools, VocabularySelectionBar } from './components/VocabularyOperations';
 import { VOCABULARY_PAGE_SIZE, type VocabularyBrowsing } from './vocabularyBrowsing';
 import './vocabulary.css';
@@ -181,6 +182,7 @@ export default function VocabularyView({ vocabulary, saving, loading, localMode,
             {isExpanded && <div className="vocabulary-records" id={`vocabulary-records-${word.id}`}>
               <dl className="vocabulary-record-grid"><div><dt>规则掌握度</dt><dd>{word.mastery_score === null ? '尚未评估' : `${Math.round(word.mastery_score * 100)}%`}</dd></div><div><dt>阅读遇见</dt><dd>{word.seen_count} 次</dd></div><div><dt>查询次数</dt><dd>{word.lookup_count} 次</dd></div><div><dt>首次遇见</dt><dd>{formatDate(word.first_seen_at)}</dd></div><div><dt>最近遇见</dt><dd>{formatDate(word.last_seen_at)}</dd></div></dl>
               {localMode && <div className="vocabulary-maimemo-record"><strong>墨墨记录</strong>{remote ? <><span>{remote.study_count > 0 || remote.first_study_date ? `学习 ${remote.study_count} 次` : '尚未开始学习'}</span><span>上次反馈 · {maimemoResponse(remote.last_response)}</span><span>下次复习 · {remote.next_study_date ? formatDate(remote.next_study_date) : '暂无复习时间'}</span>{source.records.length > 1 && <span>{source.records.length} 个来源词形，显示学习次数最多的一项</span>}</> : <span>{sourcesLoaded ? '尚未从墨墨导入这个词' : '墨墨记录暂未加载'}</span>}</div>}
+              <SenseLearningPanel word={word.word} compact disabled={saving || loading || operations.disabled} onLearningChanged={onReloadVocabulary} />
             </div>}
           </li>;
         })}

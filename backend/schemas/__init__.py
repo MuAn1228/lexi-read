@@ -62,6 +62,31 @@ class VocabularyOut(Schema):
             return None
 
 
+class VocabularySenseOut(Schema):
+    id: int | None = None
+    sense_key: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source: Literal["ecdict", "lexi_supplement"]
+    source_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    headword: str = Field(min_length=1, max_length=200)
+    source_ordinal: int = Field(ge=0, le=1000)
+    part_of_speech: str | None = Field(default=None, min_length=1, max_length=80)
+    meaning: str = Field(min_length=1, max_length=10_000)
+    available: bool
+    status: Status | None = None
+    mastery_score: float | None = Field(default=None, ge=0, le=1)
+    due_at: datetime | None = None
+    known_streak: int = Field(default=0, ge=0, le=5)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class VocabularySensesOut(Schema):
+    word: str
+    lemma: str
+    vocabulary: VocabularyOut | None
+    senses: list[VocabularySenseOut]
+
+
 class MarkRequest(Schema):
     status: Status
     document_id: int | None = None
@@ -79,6 +104,29 @@ class MarkRequest(Schema):
         if (self.response_ms is not None or self.plan_minutes is not None) and (
                 self.origin != "review" or self.request_id is None):
             raise ValueError("复习耗时与学习计划需要有效的复习请求编号。")
+        return self
+
+
+class SenseMarkRequest(Schema):
+    model_config = ConfigDict(from_attributes=True, frozen=True, extra="forbid")
+
+    status: Status
+    document_id: int | None = None
+    origin: Literal["review"] | None = None
+    request_id: UUID | None = None
+    response_ms: int | None = Field(default=None, strict=True, ge=500, le=600_000)
+    plan_minutes: int | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def validate_review_request(self):
+        if self.origin == "review" and self.request_id is None:
+            raise ValueError("义项复习标记需要 request_id。")
+        if self.origin != "review" and self.request_id is not None:
+            raise ValueError("request_id 仅适用于 origin 为 review 的义项复习标记。")
+        if self.plan_minutes is not None and self.plan_minutes not in {10, 20, 30}:
+            raise ValueError("每日学习时长只能选择 10、20 或 30 分钟。")
+        if (self.response_ms is not None or self.plan_minutes is not None) and self.origin != "review":
+            raise ValueError("复习耗时与学习计划只能用于义项复习标记。")
         return self
 
 
@@ -123,6 +171,31 @@ class ReviewPlan(Schema):
 class ReviewOut(Schema):
     total: int = Field(ge=0)
     items: list[ReviewItem]
+    reviewed_today: int = Field(ge=0)
+    later_today: int = Field(ge=0)
+    next_due_at: datetime | None
+    as_of: datetime
+    plan: ReviewPlan | None = None
+
+
+class SenseReviewItem(Schema):
+    sense: VocabularySenseOut
+    vocabulary: VocabularyOut
+    occurrence: ReviewOccurrence | None
+    last_reviewed_at: datetime | None
+    due_at: datetime
+    known_streak: int = Field(ge=0, le=5)
+    next_intervals_seconds: dict[Status, int]
+    priority: int = Field(ge=0, le=100)
+    plan_reason: Literal["FIRST_REVIEW", "OVERDUE", "RECENT_LAPSE", "REPEATED_DIFFICULTY",
+                         "FREQUENT_IN_READING", "DUE"]
+    memory_state: Literal["FRAGILE", "BUILDING", "STABLE"]
+    schedule_version: Literal["adaptive_v2"] = "adaptive_v2"
+
+
+class SenseReviewOut(Schema):
+    total: int = Field(ge=0)
+    items: list[SenseReviewItem]
     reviewed_today: int = Field(ge=0)
     later_today: int = Field(ge=0)
     next_due_at: datetime | None

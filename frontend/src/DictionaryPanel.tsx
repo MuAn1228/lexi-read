@@ -21,9 +21,9 @@ const DictionaryContext = createContext<OpenDictionary>(() => {});
 export function useDictionary() { return useContext(DictionaryContext); }
 
 /** One shared dialog leaves the reading and card sessions mounted underneath. */
-export function DictionaryProvider({ children, onGenerated, vocabulary, onLearningChanged, resetKey = false }: {
+export function DictionaryProvider({ children, onGenerated, vocabulary, onLearningChanged, resetKey = false, disabled = false }: {
   children: ReactNode; onGenerated?: (result: DictionaryResult) => void;
-  vocabulary?: Vocabulary[]; onLearningChanged?: () => Promise<void>; resetKey?: boolean;
+  vocabulary?: Vocabulary[]; onLearningChanged?: () => Promise<void>; resetKey?: boolean; disabled?: boolean;
 }) {
   const [target, setTarget] = useState<{ word: string; opener: HTMLElement; sequence: number } | null>(null);
   const sequence = useRef(0);
@@ -34,12 +34,12 @@ export function DictionaryProvider({ children, onGenerated, vocabulary, onLearni
     if (word.trim()) setTarget({ word: word.trim(), opener, sequence: ++sequence.current });
   }, []);
   const close = useCallback(() => setTarget(null), []);
-  return <DictionaryContext.Provider value={open}>{children}{target && <DictionaryPanel key={target.sequence} word={target.word} opener={target.opener} onClose={close} onGenerated={onGenerated} expansionCache={expansionCache.current} vocabulary={vocabulary} onLearningChanged={onLearningChanged} />}</DictionaryContext.Provider>;
+  return <DictionaryContext.Provider value={open}>{children}{target && <DictionaryPanel key={target.sequence} word={target.word} opener={target.opener} onClose={close} onGenerated={onGenerated} expansionCache={expansionCache.current} vocabulary={vocabulary} onLearningChanged={onLearningChanged} disabled={disabled} />}</DictionaryContext.Provider>;
 }
 
-function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, vocabulary, onLearningChanged }: {
+function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, vocabulary, onLearningChanged, disabled }: {
   word: string; opener: HTMLElement; onClose: () => void; onGenerated?: (result: DictionaryResult) => void;
-  expansionCache: WordExpansionCache; vocabulary?: Vocabulary[]; onLearningChanged?: () => Promise<void>;
+  expansionCache: WordExpansionCache; vocabulary?: Vocabulary[]; onLearningChanged?: () => Promise<void>; disabled: boolean;
 }) {
   const mascot = useMascot();
   const { suppressed: assistantSuppressed } = useMascotSnapshot();
@@ -147,12 +147,12 @@ function DictionaryPanel({ word, opener, onClose, onGenerated, expansionCache, v
       {loading && <p className="dictionary-loading" role="status"><LoaderCircle size={18} className="spin" />正在读取本地释义…</p>}
       {error && <div className="dictionary-error" role="alert"><p>{error}</p>{!result && <button type="button" className="text-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} />重新读取释义</button>}</div>}
       {notice && <p className="dictionary-empty" role="status">{notice}</p>}
-      {result && <WordAnnotations result={result}
+      {result && <WordAnnotations result={result} enableSenseLearning senseLearningDisabled={disabled || readingAnnotations || generating} onSenseLearningChanged={onLearningChanged}
         annotationAction={result.can_fetch_annotations ? <div className="dictionary-annotation-actions"><button type="button" className="text-button" disabled={readingAnnotations || generating} onClick={() => void readAnnotations()}>{readingAnnotations ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}{readingAnnotations ? '正在读取墨墨个人注解…' : result.maimemo ? '更新墨墨个人注解' : '读取墨墨个人注解'}</button>{readingAnnotations && <p className="dictionary-empty" role="status">先看本地词义，墨墨个人注解稍后补充。</p>}</div> : undefined}
         afterDefinitions={<WordExpansion word={word} cache={expansionCache} vocabulary={vocabulary} onLearningChanged={onLearningChanged} />}
         detailAction={<div className="dictionary-generate"><p>补充常见义项、词性、双语例句、常用搭配和易混辨析。点击后调用 AI，成功后保存在本地，方便下次查看。</p>{generating ? <AIWaitPanel label="正在补充详细讲解" phase={generationPhase} preview={generationPreview} onStop={stopGeneration} /> : <button type="button" className="button primary" disabled={readingAnnotations || !result.can_generate} onClick={() => void generate()}><Sparkles size={16} />{dictionaryGenerationLabel(result)}</button>}{!result.can_generate && <p className="dictionary-empty">请先完成本机 AI 服务配置；离线词典仍可正常查看。</p>}</div>}
       />}
     </div>
-    <footer className="dictionary-footer">查看词典不会改变掌握状态或复习安排。<button type="button" className="text-button" disabled={assistantSuppressed} title={assistantSuppressed ? '退出专注阅读或完成当前操作后可使用学习助手' : undefined} onClick={() => { onClose(); mascot.openAssistant({ key: `word:${word.toLowerCase()}`, documentId: null, occurrenceId: null, word, title: null, sentence: null }); }}><MessageCircle size={14} />{assistantSuppressed ? '当前模式下助手已收起' : '和 Lexi 学这个词'}</button><button type="button" className="text-button" onClick={onClose}>返回学习</button></footer>
+    <footer className="dictionary-footer">只有明确标记整词或释义项，才会改变掌握状态与复习安排。<button type="button" className="text-button" disabled={assistantSuppressed} title={assistantSuppressed ? '退出专注阅读或完成当前操作后可使用学习助手' : undefined} onClick={() => { onClose(); mascot.openAssistant({ key: `word:${word.toLowerCase()}`, documentId: null, occurrenceId: null, word, title: null, sentence: null }); }}><MessageCircle size={14} />{assistantSuppressed ? '当前模式下助手已收起' : '和 Lexi 学这个词'}</button><button type="button" className="text-button" onClick={onClose}>返回学习</button></footer>
   </dialog>, document.body);
 }
