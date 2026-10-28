@@ -56,23 +56,23 @@ AI is optional and on demand. Core importing, OCR, dictionary lookup, marking, h
 
 ## Product tour
 
-<table>
-  <tr>
-    <td width="50%">
-      <img src="docs/assets/readme/dictionary-senses.png" alt="Lexi dictionary and sense-level learning">
-      <br><sub><strong>Look up and learn by meaning.</strong> Local definitions, detailed explanations, and independent sense states.</sub>
-    </td>
-    <td width="50%">
-      <img src="docs/assets/readme/adaptive-review.png" alt="Lexi adaptive vocabulary review">
-      <br><sub><strong>Review what is due.</strong> Recall first, reveal the answer, then update the schedule with an explicit self-rating.</sub>
-    </td>
-  </tr>
-</table>
+### Look up and learn by meaning
 
-<p align="center">
-  <img src="docs/assets/readme/learning-insights.png" alt="Lexi learning history and insights" width="88%"><br>
-  <sub><strong>Turn history into a next step.</strong> Inspect learning activity and the words that need attention.</sub>
-</p>
+Local definitions, detailed explanations, independent sense states, and Lexi's in-context study companion stay in one complete workspace.
+
+![Lexi dictionary, sense-level learning, and study companion](docs/assets/readme/dictionary-senses.png)
+
+### Review what is due
+
+See the whole daily plan, recall before revealing the answer, then update the next interval with an explicit self-rating.
+
+![Lexi adaptive vocabulary review with the complete daily plan](docs/assets/readme/adaptive-review.png)
+
+### Turn history into a next step
+
+Inspect learning activity, due reviews, and the words that still need attention.
+
+![Lexi learning history and insights](docs/assets/readme/learning-insights.png)
 
 All screenshots use isolated demo data. No personal vocabulary, reading material, or API credentials are included.
 

@@ -56,23 +56,23 @@ AI 是可选且按需触发的。没有 LLM API Key 时，材料导入、本地 
 
 ## 产品预览
 
-<table>
-  <tr>
-    <td width="50%">
-      <img src="docs/assets/readme/dictionary-senses.png" alt="词间查词与字义级学习">
-      <br><sub><strong>按含义查词和学习。</strong> 本地释义、详细讲解以及互不覆盖的义项状态。</sub>
-    </td>
-    <td width="50%">
-      <img src="docs/assets/readme/adaptive-review.png" alt="词间自适应复习">
-      <br><sub><strong>只复习真正到期的内容。</strong> 先回想、再揭晓，并通过明确自评更新后续排期。</sub>
-    </td>
-  </tr>
-</table>
+### 按含义查词和学习
 
-<p align="center">
-  <img src="docs/assets/readme/learning-insights.png" alt="词间学习记录与洞察" width="88%"><br>
-  <sub><strong>让记录指向下一步。</strong> 查看学习活动和仍需关注的单词。</sub>
-</p>
+本地释义、详细讲解、互不覆盖的义项状态，以及 Lexi 的语境学习助手，都保留在一个完整工作区中。
+
+![词间查词、字义级学习与学习助手](docs/assets/readme/dictionary-senses.png)
+
+### 只复习真正到期的内容
+
+完整查看今日计划，先回想、再揭晓，并通过明确自评更新下一次复习间隔。
+
+![词间完整今日计划与自适应复习](docs/assets/readme/adaptive-review.png)
+
+### 让记录指向下一步
+
+查看学习活动、到期复习和仍需关注的单词。
+
+![词间学习记录与洞察](docs/assets/readme/learning-insights.png)
 
 全部截图都使用隔离的演示数据，不包含个人词库、私人阅读材料或 API 凭据。
 
