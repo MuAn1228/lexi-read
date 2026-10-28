@@ -1,462 +1,242 @@
-# 词间 Lexi · Personalized Vocabulary Agent MVP
+<p align="center">
+  <img src="assets/lexi.svg" width="88" alt="Lexi leaf logo">
+</p>
 
-把英文图片、PDF、网页或粘贴的文章变成可交互的阅读材料，通过用户反馈积累自己的词汇模型，再推荐少量适合当前语境的关联词。
+<h1 align="center">Lexi · 词间</h1>
 
-## 快速开始
+<p align="center"><strong>Read real English. Build a vocabulary profile from every interaction.</strong></p>
 
-**在本次交付的电脑上，直接双击项目文件夹中的 `打开词间.cmd`。** 它会启动后台服务并打开浏览器；重复双击会复用现有服务。关闭浏览器不会停止服务，需要退出时双击 `关闭词间.cmd`。本地网页只有在服务运行时才能打开，不能直接双击 `frontend/index.html` 使用。
+<p align="center">
+  Lexi turns images, PDFs, web articles, and pasted text into an interactive reading workspace.<br>
+  Learn words in context, call AI only when it helps, and let your history shape what to review next.
+</p>
 
-启动失败时窗口会保留错误，日志在 `backend/data/logs/`。下方安装步骤适用于新环境。
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-桌面快捷方式使用 [assets/lexi.ico](assets/lexi.ico)，与网页左上角的绿色叶子标识一致，包含 16–256 像素的多种尺寸；可编辑矢量源文件为 [assets/lexi.svg](assets/lexi.svg)。快捷方式仍启动 `打开词间.cmd`。
+<p align="center">
+  <a href="https://github.com/MuAn1228/lexi-read/actions/workflows/backend.yml"><img alt="Backend tests" src="https://github.com/MuAn1228/lexi-read/actions/workflows/backend.yml/badge.svg"></a>
+  <a href="https://github.com/MuAn1228/lexi-read/actions/workflows/container.yml"><img alt="Linux OCR container" src="https://github.com/MuAn1228/lexi-read/actions/workflows/container.yml/badge.svg"></a>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&amp;logoColor=white">
+  <img alt="React 19 and TypeScript 5.9" src="https://img.shields.io/badge/React_19-TypeScript_5.9-087EA4?logo=react&amp;logoColor=white">
+</p>
 
-推荐 Python 3.12、Node.js 22.12+。SQLite 不需要单独安装。以下命令在本文件所在的项目目录运行。
+![Lexi interactive English reading workspace](docs/assets/readme/hero-reading.png)
+
+> [!NOTE]
+> The product UI is currently primarily in Simplified Chinese. There is no hosted demo yet; the local setup below is the fastest way to try Lexi.
+
+## What is Lexi?
+
+Lexi is a local-first, AI-assisted English reading and vocabulary learning workspace. Instead of separating reading, dictionary lookup, and flashcards into unrelated tasks, it keeps them in one learning loop:
+
+**Reading → word interaction → vocabulary profile → contextual AI → feedback → adaptive review**
+
+OCR is only the entry point. The useful part begins after the text becomes interactive: Lexi remembers which words and meanings you know, keeps their original context, learns from explicit feedback, and uses that record to organize later review.
+
+## Why Lexi?
+
+| Reading first | Context stays attached | Feedback compounds |
+| --- | --- | --- |
+| Start from material you actually want to read—not a predefined word list. | A word remains connected to its sentence, article, source, and exact occurrence. | Status changes, lookups, recommendation feedback, and review results build a persistent vocabulary profile. |
+
+AI is optional and on demand. Core importing, OCR, dictionary lookup, marking, history, and review work without an LLM API key. When configured, the model receives bounded reading context and relevant learning summaries to explain the current word or sentence—not just a bare dictionary headword.
+
+## Highlights
+
+- **Interactive reading from real material** — import JPG/PNG images, text or scanned PDFs, pasted English, or public article URLs. PaddleOCR runs locally for image-based content.
+- **Word- and sense-level learning** — mark a word as known, unknown, or uncertain, then track individual dictionary meanings independently when one word has several senses.
+- **A practical dictionary workspace** — search without opening an article; view bundled Chinese definitions, phonetics, inflections, spelling suggestions, pronunciation, and cached detailed explanations.
+- **Context-aware AI tools** — request word explanations, sentence analysis, article Q&A, a study companion, or personalized short reading practice through a replaceable OpenAI-compatible provider.
+- **Personalized word discovery** — related-word suggestions combine context, vocabulary status, learning value, and prior useful/not-useful feedback, with a deliberately small result set.
+- **Adaptive daily review** — choose a 10, 20, or 30 minute plan; due words are prioritized using explicit review history, recent difficulty, response time, reading frequency, and rule-based mastery signals.
+- **Learning records that lead somewhere** — dashboards and history views surface vocabulary composition, recurring difficult words, activity patterns, and items worth revisiting.
+- **Durable local data** — SQLite persistence, article management, OCR proofreading, reading-position recovery, automatic recovery points, and full backup/restore are built in.
+
+## Product tour
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/assets/readme/dictionary-senses.png" alt="Lexi dictionary and sense-level learning">
+      <br><sub><strong>Look up and learn by meaning.</strong> Local definitions, detailed explanations, and independent sense states.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/assets/readme/adaptive-review.png" alt="Lexi adaptive vocabulary review">
+      <br><sub><strong>Review what is due.</strong> Recall first, reveal the answer, then update the schedule with an explicit self-rating.</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/assets/readme/learning-insights.png" alt="Lexi learning history and insights" width="88%"><br>
+  <sub><strong>Turn history into a next step.</strong> Inspect learning activity and the words that need attention.</sub>
+</p>
+
+All screenshots use isolated demo data. No personal vocabulary, reading material, or API credentials are included.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Import real English<br/>image · PDF · text · URL"] --> B["Read interactively"]
+    B --> C["Mark words and meanings"]
+    C --> D[("Vocabulary profile")]
+    D --> E["Contextual AI and<br/>related words"]
+    E --> F["Explicit feedback"]
+    F --> D
+    D --> G["Adaptive daily review"]
+    G --> B
+```
+
+1. Import a screenshot, PDF, article, or public webpage.
+2. Lexi preserves readable text, word positions, sentences, and source context.
+3. Select words while reading and mark what you know.
+4. Build a persistent profile at both whole-word and dictionary-sense level.
+5. Ask for contextual explanations or discover a few related words when useful.
+6. Review due items, then use the dashboard and history to choose what to revisit.
+
+## Quick start
+
+### Requirements
+
+- Python 3.12
+- Node.js 22.12 or newer
+- Git
+- Windows is the most thoroughly exercised local path. Linux is also covered by CI and the container OCR smoke test.
+
+### Windows
 
 ```powershell
-# 建议使用 uv 管理 Python（也可 python -m venv .venv）
-uv venv --python 3.12 .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-ocr.txt
+git clone https://github.com/MuAn1228/lexi-read.git
+cd lexi-read
+
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-ocr.txt
 Copy-Item .env.example .env
-cd frontend
-npm ci
-npm run build
-cd ..
-.\start.ps1
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\open.ps1
 ```
 
-浏览器打开 http://127.0.0.1:8000，API 文档在 http://127.0.0.1:8000/docs。`Ctrl+C` 停止服务。启动脚本优先使用项目的 `.venv`；本次交付环境也支持复用工作目录下已安装的 `work/venv`。不依赖 PowerShell 脚本时运行：
+`open.ps1` builds the frontend when needed, starts FastAPI in the background, and opens [http://127.0.0.1:8000](http://127.0.0.1:8000). Stop it with `stop.ps1` or `关闭词间.cmd`.
 
-```powershell
-.venv/Scripts/python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+The first OCR request downloads Paddle models. SQLite requires no separate installation.
+
+<details>
+<summary><strong>Linux / macOS shell</strong></summary>
+
+```bash
+git clone https://github.com/MuAn1228/lexi-read.git
+cd lexi-read
+
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-ocr.txt
+cp .env.example .env
+
+npm --prefix frontend ci
+npm --prefix frontend run build
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Linux/macOS 对应环境路径是 `.venv/bin/python`，运行同一条 uvicorn 命令。首次 OCR 会下载 Paddle 模型，需要联网；后续使用本地缓存。安装 CPU 版本即可，无需 GPU。
+Paddle wheel availability varies by operating system and architecture. The Linux CI path uses an amd64 Debian-based container; macOS OCR setup may require platform-specific Paddle instructions.
 
-本机 OCR 在 CPU 上运行，`OCR_CPU_THREADS` 可在 `.env` 中设置为 1–8，模板默认 4；本次交付电脑已设为 2，供阅读与日常软件同时使用。修改后关闭并重新打开词间生效。模型仅在首次识别时加载；大图片和首次加载期间仍可能短暂占用较多 CPU 与内存。
+</details>
 
-公网部署使用 **GitHub Pages 前端 + 云端后端**。Linux 服务器见 [Docker Compose 部署](deploy/vps/README.md)，Render 见 [部署说明](docs/DEPLOYMENT.md)。当前先完善本地版，公网发布尚未完成。
+Without an LLM key, Lexi starts in clearly labeled offline mode. Reading, local OCR, the bundled dictionary, vocabulary marking, history, and review remain available; generative features are limited.
 
-界面以阅读、词库和复习为主线：没有阅读材料时，首页直接显示图片、PDF、文本和网页链接导入入口，以及文章库、我的词库、今日计划三个快捷入口。有文章时直接进入原文、词表和语境学习，不再显示重复的统计导航卡。
+## Configure an AI provider
 
-左侧「查单词」可独立查询英文单词或短语，无需先导入文章或收录词库。输入后按回车，直接查看完整本地中文释义、音标、词形变化与已缓存讲解，并可朗读。需要时点击读取墨墨个人注解或生成 AI 详细讲解；只有明确点击「加入生词本」或调整掌握状态才会写入学习数据和复习安排。输入至少两个字母后显示带中文简释的候选词，支持方向键选择、回车查询及点击选择；未收录时显示可点击的拼写建议，不自动替换原词或加入生词本。最近 12 条查询按当前学习空间保存在浏览器，刷新后仍可查看，也可一键清空。
-
-AI 详细释义先显示摘要草稿，Lexi 助手逐步显示回答；完成核对后展示正式结果。等待区域显示已用时间，较长等待会提示继续或停止，停止后保留输入与已有结果。短文生成、文章问答、句子解析、语境学习和词汇拓展也支持停止等待。说明见 [AI 等待体验](docs/AI_WAITING.md)。
-
-已移除灵感词卡、小芽打招呼、追光、磁吸、点击星芒和标题动画。保留纸绿配色、必要的加载与操作反馈、清晰的键盘焦点。页面标题直接使用功能名称，关联与历史页面分别叫“词汇关联”“学习记录”。
-
-桌面左侧绿色导航栏随页面内容延伸到页底；窗口高度足够时，菜单滚动到顶部后停靠，滚轮仍带动整页。矮窗口下菜单随页面自然滚动，底部入口也能完整访问。手机使用左侧抽屉菜单，支持键盘导航和关闭后焦点返回。阅读区按屏幕宽度排列原文、词表和语境；手机首页导入方式使用两列按钮。已有页面刷新后即可加载新版界面，无需重新导入数据。
-
-## 阅读助手（2026-10-25）
-
-Lexi 阅读助手支持拖拽、左右/底部吸附、按压反馈、短提示及大小/隐藏设置。角色已整体缩小，滚动时保持固定大小和停靠位置；页头眼睛按钮可隐藏/恢复，专注阅读及弹窗内暂时收起，支持减少动态效果。选词和已确认学习操作只触发视觉反馈，不自动调用模型。
-
-当前角色使用参考用户图片生成的蓝发 Q 版透明素材，待机、阅读、思考、讲解、查找、成功、疑惑和出错各有姿态，随真实操作切换。动作菜单共十项，新增挥手、拍手、翻书、哈欠和认真思考，前四项有短双帧画面。底部为助手按钮留出空间。台词共 123 句，按当前页面及动作区分，点「说句话」可主动换一句；切换页面不会自动说话。素材、提示词及来源见 [角色素材说明](frontend/src/mascot/assets/README.md)。
-
-点击角色下方或页头「问 Lexi」可使用 Agnes 学习助手：结合当前词句讲解、记忆提示、四选一练习及自由追问，词典里也可直接「和 Lexi 学这个词」。只有主动点击才请求模型，支持停止/重试；答后揭晓解析，不自动更改掌握状态或复习安排。对话仅本轮内存保留，关闭或切换上下文后清空，详见 [Agnes 学习助手](docs/AI_COMPANION.md)。
-
-角色互动已增强：单击随机点头、歪头或轻跳，连续点击两次可摸头；点击角色旁的 `…` 可选择五种动作，也可关闭「角色动作与表情」。手动动作结束后自动恢复，AI 工作时优先展示任务状态。减少动态效果时使用静态原图与表情提示。
-
-按用户选择，本机先使用参考项目的原角色图片；素材不在上游 MIT 许可范围内，仅保存在 Git 忽略的本机预览目录，公开构建需替换或取得授权。完整架构、事件、文件、许可及验证见 [阅读助手 V1](docs/MASCOT_V1.md)。
-
-## 使用流程
-
-阅读交互增强（2026-10-24）：选词时联动原文轮廓、词表定位和语境内容；已确认标记有分色反馈，进度平滑更新。AI 请求显示具体等待文案及骨架，关联说明平滑展开，保存使用局部反馈。桌面三栏等高，语境在面板内滚动；平板保留两栏加下方语境，手机纵向排列。学习概览采用紧凑档案列表，刷新保留上次结果。所有新增动效遵守减少动态效果偏好，无新依赖；详见 [交互设计与验证说明](docs/INTERACTION_DESIGN.md)。
-
-1. 点击“添加阅读材料”，上传 JPG/PNG 图片、导入 PDF、粘贴英文文章或网页链接，也可打开内置机器学习阅读示例。
-2. 点击图片词框或文章中的单词，也可用单词列表快速筛选。
-3. 标记“已掌握 / 不认识 / 不确定”。未标记是独立状态，不代表不确定。
-4. 主动查看语境解释，再请求最多 3 个关联词。展开关联后可反馈认识、不认识、有用或没用；需要读懂原句时点击“翻译与解析本句”，需要理解整篇时使用阅读区下方的“AI 文章问答”。
-5. 从阅读页的今日计划进入“今日计划”，使用“词卡回想 → 揭晓释义”或“原句填空 → 检查答案”，再选择“已掌握 / 不确定 / 不认识”保存自评并安排下次复习。
-6. 在“文章库”搜索标题或正文，按标签、材料类型筛选，整理标题和标签，或把材料移到回收站。
-7. 在“短文练习”设置主题、目标难度与长度，用自己的目标词生成英文短文，预览后保存并开始阅读。
-8. 在“我的词库”搜索或筛选单词，勾选后批量调整状态、加入自定义分组，也可导出当前筛选 CSV；学习概览、词汇关联和学习记录提供进一步查看。
-9. 在“数据管理”下载完整备份，或选择备份预览内容、确认后恢复本机学习数据。
-
-键盘 `1 / 2 / 3` 可快速标记选中的词，随后移到下一个词。坐标以原图像素保存，前端按显示尺寸缩放。图片支持缩放与原文切换。
-
-阅读位置会按当前后端、项目和学习身份保存在本浏览器中。重新打开时可继续最近一篇文章，并分别恢复每篇文字文章的滚动位置、PDF 页码与页内位置，以及图片的正文/原图视图、缩放和双向滚动位置；最多保留最近 30 篇。阅读页的“从头开始”只清除当前文章的自动续接位置，不删除手动书签。自动记录与恢复不调用学习 API、不新增学习事件，也不改变词库状态或复习排期；换浏览器、换访问地址或清除浏览器数据后不会自动带过去。
-
-粘贴文章支持可选标题和最多 20,000 个字符的正文，保留段落、空格和标点；未填标题时取首个非空行。导入不运行 OCR，也不调用模型。点击正文中的词后，可以使用现有语境释义、三种标记和间隔复习；重复出现的词分别保留原句与位置，共享词库状态。复习时“回到原文”也能定位到文字文章里的原词。
-
-PDF 导入支持文字版、扫描版及两者混合的英文文件，最大 10 MB、100 页、正文最多 200,000 个 Unicode 字符。在“添加阅读材料 → 上传 PDF”选好文件后，默认使用“自动识别”：保留可用的文字层，对没有可用文字或仅有少量文字的图片页调用本机 OCR。也可选择“仅提取文字”（跳过扫描页），或“全部用 OCR”（重新识别文字层异常的材料）。每次最多处理 20 页需要 OCR 的页面，纯文字 PDF 仍支持 100 页；超过时请先拆分文件。
-
-扫描识别复用本机 PaddleOCR，不调用 Agnes；首次需要加载模型，未缓存模型时需联网下载。页面依次识别并显示等待提示，完成前请勿重复提交。已选文件、识别方式与请求编号在失败、关闭弹窗和切换导入选项后保留，原样重试不会重复创建文章或增加词频；明确更换文件或识别方式会使用新请求编号。某一页需要识别却失败时整份导入不保存，提示具体页码后可重试。
-
-阅读页按原文件页码显示正文，保留空白页编号，可切换页码、点击单词、保存书签；复习回原文会跳到对应页的原词。识别正文可以继续使用语境释义、句子解析、AI 文章问答、文章库和完整备份恢复。字符位置以识别后的正文为准，不保留原 PDF 排版；原文件可在阅读页下载核对。请使用清晰、摆正的英文扫描件，多栏、表格、倾斜和模糊文字可能有识别或顺序错误；加密 PDF 仍需先移除密码。
-
-**OCR 校对工作台**：打开 PDF 或图片材料后点击“校对正文”，对照原页或原图修改识别文字。支持缩放、修正错字与断行、还原及复制正文；最后统一保存修改。扫描、混合和文字版 PDF 都可校对，保留原有页数和空白页；上传的 JPG/PNG 及内置示例按单幅图片校对。全文最多 200,000 个 Unicode 字符。原图和原 PDF 均不被修改，PDF 下载的仍是原文件，当前不导出改写后的 PDF。
-
-图片正文修改后默认显示可选词的校对文本，也可切回原图核对。新单词位置准确对应校对后的文字，旧 OCR 词框及识别置信度不再套用到新文字；原图仅用于查看。没有修改的原样保存不会重建原词框。旧图片书签没有可靠的文字位置时会清除，之后可在校对正文中重新保存书签。
-
-校对只更新阅读正文与单词/句子位置，不调用 OCR 或 Agnes，不重复累计词频，也不改变已有词库状态、学习历史或复习排期。新增或改正的词可以在阅读中主动查词、标记后进入个人词库。书签尽量保留在未改动的原词上；无法可靠匹配时清除书签。保存后使用新正文进行阅读、问答和原句练习，旧的问答与选词位置会清除。
-
-未保存修改离开时需要确认放弃。保存失败会保留草稿；如果结果尚未确认，先使用原请求重试，避免覆盖其他窗口的新修改。遇到正文版本冲突时保留草稿，确认重新加载最新正文后再校对。草稿只保留在当前页面，关闭或刷新浏览器前请保存。
-
-OCR 逐页使用临时图片，渲染长边最多 2,200 像素、单页最多 400 万像素；单张源图片默认最多 2,500 万像素（复用 `max_image_pixels` 设置），每页资源中的图片合计最多 5,000 万像素。超出会提示压缩扫描图分辨率。OCR 不占用 SQLite 写事务，临时图片在成功或失败后清理。公开模式与图片识别共用并发槽位和每日 OCR 额度，按本次计划识别页数预留，失败尝试仍计入；已完成请求的原样重试及纯文字提取不再占用 OCR 额度。
-
-网页导入：选择“网页链接”，粘贴以 `https://` 或 `http://` 开头的公开英文文章地址，点击“导入网页并阅读”。系统提取标题和正文，保存最终来源链接；导入后正文保存在本机，阅读时无需重新访问原站。阅读页可在新标签页打开原网页，文章库可按“网页文章”筛选；标词、语境解释、句子解析、书签和复习与文字文章相同。网页导入本身不调用 OCR 或 AI。
-
-网页提取适用于公开静态正文，不支持登录、付费、验证码或依赖 JavaScript 加载的文章；无法提取时可改用“粘贴文章”。链接最多 2,048 字，使用默认 HTTP/HTTPS 端口；网络读取总时限 20 秒，HTML 最多 2 MB、提取正文最多 100,000 字，最多跟随 3 次重定向。只读取通过校验的公网地址，不携带浏览器登录状态、不执行页面脚本。提取结果保留段落，可能与原网页版面不同。失败保留链接和请求编号，重试不会重复导入或增加词频；编辑链接或成功后主动再次导入使用新编号。
-
-选中单词后，在侧栏点击“翻译与解析本句”，使用当前原句和文章语境生成中文翻译、句子结构、分句说明及语法要点。仅点击才调用模型，支持最长 4,000 个 Unicode 字符的句子；同一篇文章同一句的成功结果会缓存，选中句中其他词时可复用。离线、超时或返回格式不可靠时明确提示不可用并允许重试，不编造译文。此功能不增加查词次数、学习事件或改变复习排期；模型解析可辅助阅读，仍需结合原文判断。
-
-### 发音与专注阅读
-
-在语境学习中，点击单词旁的扬声器朗读单词，点击“朗读原句”播放当前完整原句，无需先获取 AI 解释。中文词典也提供发音。可以切换美式/英式英语和 0.8×、1×、1.2× 语速，设置保存在当前浏览器；再次点击播放按钮可停止。切换单词、材料或页面时会停止旧发音，浏览器标签页隐藏时也会停止。
-
-安装发音组件后，单个英文词使用 Wiktionary / Wikimedia Commons 的开放许可录音，先查首选口音，缺失时再尝试另一种英语口音；两者共用 9 秒远端查询预算。界面显示实际播放口音、“词典录音”、作者、许可和来源链接；改用另一口音会明确提示，不改变你的首选设置。可核对公开领域状态及地域许可证的录音也会纳入，同口音首个录音不可用时最多尝试 3 个候选。当前选中的语境词或已打开词典中的词停留 600 毫秒后，会提前准备该词录音；其他单词在悬停、键盘聚焦或按下朗读按钮时准备。准备不会自动发声，不扫描词表，也不上传文章或学习记录；页面隐藏、换词或离开会取消不再需要的准备。首次获取需要联网，相同单词和口音的成功录音缓存在本机 30 天，最多 128 MB。
-
-单词默认不自动合成：没有可用录音时提示重试。安装 Rosie 声线后，可勾选“无录音时使用自然合成”：仍先尝试英美词典录音，缺录音单词再用本机 Kitten Micro 的 Rosie 声线，界面标明“本机神经语音”和实际美式口音，不会冒充英式或真人录音。选项默认关闭，已有选择、口音和语速保持不变，缓存和进行中的请求按选项隔离。单词请求或播放失败时不再自动转 Windows 系统语音；已就绪的 Rosie 生成失败也不会偷偷换回旧声线。尚未安装 Rosie 的设备仍可明确选择原 Piper 合成，界面会区分来源。
-
-录音与合成都不能保证覆盖每种读法；合成可能误读个别复合词、专名和同形异义词，不会用词根或不同大小写词条冒充原词。Rosie 是合成语音，词典录音仍优先。
-
-准备和播放共享同一请求；重复播放优先使用当前浏览会话内的音频缓存，切换语速不重新取录音。浏览器缓存按后端和学习空间隔离，最多 64 条 / 8 MB；录音保留 30 分钟，合成回退只保留 15 秒，关闭或刷新页面即释放。后端复用 HTTPS 连接、合并同词请求，并让英美口音共用 5 分钟查词结果；首次未准备好的词仍受网络速度影响。
-
-句子在本机用 Piper 朗读，提供美式 LJSpeech 与英式 Cori 两种音色。合成节奏针对英语学习放慢，孤词比句子更舒缓；词典录音保持原始节奏。“正常 · 1×”不额外加速，慢速与快速通过保持音高的音频播放调节，也可以一键恢复正常语速。录音与合成音频均保留完整内容，在开头追加 350 毫秒、末尾追加 200 毫秒缓冲，合成句子另保留句间停顿，减少输出设备启动时丢失首音的可能。发音不调用 Agnes，不增加查词次数或改变复习排期。
-
-新朗读节奏会使旧音频缓存失效，自动重新生成；相同文本与口音仍会复用新音频，缓存最多保留 128 MB。首次更新到这一版本会保留原口音，将旧倍速恢复为 1×；之后的语速选择正常保存，刷新页面不会反复重置。
-
-本机发音组件为可选安装，使用启动后端的同一个 Python 环境执行：
-
-```powershell
-python -m pip install -r requirements-tts.txt
-python scripts/setup_tts.py
-```
-
-安装脚本从模型发布仓库的固定版本下载约 122 MiB 的模型和配置文件，校验 SHA256，存放在当前数据目录的 `tts` 文件夹；安装完成后重启后端、刷新页面即可。首次合成会加载模型，CPU 推理限制为两个线程。模型无需 GPU、API Key 或持续联网；模型和可再生成的音频不包含在学习数据备份中。组件来源与许可见 [发音组件说明](docs/third-party/PIPER-NOTICE.md)、[词典录音说明](docs/third-party/DICTIONARY-AUDIO-NOTICE.md)。
-
-安装额外的 Rosie 单词声线：
-
-```powershell
-python -m pip install -r requirements-tts.txt
-python scripts/setup_natural_tts.py
-```
-
-这个安装命令下载约 45 MB 的固定版本模型、声线包和配置，核对 SHA256 后保存在 `tts/kitten-micro-0.8`，重复执行会复用已验证文件；也可用 `--data-dir` 指定数据目录。无需安装 PyTorch 或完整 KittenTTS 包，不调用云端付费接口，生成过程不上传单词。模型按需加载并复用，只用两个 CPU 线程；首次生成需要加载，提前准备和本机音频缓存仍有效。音频真正从 24 kHz 重采样为 22.05 kHz，完整保留模型输出及原有首尾缓冲；模型自身也可能带有停顿，生成耗时不等于听到声音的总延迟。合成音频单独缓存在 `natural-tts-audio`，最多 128 MB；更换模型或节奏会使缓存失效。来源与许可见 [Kitten Micro 说明](docs/third-party/KITTEN-NOTICE.md)。
-
-未安装组件或句子生成暂不可用时，句子可回退到浏览器的英语系统语音，界面会标明实际来源与声线。系统语音音质取决于设备；不会用中文语音替代缺失的英语口音。部分系统声线需要联网。单词失败只提示重试，避免突然更换为设备机器声。
-
-阅读页点击“专注阅读”，收起导航、词表和辅助区域，集中显示原文。可调整正文大小；点选正文单词或点击“查词”仍能打开学习面板并播放单词与原句。关闭查词后继续阅读，按 Esc 先关闭查词面板，再按一次退出专注；词典弹窗中的 Esc 优先关闭词典。专注切换保留当前正文与 PDF 页码，调整字号时保持当前可见单词位置；不会自动全屏、播放音频或记录已复习。
-
-学习记录支持最近 7、30、90 天的按日复盘：查看实际学习天数、涉及的不同单词、复习词数和主动查词次数，点选日历可回顾某一天。下方记录可按英文单词和行为类型筛选，同一天同一词合并显示，支持分页；顶部统计始终对应完整时间范围，不随记录筛选改变。数据从选定时段的有效学习事件整理，不受旧接口最近 100 条限制。
-
-“值得再看的词”只列当前仍标为不认识或不确定，且本期多次主动查词或多次自评不熟悉的词；这些是实际操作次数，不是测验错误率或记忆能力评分。可直接查看中文释义、返回仍可用的真实原文位置，或进入现有到期复习。词库导入、被动展示和已撤销的标记不计作有效学习，旧版无法确认是否主动的查词也不纳入统计。浏览学习记录不调用 AI、不新增学习行为、不调整状态或复习安排。
-
-### 同类词、近义词与派生词
-
-打开单词的中文词典，在“词汇拓展”选择同类词、近义词或派生词，也可以选择反义词和常用搭配，点击“发现…”才调用 AI。每次最多展示 3 个适合补充的词或短语；同类词说明所属类别，近义词说明用法差异，派生词关注真实构词关系，不把单纯复数和时态变化算作派生。没有合适结果时不凑数；说明由 AI 生成，需结合具体用法理解。
-
-展开“关联与区别”查看说明，可以朗读目标词、加入生词库或标记已掌握；已在词库的词会显示当前状态。只有明确标记才改变掌握状态和复习安排，生成与查看本身不算完成复习。没有文章来源的词也能使用。复习卡在揭晓之后提供“释义与词汇拓展”入口，填空作答前不泄漏答案。
-
-当前页面会按单词和类型保留成功结果，后端也会将通用词汇候选保存 30 天。刷新页面或重启后，再次点击获取会优先读取本机缓存；需要新结果时点击“重新生成”，才跳过已有缓存调用 AI。同一个词和类型的并发请求会共用进行中的生成，避免重复调用。离线、失败和空候选不会作为成功结果保存。
-
-纯词拓展只向模型发送当前词、词元和关系类型，最多生成 5 个精简候选；词库与学习记录留在本地筛选、排序，每次最多展示 3 个，并创建当前批次以绑定反馈。缓存不重放旧批次或旧掌握状态；更换模型、服务或密钥后使用独立缓存。首次生成仍受模型服务响应速度影响。原有阅读侧栏的文章关联推荐继续保留，主动查看或反馈后的关系可在“词汇关联”中回顾。
-
-“词汇关联”现在可以直接从自己的词库选词，按同类词、近义词、派生词、反义词或常用搭配主动拓展，无需先打开文章或词典。获取结果才调用拓展接口，浏览已积累的联系不调用 AI。保存的关联同时展示两端中文释义、当前状态及原推荐中的关系说明，可查词、回到可用原文，并明确加入生词库。
-
-关联词集支持英文单词搜索、关系类型、待巩固词筛选和分页，不再限制为最近 200 条。标记没用的联系默认收起，可勾选包含没用的关联后重新查看、恢复有用；不会删除历史关系。旧记录没有可靠说明时显示缺失，不编造区别或解释。统计针对未标记没用的完整词集，不随下方筛选改变。
-
-点击“练习本页”可用当前页有释义的关联做回想：先看源词、关联类型和中文提示，回想目标词，再揭晓单词与关系说明。自评“想起来了”或“还需巩固”，完成后可再练未想起的联系。这是当前页面的练习进度，离开页面后不保留；不会自动标记掌握、计算考试正确率或调整间隔复习。需要正式复习时进入“今日计划”。
-
-“AI 文章问答”位于阅读区下方，不需要先选单词。可点击“概括主要内容”“梳理观点与依据”“找出关键细节”，或输入自己的中英文问题（最多 500 个 Unicode 字符）；Agnes 根据当前保存的文章给出中文回答，并附可展开的真实原文引用。点击“定位原文”会高亮对应位置，PDF 会切到引用所在页，图片材料会打开识别文本；不会替你选词、标记掌握状态或保存书签。
-
-每次问答可继续追问，参考最近 3 次有原文依据的成功回答；当前会话最多 8 次，点击“清空问答”开始新一轮。问答列表只保留在当前阅读页，刷新、离开阅读页或切换文章后清空；已验证的生成结果另有可丢弃的本机缓存，同样的问题、历史与文章可复用。失败保留问题，点击“重试这个问题”沿用原提问与历史；模型不可用、格式或引用不可靠时不会展示假答案。
-
-问答只使用当前文章，不搜索互联网。短文提供完整正文；长文最多选取 24,000 字片段，结合问题中的英文关键词、最近问题及文章各处选材，界面明确提示未覆盖全文。可在问题中加入原文关键词帮助定位；依据不足时说明当前提供内容不足，不把片段中的缺失当作全文没有答案。每条引用都校验为原文连续子串，回答含义仍应结合引用核对。仅主动提问调用 AI，不增加查词次数、学习事件或改变词库与复习排期；问答缓存不包含在完整备份中。
-
-导入失败会保留当前输入，重试相同内容不会重复创建文章或累计词频；成功后主动再次导入则视为新的阅读材料。关闭导入弹窗仍保留当前草稿，刷新网页不会保存尚未导入的草稿。文字文章与图片都保存在本机 SQLite 数据库中，重开软件后可以继续阅读。
-
-文章库支持标题/全文搜索、标签与类型筛选，以及按导入时间或标题排序。每篇最多 10 个标签，每个标签最多 20 字；重命名和整理标签不会重新导入文章或增加词频。修改后的标题会同步到阅读材料选择器。
-
-阅读时可把当前选中的单词保存为书签，也可回到或清除书签。再次打开文章优先定位到保存位置；从复习跳回原文时优先定位到该张复习卡对应的词。书签只用于定位，不代表已经读完或掌握文章中的单词，也不影响复习排期。
-
-普通打开文章时，自动续接位置优先于手动书签；从复习或学习记录明确返回某个原词时，该目标优先于自动续接。正文校对、文章删除或完整备份恢复会使不再匹配的自动位置失效，避免跳到旧内容。手动书签仍保存在 SQLite 和完整备份中，与只存在当前浏览器的自动续接互不覆盖。
-
-移到回收站后，文章从正常列表、原文入口和复习原句选择中移除；词库、累计出现次数、学习记录和复习排期保留。若同一词还有其他文章语境，复习可使用其他原句，否则仍可无原文自评。回收站可以恢复文章及其标签、书签和词位置；当前不提供永久清空，原图和全文继续保留。删除与恢复不重复累计词频。
-
-「今日计划」提供 10、20 或 30 分钟预算，按当前后端、项目和学习身份保存在浏览器；换浏览器或清除浏览器数据后需重新选择。预算结合近期真实复习用时估算可完成数量，并显示已完成、当前可复习及今天稍后到期的词。预算只控制计划规模，不会提前提取未来到期的词。每组最多 10 个当前已到期的词，包括到期的已掌握词；未标记的词不进入队列。今日已复习按电脑当地日期统计明确自评过的不同词数，同词当天多次自评只算一个词。
-
-“词卡回想”先展示英文词，点击“揭晓释义”后才请求当前原句中的中文解释，并展示原文；也可以根据记忆直接自评。“原句填空”隐藏词头与词元，只遮住原句中对应的一次出现。填写原文词形后点击“检查答案”，或直接揭晓，再自行评价掌握情况。比对忽略大小写、首尾空格和英文弯直撇号差异，但保留词形区别，例如 learned 不能填 learn。切到下一张卡时保留练习方式，清空输入、答案和上一张卡的释义请求。
-
-文字、网页和 PDF 使用原有精确位置生成填空；旧图片仅在原句内能唯一确定完整词形时提供填空，重复或缺失位置的卡片退回词卡。没有关联原文时仍可凭记忆自评，但不提供自动语境释义。AI 释义成功后按用户、原文位置、正文内容和模型配置缓存；失败保留本卡答案，可显式重试。离线词表仅覆盖少量机器学习词汇，界面会明确标注来源，未覆盖时不编造解释。
-
-揭晓、输入、检查答案和跳过均不增加查词次数、学习事件或改变复习时间；填空结果只用于练习反馈，仍由明确自评决定下一次复习。无需等待 AI 返回即可自评；自评响应未确认时锁定本卡，沿用原请求编号安全重试。
-
-自评后的间隔由确定性的自适应规则安排，与规则掌握度分开保存。未知答案仍在 10 分钟后快速重试；“不确定”通常为 1 天，连续稳定复习后可延长到 2–3 天；“已掌握”以连续掌握次数对应的 3、7、14、30、60 天为基础，并根据近期复习自评、规则掌握度和有效作答耗时作有限调整：
-
-| 自评 | 下次复习 |
-| --- | --- |
-| 不认识 | 10 分钟后，连续掌握次数归零 |
-| 不确定 | 通常 1 天后；连续稳定且近期失败较少时为 2–3 天，连续掌握次数归零 |
-| 已掌握 | 连续掌握时以 3、7、14、30、60 天为基础，之后以 60 天为基准并按有限调整系数修正 |
-
-排序也使用最近明确复习自评、当前标记状态、逾期时间、规则掌握度和阅读出现次数，为每张卡提供优先级、安排原因及「需要巩固 / 正在稳定 / 较为稳定」状态。近几次有效作答耗时可小幅影响后续间隔；翻看释义、揭晓、填空、跳过和普通阅读查词不作为记忆结果。统计仅使用最近有限数量的复习记录，并设有上下限，不代表记忆概率或科学测量。完整规则见 [个性化学习计划与自适应复习](docs/ADAPTIVE_REVIEW_V2.md)。
-
-普通阅读或关联推荐中明确标记“不认识 / 不确定”，会让该词立即待复习；标记“已掌握”从 3 天后安排回顾，同时重置连续复习次数。这些操作不计入今日复习完成数。间隔从本次明确操作时刻起算，不把分数解释为记忆概率。旧词库升级时，已有生词立即待复习，原有已掌握词从升级时起 3 天后回顾，不补造历史行为。
-
-排期保存在 SQLite，关闭软件或关机后仍保留。下次启动会按实际时间显示到期任务，不需要为了计时让电脑一直运行。自评用时只统计卡片可作答期间的可见时间，切换到其他标签页或离开复习页时暂停；提交前冻结在待确认请求中，网络重试复用同一用时与请求编号。没有有效用时的旧记录继续参与自评统计，但不会伪造耗时。
-
-自适应数据复用已有学习事件详情与复习排期，不新增数据库迁移；缺少新增字段的旧学习事件可继续读取，并按可用历史计算。现有未完成的版本 1 浏览器复习组仍可恢复。新增计划与排序是本地确定性规则，不调用 AI/Agnes，也不更改既有掌握度规则或生成所谓的记忆分数。
-
-显示提示、跳过、查看原文或查询释义不会改变下次复习时间，也不记录自评。跳过的词保留到期状态；无原文的关联词仍可自评。未完成组和待确认自评的编号保存在当前浏览器中，刷新页面或重开同一访问地址后可以继续。恢复时会核对尚未处理的词是否仍到期；上次断线而未确认的自评保留原编号重试。换浏览器、切换访问地址或清除浏览器数据不保留组内进度；已成功保存的词库、排期和学习记录仍在后端 SQLite 中。
-
-CSV 只包含当前筛选结果的词形、词元、状态、规则掌握度、出现与累计查询次数、首次及最近出现时间；空分数保留为空，时间使用 UTC。文件可用 Excel 打开。它不是整库备份，不包含原图、全文和完整学习历史。
-
-“我的词库”支持逐词勾选和“选择本页”，跨页保留选择，每次最多 200 个词。改变搜索、掌握状态、来源或自定义分组筛选时会清空选择，避免操作隐藏的旧选择。标记时保留当前排序和浏览位置；单行与批量标记共用请求回执，结果未确认时点击“重试确认本次标记”，不会重复记分或延长排期。已经是目标状态的词不重复记录学习事件，也不修改掌握度和排期。
-
-“撤销最近标记”可恢复这次修改前的状态、规则掌握度和复习安排，包括原本未标记、无分数或无排期的情况。入口只保留本次打开词库页面最近一次有改动的标记，离开页面或刷新后不保留入口。若所选词在此后有新查询、标记、文章遇见或排期变化，整次撤销返回 409 并保留后续学习；只读查看词库和历史不影响撤销。撤销保留审计记录，原批量标记不再作为有效标记统计。
-
-通过“管理分组”新建、重命名或删除分组，使用分组筛选及批量加入、移出整理词汇。每位用户最多 50 组，组名去除首尾空格后为 1–30 个字符，同名忽略大小写；同一个词可属于多个分组。分组只用于整理，不修改掌握状态、分数、词频、学习事件或复习排期，删除分组也不删除单词。
-
-“短文练习”从真实个人词库选最多 5 个目标词：优先已到期的词（包括到期的已掌握词），再选不认识、不确定的词；同组参考较低的规则掌握度、查询和出现次数排序。未标记词与未到期的已掌握词不参与。没有合适的词时提示先阅读并标记生词，不用通用词冒充个人选词；学习状态有变化时可点击“刷新目标词”。
-
-输入最多 100 字的主题，选择 A2 / B1 / B2 目标难度与 80–120 / 150–200 / 250–300 英文词长度，点击生成后 Agnes 才开始写作。难度是写作要求，不是英语水平测评；系统核对正文的实际字数、英文内容和每个目标词的真实出现，允许普通屈折词形与连续词组。预览高亮实际位置，不拼装缺失词来修补结果；模型未配置、失败、未覆盖或格式不合要求时明确提示不可用，可用原编号重试。
-
-生成与预览不创建文章、不增加出现/查词次数或学习事件，也不改变掌握度和复习安排。点击“保存并开始阅读”后，短文以标题前缀“AI练习 · ”保存为文字文章，按实际词频记录一次遇见；随后可使用文章库、语境解释、问答、书签及标词。生成与保存分别使用独立请求编号，丢失响应后重试同一次操作不会重复已成功的生成或导入；保存结果未确认时保留预览并锁定重新生成，先完成原保存。
-
-设置与未保存预览只留在当前打开页面的内存中，切换导航后可继续，刷新或关闭会清空；已保存文章长期保留。生成回执保存在本机派生缓存中，不包含在完整备份中；缓存写入失败时页面会说明再次生成可能重新调用 AI，此时可先保存当前短文。正文保存成功后的列表同步失败只需刷新列表，无需再次保存。
-
-“数据管理”仅在本机模式显示。完整 ZIP 包含在线数据库快照、全部文章原图和 PDF，包括回收站材料、标签、书签、词库、自定义分组与成员、批量操作回执、学习记录、关联及复习排期；不包含 `.env` 密钥、日志、模型文件或可重新生成的缓存。导出不修改学习数据，可把下载的 ZIP 另存到其他磁盘。
-
-本机版会在应用启动或进入“数据管理”时检查自动恢复点；距上次成功恢复点已满 24 小时才创建新的完整 ZIP，默认保留最近 7 份，也可在数据管理页立即创建、刷新状态或下载最新一份。创建前检查 SQLite 完整性与外键，写入后重新校验完整压缩包并记录文件大小和 SHA-256；失败不会删除已有恢复点。它不是持续运行的后台定时任务，只有打开应用或数据管理页触发检查时才会补建到期恢复点。
-
-自动恢复点和正式数据库默认位于同一块本机磁盘，能应对误操作或数据文件损坏，但不能防范整块硬盘损坏、电脑丢失或勒索软件。请定期把“最新恢复点”或手动完整备份下载到其他磁盘或可信存储。该功能不新增数据库迁移，也不改变现有完整备份格式。
-
-恢复支持当前版本及 012 数据结构版本导出的完整备份；012 备份恢复时补齐空的分组、成员与批量操作表。压缩包最大 250 MB、展开后最大 500 MB、最多 10,000 个文件。先选文件并预览文章、词汇、事件和原文件数量，勾选覆盖确认后才开始恢复；预览 30 分钟内有效。恢复会覆盖当前本机学习数据，开始前自动生成一份恢复前完整备份，成功页可下载。数据库写入失败会回滚；响应丢失后留在当前页面重试，不会再次覆盖已经恢复后的新学习记录。
-
-恢复期间暂停其他 API 操作，等待已有操作结束。成功后会清除当前浏览器的旧阅读位置和未完成复习组，点击“重新进入阅读空间”重新载入；清理失败时按提示重试清理。其他已打开的浏览器窗口请刷新后继续学习。本机 Agnes 配置不会随恢复改变，换电脑使用需另行配置模型。恢复前备份和旧原文件保留于本机，不会被自动删除。
-
-## LLM 配置
-
-默认 `LLM_PROVIDER=offline`，无需 API Key 即可使用基础阅读、标词和复习。离线解释仅覆盖有限的机器学习词条，推荐也来自规则与小型候选集；页面明确标明离线模式。未知词不会被编造释义，整句翻译与解析需要配置模型。内置示例是带预标注坐标的测试阅读材料，不冒充 OCR 结果。
-
-如需解释任意文章，在 `.env` 配置支持 Chat Completions 的服务：
+Lexi uses an OpenAI-compatible Chat Completions adapter. Copy `.env.example` to `.env`, then set your provider values on the backend:
 
 ```dotenv
 LLM_PROVIDER=openai_compatible
 LLM_BASE_URL=https://your-provider.example/v1
 LLM_MODEL=your-model-name
-LLM_API_KEY=your-key
-LLM_TIMEOUT_SECONDS=30
+LLM_API_KEY=your-secret-key
 LLM_JSON_MODE=true
-LLM_MAX_TOKENS=4096
 ```
 
-### Agnes 3.0 Flash
+If the provider does not document `response_format`, set `LLM_JSON_MODE=false`; Lexi still validates the returned structure. The repository includes a commented Agnes 3.0 Flash preset in `.env.example`.
 
-使用 [Agnes 3.0 Flash 官方文档](https://www.agnes-ai.com/zh-Hans/docs/agnes-30-flash)确认的模型 ID 和接口，在本机 `.env` 填写：
-
-```dotenv
-LLM_PROVIDER=openai_compatible
-LLM_BASE_URL=https://apihub.agnes-ai.com/v1
-LLM_MODEL=agnes-3.0-flash
-LLM_API_KEY=你的Agnes密钥
-LLM_TIMEOUT_SECONDS=60
-LLM_JSON_MODE=false
-LLM_MAX_TOKENS=4096
-```
-
-在 [Agnes 开发者平台](https://platform.agnes-ai.com/)创建 API Key；填入原始密钥即可，不要加 `Bearer` 前缀。`openai_compatible` 表示接口协议，请求实际发送给上面的 Agnes 地址。快速开始页面的示例仍用 2.5，本文按 3.0 Flash 专页配置。
-
-Agnes 的请求字段表未列出 `response_format`，因此这里设为 `LLM_JSON_MODE=false`，通过提示词要求 JSON，并在后端继续严格验证字段、数值、原词及词元。此配置不代表已实测 Agnes 不支持 JSON 模式。每次请求最多输出 4096 tokens；截断、异常或不符合结构的返回会明确降级。可按实际延迟及输出需要调整超时和输出预算。
-
-重新启动后生效。供应商只在 LLMService 适配器中出现；密钥仅留在后端。LLM 请求会向所配服务发送当前词、句子、截取的文章上下文和词汇/历史摘要。OCR 在本地运行。超时、无效 JSON、服务异常会返回明确警告并降级为有限的离线结果。
-
-填写配置后，先在项目目录运行连接检查：
+Check the connection before opening the app:
 
 ```powershell
-# 本次交付环境；自行安装时替换为 .venv/Scripts/python.exe
-../../work/venv/Scripts/python.exe scripts/check_llm.py
+.\.venv\Scripts\python.exe scripts\check_llm.py
 ```
 
-检查只使用内置测试句子，分别验证语境释义和关联词的真实模型响应，不写入词库或学习事件。离线模式、缺少配置或调用降级均判为失败；不会把离线返回误报为连接成功。检查通过后，双击“关闭词间.cmd”，再双击“打开词间.cmd”载入新配置。API Key 仅填入已被 Git 忽略的本机 `.env`。
+Never place an API key in a `VITE_*` variable or commit `.env`.
 
-## 架构与数据流
+## Architecture
 
-```text
-frontend/                 React + TypeScript + Vite
-backend/
-  api/                    HTTP 路由与输入边界
-  services/               文档、词汇、LLM 服务
-  repositories/           SQLAlchemy 查询与更新
-  models/                 用户、文档、出现位置、词库、事件、推荐反馈/回执与词汇关系
-  schemas/                明确的输入输出结构
-  ocr/                    PaddleOCR 3.x 适配器
-  agents/                 候选生成、个性化排序与预算控制
-  data/                   SQLite、图片、模型缓存（Git 忽略）
-```
+| Layer | Responsibility | Main technology |
+| --- | --- | --- |
+| Web client | Reading, word interaction, review, history, data management | React 19, TypeScript 5.9, Vite |
+| API | Validation, ownership, import flows, learning transactions | FastAPI, Pydantic, Uvicorn |
+| Learning data | Documents, occurrences, word/sense state, events, schedules, feedback | SQLAlchemy, SQLite |
+| OCR and extraction | Images, scanned/mixed PDFs, public web articles | PaddleOCR, pypdf, pypdfium2, Trafilatura |
+| AI adapter | Context explanations, Q&A, practice, related words | HTTPX, OpenAI-compatible Chat Completions, strict response validation |
+| Optional speech | Dictionary recordings and local sentence/word synthesis | Wikimedia sources, Piper, Kitten Micro |
 
-```text
-图片 → 校验与方向归一化 → OCR 文本 / 行 / 词框 / 置信度
-    → Document + WordOccurrence → Vocabulary 观察计数
-粘贴文章 → 校验 / 英文分词 / 字符位置 → Document + WordOccurrence + 导入回执
-    → Vocabulary 观察计数（同一事务，不产生自评或查词事件）
-用户标记 → Vocabulary 状态 + LearningEvent
-复习自评 → ReviewReceipt + Vocabulary 状态/规则分数 + LearningEvent（同事务）
-主动查询 → 原词/lemma + 句子/文章 + 三类词表 + 当前词历史/最近行为 → LLMService
-    → 候选生成 → 过滤已掌握/当前词/重复词 → 排序 → 最多 3 个词
-```
+The frontend talks only to the FastAPI backend. API keys remain server-side. Learning updates preserve event history transactionally, and retry-sensitive flows use persistent receipts.
 
-Agent 将语义相关、语境相关、陌生程度和学习价值合并排序。当前掌握度越低，陌生度权重越高；KNOWN 或分数至少 0.85 的候选被过滤。输出含六类关系及 0–1 优先级。语境重要度与掌握度是不同字段；离线覆盖词的 0.8 是固定参考值，未覆盖的词为空。LLM JSON 的长度、枚举、有限数值和范围均校验，异常时降级。
+## Local-first, not offline-only
 
-`Vocabulary` 按用户和 lemma 去重。使用 simplemma 和保守保护词表，将 generalized / generalizing / generalizes 归并到 generalize；派生名词 generalization 保留自身。无词性上下文的还原仍可能有歧义。事件保留用户看到的原词及 lemma。
+- In the default `local` mode, documents and learning data live in a local SQLite database, and PaddleOCR runs on the device.
+- AI features are explicit actions. They send the selected word, sentence, bounded article context, and a relevant learning summary to the provider you configure.
+- Web import fetches the submitted public URL. Optional Maimemo sync, Wikimedia dictionary audio, model downloads, and configured AI providers also require network access.
+- Full backups include learning data and source files, but exclude API keys, logs, generated caches, and downloadable model files.
+- Public mode isolates browser guest spaces, but it is not an account system and does not provide cross-device recovery.
 
-`MasteryService` 使用可替换的简单规则：首次行为从 0.5 起算，标记已掌握 +0.15、不认识 −0.20、不确定 −0.08，主动查词 −0.03，限制在 0–1。没有学习行为的词保持空值。分数与事件同事务保存，事件包含调整前后值及规则版本；这不是科学记忆模型或掌握概率。
+## Deployment
 
-启动时自动执行编号数据库迁移，修改前用 SQLite 在线备份到 `backend/data/backups/`（包括 WAL 数据）。旧词形合并保留计数、历史及最近明确标记；旧的自动查询事件保留，但不用于降低掌握度。若迁移失败，事务回滚并保留备份。
+There is currently **no public demo**. GitHub Pages can host only the React frontend; FastAPI, PaddleOCR, SQLite, and LLM calls require a separate HTTPS backend.
 
-013 迁移在自动备份后增加词库分组、成员及批量操作回执表，不改写已有单词、分数、学习记录或排期。批量状态调整先核对词条归属和 `updated_at` 版本，全部通过后才在同一事务保存状态、掌握度、排期、事件及回执；任一冲突整批不写入。撤销同样整批校验与提交，重复请求只返回当前结果，不回放旧修改。
+- [Pages and backend deployment notes](docs/DEPLOYMENT.md)
+- [Single-server Docker Compose + Caddy template](deploy/vps/README.md)
 
-复习回执和复习排期使用独立表，不改动已有词库表的列；007 迁移在备份后为旧词库添加初始排期。词库、分数、排期、学习事件与回执在同一事务提交。前端在发送自评前保存 UUID 和评价内容；响应丢失后重试复用编号，不重复记分、延长间隔或新增事件。延迟重试返回当前词库状态，不覆盖后续标记；同一编号携带不同自评内容时返回 409。复习队列与今日统计的读取均不写学习行为或推迟排期。
+The current Docker path is API-only and targets a single-worker SQLite deployment. It does not yet package the frontend or the bundled offline ECDICT asset, so treat it as deployment scaffolding rather than a one-command feature-parity release.
 
-`seen_count` 按每次成功导入的文章中实际出现次数累计，刷新/打开同一文档不增加；重新上传或主动再次导入会视为新的阅读材料。文字导入使用 UUID 回执，同一请求因网络失败而重试时只累计一次。只有主动点击“查看语境释义”且查询成功才增加 `lookup_count`。推荐新增词尚未出现在阅读材料中时，`seen_count=0`，首次与最近出现时间为空。单词侧栏显示上次标记和最近 20 条事件；兼容的 `/events` 接口仍默认返回最近 100 条，学习记录页使用独立的 `/learning-history` 时段查询和分页。被动读取这些记录不产生学习行为。
+## Current limitations
 
-OCR 优先使用原生 word boxes；缺失时才按字符比例估算词框，并通过 `bbox_source=estimated` 标明。置信度来自 OCR 行识别结果，不是用户掌握概率。倾斜、多栏、模糊图片仍可能识别有误。
+- The product interface is mainly Simplified Chinese; English UI localization is not complete.
+- OCR quality depends on the source. Handwriting, skewed images, complex columns, tables, and low-resolution scans may need proofreading.
+- The rule-based mastery score and adaptive queue are product heuristics, not a validated memory-probability model.
+- Local mode is designed for one user. Public guest mode has no login, synchronization, or multi-instance database architecture.
+- Static or publicly readable web articles work best; login walls, paywalls, CAPTCHAs, and heavily client-rendered pages are not supported.
+- A project-wide license has not yet been declared. See [License](#license) before reusing the code.
 
-文字文章不带图片 URL、词框或 OCR 置信度，使用 Unicode 码点位置准确还原正文。008 迁移只增加可空字符位置及文字导入回执，在线备份后升级，保留旧图片、词库、历史和复习排期。中英混排内容只提取符合现有规则的英文词，不提供中文分词。
+## Engineering status
 
-009 迁移在线备份后增加文章标签、书签和回收站时间字段，不改写旧文档、词汇或学习行为。移入回收站使用逻辑删除；已有回执和历史仍引用原文档编号。已确认的复习请求仍能安全重试，文字导入请求若指向回收站文章则提示先恢复。统计中的当前文章数与近 30 天文章词频只计算未删除材料，累计词频和学习行为统计保留历史。
+This is a working, evolving MVP rather than a production SaaS. The repository includes:
 
-## 开发与验证
+- backend regression tests and frontend behavior tests;
+- a Linux container job that runs a real PaddleOCR smoke test;
+- migration-time backups, retry-safe writes, integrity-checked full backup/restore;
+- browser and responsive verification records for major feature stages.
 
-前后端热更新（两个终端）：
+See [VERIFICATION.md](VERIFICATION.md) for the detailed verification log. Focused design notes include [adaptive review](docs/ADAPTIVE_REVIEW_V2.md), [AI waiting and cancellation](docs/AI_WAITING.md), [the study companion](docs/AI_COMPANION.md), and [word annotations](docs/WORD_ANNOTATIONS.md).
 
-```powershell
-.venv/Scripts/python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-# 第二个终端
-cd frontend
-npm run dev
-```
+## Roadmap
 
-Vite 将 `/api` 代理到 `127.0.0.1:8000`。生产构建后由 FastAPI 提供前端静态文件，无需另起前端服务器。
+Planned or being explored—not shipped promises:
 
-```powershell
-.venv/Scripts/python.exe -m pytest backend/tests -q
-cd frontend
-npm test
-npm run build
-```
+- choose and publish a project-level license and contributor guide;
+- localize the product interface beyond Simplified Chinese;
+- add proper accounts and cross-device synchronization;
+- improve OCR reading order and complex-layout handling;
+- experiment with embeddings or reranking for vocabulary discovery;
+- publish a hosted demo after a sustainable backend is available.
 
-单元/API 测试使用临时数据库与可替换 OCR，不会修改个人数据。真实 Paddle OCR 和浏览器验收结果见 `VERIFICATION.md`。
+## Contributing
 
-上传 `samples/reading.png` 可验证真实 OCR（19 个英文词）；也可运行 `python scripts/ocr_smoke.py`。预览图：`docs/reading-desktop.png`、`docs/reading-mobile.png`。
+Bug reports, setup feedback, and focused design discussions are useful now. Please open an issue before preparing a large pull request; the project-level license and formal contribution policy are still pending.
 
-## 主要 API
+## License
 
-### 详细中文释义
+No project-wide license has been declared yet. The source is publicly visible, but permission to reuse, redistribute, or create derivative works has **not** been granted unless a file states otherwise. Third-party dictionaries, icons, speech models, and recordings retain their own terms under [`docs/third-party`](docs/third-party/).
 
-“我的词库”直接显示中文摘要、音标，并支持按中文搜索和带释义导出 CSV。点击单词或“详细释义”打开共用词典面板；阅读中的“语境学习”也有入口。通用词典释义与文章中的具体语境含义分开标示。
+---
 
-应用捆绑 757,041 条 ECDICT 离线词条，提供完整中英文义项、音标和词形变化。精确拼写优先，缺失时才按现有词元规则回退；词典未收录时明确提示，不做近似拼写猜测。固定来源、构建方法及 MIT 授权见 [第三方词典说明](docs/third-party/ECDICT.md)。首次使用会将 28.6 MB 的安装资产解压成约 70.9 MB 的独立只读索引，之后无需下载或全量加载进内存。
-
-词典弹窗点击“生成详细讲解”调用已配置的 Agnes，补充常见词性与义项、中文用法解释、原创双语例句、常用搭配、语法提示和易混辨析。生词复习揭晓后直接显示全部本地义项，优先读取墨墨个人注解；默认自动为缺少中文释义或双语例句的当前词补充详细讲解，也可关闭自动补充。没有关联文章的词同样可用。例句和 AI 内容独立标注来源；不把 AI 生成内容标成词典原文，不把通用词义当作文章语境义。离线或模型失败时保留词典，失败结果不缓存，可重试；无法确认的拼写不编造释义。不会为整个词库后台批量调用模型。说明及缓存策略见 [复习词卡与详细注解](docs/WORD_ANNOTATIONS.md)。
-
-成功讲解按用户、拼写、词元及模型配置保存在 `DATA_DIR/dictionary-explanations`，下次打开直接读取；同一请求并发合并，公开模式仅实际生成时消耗既有 AI 额度。词典查询及生成不创建单词、学习事件或阅读/查词次数，不改自评、掌握度和复习排期，无需数据库迁移。离线公共词典缓存和可重新生成的 AI 讲解缓存不进入当前完整学习备份；原有词库、来源和文章备份保持兼容。
-
-| 方法与路径 | 行为 |
-| --- | --- |
-| `GET /api/dictionary/{word}` | 本地完整词典及当前用户成功讲解缓存；不访问模型 |
-| `POST /api/dictionary/{word}/explain` | 无请求体；主动生成通用词义详细讲解，已有成功缓存直接复用 |
-| `POST /api/dictionary/{word}/annotations` | 仅本地版，读取墨墨本人创建的释义、例句和助记；不调用 AI |
-
-### 墨墨背单词协同（本地版）
-
-在本机 `.env` 设置 `MAIMEMO_API_TOKEN`，重启后打开“数据管理 → 墨墨背单词”。Token 可在墨墨 App 的“我的 → 更多设置 → 实验功能 → 开放 API”获取；学习数据接口需要在 App 开启自动同步。密钥只供后端读取，不进入浏览器、数据库、学习事件或完整备份；`APP_MODE=public` 下所有墨墨集成接口返回 404。
-
-复习卡和词典现在还支持墨墨个人注解。官方内容接口只开放本人创建的释义、例句和助记，不提供墨墨内置完整词典；优先显示可读到的个人内容，空结果或权限/网络失败时保留本地词典与 Agnes 讲解。
-
-1. 点击读取，先核对远端规划总量、已获取的记录数和是否取全。默认只导入 `study_count > 0` 或有首次学习日期的记录；可勾选纳入尚未开始学习的规划词。预览有效 5 分钟，重启后须重新读取。
-2. 确认导入后，单词按词间现有词元规则去重；已有词条的自评、掌握度、阅读/查词次数及排期不变。新词为未评估，不虚增阅读次数；需要在词间自评后才进入词间复习。
-3. “我的词库”显示墨墨学习次数、上次反馈、下次复习时间，按每页 50 个展示。可筛选“墨墨已导入”和“墨墨待巩固”（上次忘记 / 模糊，或 `STICKING` 标签），配合词间自评挑选复习目标。多个墨墨词形归并时保留各自来源记录，表格展示学习次数最多的一项；不会将不同词形次数相加。墨墨记录是导入时的观察值，不代表实时数据，也不自动等同于词间的“已掌握”。
-4. 后续再次读取和导入只追加缺少的词并更新来源记录，不删除本地词。重复导入同一预览不会重复增加词或相同来源事件；汇总记录会保留本次导入行为。响应丢失可在有效期内重试，统计按实际新增返回。
-5. 在“我的词库”筛选后，点击“导出巩固词给墨墨”，将 TXT 中的词粘贴到墨墨云词本，在墨墨继续复习。仅导出当前筛选中“不认识 / 不确定”的词元，每行一词；不会自动写入墨墨账号。
-
-学习记录查询每次最多返回 1000 条且无 offset/cursor。本项目按日期范围分组，先数后取；超过上限的分组继续二分，左右查询包含同一边界并按远端 ID 去重，不依赖返回顺序或跳过同日记录。核对首尾总量、分组计数和相同 ID 的内容；日期缺失、边界停滞、数量变化或单次 32 次请求 / 30,000 条 / 150 秒读取上限会明确显示“部分获取”，不能证明全量时不标记取全。允许用户确认导入已取得的部分，后续较窄范围或部分读取会合并更新来源 ID，不隐藏之前导入的其他词形。远端不提供一致快照，读取期间请尽量避免同时调整墨墨学习规划。所有数据在远端读取和验证后再用一个本地事务保存，失败不留下半次导入。
-
-来源元数据保存在 `IMPORT_MAIMEMO` 学习事件，导入汇总为 `MAIMEMO_SYNC`；不生成自评事件或额外排期，不改变数据库结构，既有完整备份仍兼容。学习足迹只展示导入汇总，逐词来源独立展示，不挤占最近实际学习行为的窗口；单词来源与历史随完整备份导出/恢复。接口不会向墨墨发送文章、Agnes 请求或词间自评，也不会改墨墨复习排期。
-
-官方依据：[开放 API 说明](https://www.maimemo.com/pages/openapi/introduction?open_by=share)、[OpenAPI 规范](https://open.maimemo.com/api_bundle.yaml)。当前规范的 `/memo/study/…` 优先，只有明确 404 才兼容官方旧版 `/study/…` 路径；鉴权失败、限流和服务错误会安全提示重试，不回显上游原文。
-
-| 方法与路径 | 行为 |
-| --- | --- |
-| `GET /api/integrations/maimemo/status` | 本机配置状态、累计来源词元数、上次导入时间，不访问墨墨 |
-| `POST /api/integrations/maimemo/preview` | 只读获取墨墨规划/学习记录，返回计数、完整性和 5 分钟预览 ID，不写词库 |
-| `POST /api/integrations/maimemo/import` | JSON `preview_id`、布尔 `include_planned`（默认 false），原子追加并保留本地学习数据 |
-| `GET /api/integrations/maimemo/sources` | 本地最近导入的墨墨来源记录，不访问墨墨 |
-
-### 阅读与学习 API
-
-| 方法与路径 | 行为 |
-| --- | --- |
-| `GET /api/health` | 服务状态和配置的 provider |
-| `POST /api/documents` | multipart `file` 上传图片；`/api/documents/upload` 为别名 |
-| `POST /api/documents/demo` | 幂等打开预标注示例 |
-| `POST /api/documents/text` | JSON `text`、可选 `title`、UUID `request_id`；保存文字文章，相同请求安全重试 |
-| `POST /api/documents/pdf` | multipart `file`、UUID `request_id`、可选 `ocr_mode=auto/text/scan`（默认 auto）；保存原文件及文字/OCR 逐页正文，相同请求安全重试 |
-| `POST /api/documents/url` | JSON `url`、UUID `request_id`；提取公开网页正文，`source=web`、`source_url` 保留最终链接，相同请求安全重试 |
-| `GET /api/backups/automatic` | 本机自动恢复点状态、SQLite 完整性/外键检查、最近成功时间、保留数量与下次到期时间；只读 |
-| `POST /api/backups/automatic` | 本机 JSON `force`（默认 false）；到期时创建完整恢复点，`force:true` 立即创建；并发请求合并 |
-| `GET /api/backups/automatic/latest` | 下载经元数据与 SHA-256 校验的最新自动完整恢复点 |
-| `GET /api/backups/export` | 本机完整 ZIP，包含在线数据库快照与全部文章原文件 |
-| `POST /api/backups/preview` | 本机 multipart `file`，校验 ZIP 后返回数量和 30 分钟有效的 `token` |
-| `POST /api/backups/restore` | 本机 JSON `token`、`confirm:true`；自动安全备份后事务恢复，同 token 安全重试 |
-| `GET /api/backups/safety/{filename}` | 下载系统生成的恢复前完整备份 |
-| `GET /api/documents` | 默认正常文章；支持 `q`、`tag`、`source=text/upload/demo/pdf/web`、`deleted=true`、`sort=newest/oldest/title` |
-| `PUT /api/documents/{id}` | 部分更新 `title`、`tags`、`bookmark_occurrence_id`；书签传 `null` 可清除 |
-| `DELETE /api/documents/{id}` | 移到回收站，保留学习数据；重复请求不重复处理 |
-| `POST /api/documents/{id}/restore` | 恢复回收站材料，保留原词位置和书签 |
-| `GET /api/documents/{id}` | 原文、词位置和最新词汇状态；文字的 `text_start/end` 为 Unicode 码点位置 |
-| `GET /api/documents/{id}/image` | 方向归一化后的 PNG 原图；文字文章返回 404 |
-| `GET /api/documents/{id}/pdf` | 下载当前用户活跃 PDF 的原文件；回收站或其他类型返回 404 |
-| `GET /api/documents/{id}/proofread` | 当前 PDF/图片的正文版本、`source=pdf/image`、逐页文本与总字符限制；图片为单幅正文，只读 |
-| `PUT /api/documents/{id}/proofread` | UUID `request_id`、`base_revision`、完整 `pages:[{number,text}]`；原位保存校对，版本冲突 409，同请求安全重试 |
-| `GET /api/documents/{id}/pdf/pages/{page}/image` | 本人活跃 PDF 的有界 PNG 原页预览；私有、不缓存，不运行 OCR |
-| `GET /api/vocabulary` | 当前用户的全部观察/标记词汇 |
-| `GET /api/vocabulary/{word}/history` | 归一化词形后的记录、上次标记和最近 20 条事件；只读 |
-| `POST /api/vocabulary/batch` | UUID `request_id`、`status`、1–200 个不重复 `items:[{id,updated_at}]`；单行或批量标记，版本/归属冲突整批 409，同编号原样重试幂等 |
-| `POST /api/vocabulary/batch/{operation_id}/undo` | 无需请求体；安全恢复原状态、分数与排期，后续学习冲突整批 409，重复撤销幂等 |
-| `GET /api/vocabulary-groups` | 当前用户的分组及各组 `vocabulary_ids`；只读 |
-| `POST /api/vocabulary-groups` | JSON `name` 新建分组，最多 50 组；同名返回已有分组 |
-| `PUT /api/vocabulary-groups/{id}` | JSON `name` 重命名，组名去除首尾空格后 1–30 字符，忽略大小写去重 |
-| `DELETE /api/vocabulary-groups/{id}` | 删除分组及成员关系，保留词汇与学习数据；成功 204 |
-| `POST /api/vocabulary-groups/{id}/members` | `vocabulary_ids`（1–200 个编号）、`action:add/remove`；批量加入或移出，重复编号自动去重，整批核对归属，不修改学习状态 |
-| `GET /api/review?limit=10&tz_offset_minutes=480&plan_minutes=20` | 当前到期总数、最多 10 词的队列、今日已复习、稍后到期及下一次时间；只读。`plan_minutes` 可选 10/20/30，提供计划指标；limit 为 1–50 |
-| `GET /api/dashboard` | SQL 统计、学习画像与 7 组词汇排行；只读 |
-| `GET /api/relations` | 最近 200 条个人词汇关系、总数和推荐反馈统计；只读 |
-| `GET /api/relation-workspace` | 完整关联词集的释义、原推荐说明、当前状态、原文与分页；支持 `q`、`relation`、`scope=unfamiliar`、`include_dismissed`；只读 |
-| `PUT /api/vocabulary/{word}` | `{"status":"UNKNOWN","document_id":1}`；文档 ID 可省略 |
-| `POST /api/words/analyze` | `{"occurrence_id":1}`：语境释义并记录查询 |
-| `POST /api/sentences/analyze` | `{"occurrence_id":1}`：原句中文翻译、结构、分句和语法要点；主动请求，成功缓存，不写学习记录 |
-| `POST /api/words/recommend` | `{"occurrence_id":1}`：个性化关联推荐；可选 `relation` 指定关联类型 |
-| `POST /api/vocabulary/{word}/recommend` | `{"relation":"word_family","refresh":false}`：对自己的词库词条进行分类拓展，优先读取候选缓存；`refresh:true` 主动重生成，响应 `cached` 区分复用；不要求文章来源 |
-| `GET /api/pronunciation/status` | 本机英语发音组件状态；不加载模型或生成音频 |
-| `POST /api/pronunciation` | `{"text":"curious","accent":"en-US","allow_word_synthesis":false}`：单词依次尝试首选/另一英语口音录音，均无可用录音时 404 `recording_not_found`；显式 `true` 才允许合成单词，句子直接本机合成；响应头标注实际口音、来源和署名，不改变学习记录 |
-| `POST /api/recommendations/{batch_id}/feedback` | `word`、`action`、UUID `request_id`；反馈绑定已生成的词项快照 |
-| `GET /api/events?limit=100` | 最近学习事件，最多 1000 条 |
-
-`health` 表示服务和配置可用；OCR 采用延迟加载，因此此接口不代表模型已经下载。LLM 是否成功由每次结果的 `source` / `warning` 表明。
-
-复习标记使用同一 PUT 接口，额外携带 `"origin":"review"` 和 UUID `request_id`。有真实原文时传入 `document_id`，无原文时省略；复习时可附带 `response_ms`（500–600,000 毫秒）和 `plan_minutes`（10/20/30），两者都必须与复习来源和请求编号一起提供。它们为可选字段，旧客户端继续兼容。`request_id` 仅用于复习，原有阅读标记保持兼容。
-
-词库页面的单行与多选标记使用 `/vocabulary/batch`，响应为 `{operation_id,items,changed_count,undone}`，`items` 是当前词条状态，`changed_count` 是原批次实际修改数。时间戳接受 ISO 日期时间，无时区值按 UTC 比较。同一用户、同一请求编号携带不同内容时返回 409；撤销后重试原标记仍返回当前状态，不重新应用。批量调整属于词库整理，不计入今日复习完成数。
-
-`GET /api/review` 的 `tz_offset_minutes` 是当前浏览器时区向东的分钟偏移，默认 480（UTC+8），范围 -720–840；所有时间戳仍以 UTC 返回。响应的 `total` 为此刻到期总数，`reviewed_today` 为当地今天去重的自评词数，`later_today` 为今天稍后到期的词数，`next_due_at` 为最早未来排期。可重复传入 `vocabulary_ids`（最多 50 个）核对保存组的剩余卡片，只过滤 `items`，不影响总数与统计。提供 `plan_minutes` 时还会返回预算、估算单卡耗时、容量、计划进度和当前可用数量；该摘要不改变队列规则，`items` 仍只包含已到期词。
-
-推荐生成、展示和查看分别记录。卡片至少四分之一进入可见区域时记为展示，主动展开才记为查看。每次反馈绑定推荐批次；UUID 回执保证响应丢失后的重试不重复记账，也不会覆盖后续选择。反馈、词库状态、掌握度及事件同事务保存。有用/没用针对当前词与目标词这组关联调整排序，超过最近 100 条事件的反馈仍参与排序。
-
-`VocabularyRelation` 使用 SQLite 普通关系表，按用户、源词、目标词和关系类型去重。支持 WORD_FAMILY、SYNONYM、ANTONYM、CONCEPT、COLLOCATION、DOMAIN_RELATED。生成或展示推荐不建立关系；逐词查看或明确反馈才建立关系，并与行为记录一起提交。初始权重 0.5：查看 +0.05、不认识 +0.08、认识 −0.02、有用 +0.15、没用 −0.20，限制在 0–1。它是可替换的规则强度，不是关联概率；事件编号保证重复回放不会重复调整。006 迁移根据已有的明确反馈补齐关系，不制造历史行为。
-
-兼容的 `/relations` 接口仍按批次词项统计推荐、展示与反馈。新的词汇关联页面使用 `/relation-workspace`：相同源词、目标词、关系类型只计一组；待巩固词按当前不认识或不确定的目标词去重。关系说明必须对应本人的真实推荐与明确反馈，关联是否有用取这组联系最近一次明确评价；新的展示或查看不会撤销“没用”。返回可操作的推荐批次与该评价保持一致，避免对另一批已存在的评价重复提交却无法恢复关联。没有有效快照或可用文章来源时不提供失效的反馈入口；原有解释仍可用于回顾。浏览词集与本页回想不记录展示或查看事件。
-
-## MVP 边界
-
-学习概览中的“生词”包含当前不认识与不确定的词。近 7 天新增生词按首次明确标记陌生的时间统计，近 7 天查询仅统计明确主动查询；近 30 天高频词按该时间段导入文章的实际词位置计数。长期未掌握表示首次陌生标记已满 30 天且当前仍陌生，不推断期间一直未掌握。累计查询保留旧版本记录。各排行最多 10 项，低掌握度排行排除尚未评估的空值。
-
-- 默认 `APP_MODE=local` 为本机单用户；公网需使用 `APP_MODE=public` 的访客凭证与数据隔离。公开版暂不提供跨设备登录：清理站点存储会失去原学习空间的访问凭证。
-- 支持 JPG/PNG（单张最多 10 MB、2500 万像素）、粘贴文字（最多 20,000 字）、文字/扫描英文 PDF（10 MB、100 页、最多 20 页需 OCR、正文 200,000 字）及公开英文网页（HTML 2 MB、正文 100,000 字）。
-- 模型首次加载较慢，同一进程串行执行 OCR，避免线程不安全。
-- 个人数据保存在 `backend/data/`；推荐从“数据管理”导出包含一致数据库快照与原文件的完整备份。
-- 词汇统计、反馈与事件是真实持久化数据；推荐模型目前是 LLM/规则，不是训练好的推荐系统。
-- 可在 OCR、LLMService、候选生成和排序接口继续扩展版面分析、Embedding、Reranker 等能力。当前不引入向量数据库或知识图谱基础设施。
-
-实现参考：[FastAPI 文件上传](https://fastapi.tiangolo.com/reference/uploadfile/)、[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)、[Vite 代理配置](https://vite.dev/config/server-options.html#server-proxy)。
+If Lexi's reading-first approach is useful to you—or you are exploring the intersection of AI and vocabulary learning—a Star is a simple way to follow its progress.
