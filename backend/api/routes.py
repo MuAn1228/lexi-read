@@ -28,6 +28,8 @@ from backend.services.url_import import import_url
 from backend.services.vocabulary import VocabularyService
 from backend.services.llm import LLMService
 from backend.services.lemmatization import normalize_word
+from backend.schemas_vocabulary_sheet import VocabularySheetOut
+from backend.services.vocabulary_sheet import read_vocabulary_sheet
 from backend.public_limits import pdf_ocr_budget, require_llm_budget, require_ocr_budget, require_pdf_preview_budget
 
 router = APIRouter(prefix="/api")
@@ -111,6 +113,14 @@ def pdf_document(file: UploadFile, request_id: UUID = Form(...),
 def read_document(document_id: int, session: Session = Depends(get_session),
                   user_id: int = Depends(get_current_user_id)):
     return document_out(require_document(session, document_id, user_id), session, user_id)
+
+
+@router.get("/documents/{document_id}/vocabulary-sheet", response_model=VocabularySheetOut)
+def document_vocabulary_sheet(document_id: int, response: Response,
+                              session: Session = Depends(get_session),
+                              user_id: int = Depends(get_current_user_id)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return read_vocabulary_sheet(session, document_id, user_id)
 
 
 @router.post("/documents/url", response_model=DocumentOut, status_code=201)

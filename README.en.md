@@ -48,6 +48,7 @@ AI is optional and on demand. Core importing, OCR, dictionary lookup, marking, h
 - **Interactive reading from real material** — import JPG/PNG images, text or scanned PDFs, pasted English, or public article URLs. PaddleOCR runs locally for image-based content.
 - **Word- and sense-level learning** — mark a word as known, unknown, or uncertain, then track individual dictionary meanings independently when one word has several senses.
 - **A practical dictionary workspace** — search without opening an article; view bundled Chinese definitions, phonetics, inflections, spelling suggestions, pronunciation, and cached detailed explanations.
+- **Portable article word lists** — merge unassessed article words into headwords in first-appearance order, then export a textbook-style two-column list with phonetics and full Chinese definitions as TXT or A5/PDF.
 - **Context-aware AI tools** — request word explanations, sentence analysis, article Q&A, a study companion, or personalized short reading practice through a replaceable OpenAI-compatible provider.
 - **Personalized word discovery** — related-word suggestions combine context, vocabulary status, learning value, and prior useful/not-useful feedback, with a deliberately small result set.
 - **Adaptive daily review** — choose a 10, 20, or 30 minute plan; due words are prioritized using explicit review history, recent difficulty, response time, reading frequency, and rule-based mastery signals.
